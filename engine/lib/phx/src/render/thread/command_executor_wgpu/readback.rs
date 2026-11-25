@@ -133,7 +133,7 @@ impl WgpuCommandExecutor {
                 // The backbuffer is an OpenGL-convention texture (row 0 is
                 // the bottom of the window), so the rows come out bottom-up.
                 self.ensure_backbuffer();
-                let backbuffer = self.backbuffer.as_ref().expect("backbuffer");
+                let backbuffer = self.backbuffer.as_ref()?;
                 (
                     backbuffer.color.clone(),
                     TexFormat::RGBA8,

@@ -181,7 +181,7 @@ impl Renderer {
     /// Submit a command to the render thread without blocking.
     /// Returns true if the command was sent, false if the channel was full.
     /// Use this for commands that can be safely dropped (like resize events).
-    fn try_submit(&mut self, cmd: RenderCommand) -> bool {
+    fn try_submit(&self, cmd: RenderCommand) -> bool {
         if self.running.load(Ordering::Relaxed) {
             match self.command_tx.try_send(cmd) {
                 Ok(()) => true,

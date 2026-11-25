@@ -90,6 +90,7 @@ impl ShaderWatcherInner {
 
         // Remove old mappings if this shader was previously registered.
         if let Some(old_paths) = self.shader_to_files.remove(&key) {
+            #[allow(clippy::iter_over_hash_type)] // bookkeeping; the order doesn't matter
             for path in old_paths {
                 if let Some(shaders) = self.file_to_shaders.get_mut(&path) {
                     shaders.remove(&key);
@@ -100,6 +101,7 @@ impl ShaderWatcherInner {
             }
         }
 
+        #[allow(clippy::iter_over_hash_type)] // bookkeeping; the order doesn't matter
         for path in &all_paths {
             self.file_to_shaders
                 .entry(path.clone())
@@ -126,6 +128,8 @@ impl ShaderWatcherInner {
                         for path in event.paths {
                             let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
                             if let Some(shaders) = self.file_to_shaders.get(&canonical) {
+                                #[allow(clippy::iter_over_hash_type)]
+                                // into a set; the order doesn't matter
                                 for shader in shaders {
                                     debug!(
                                         "ShaderWatcher: file changed {:?} -> shader '{}'",

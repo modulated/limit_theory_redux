@@ -98,12 +98,11 @@ impl ApplicationHandler for MainLoop {
             WindowEvent::KeyboardInput {
                 device_id, event, ..
             } => {
-                if let PhysicalKey::Code(keycode) = event.physical_key {
+                if let PhysicalKey::Code(keycode) = event.physical_key
+                    && let Some(button) = convert_keycode(keycode)
+                {
                     engine.input.update_keyboard(device_id, |state| {
-                        state.update(
-                            convert_keycode(keycode),
-                            event.state == ElementState::Pressed,
-                        )
+                        state.update(button, event.state == ElementState::Pressed)
                     });
                 }
                 // `text` is only set when a key is pressed (or repeats), not

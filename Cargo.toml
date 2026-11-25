@@ -8,13 +8,72 @@ authors = ["Limit Theory Redux Team"]
 edition = "2024"
 license = "MIT/Apache-2.0"
 
+# Lints for every crate (each member has `[lints] workspace = true`, except
+# ltr, which copies these: see its Cargo.toml). Clippy's default groups are on
+# as usual (correctness denies, suspicious/style/complexity/perf warn); the
+# lists below add the lints from the pedantic, nursery and restriction groups
+# that catch real bugs (wrong values, panics, races, undefined behaviour)
+# rather than style. Lints left out on purpose, with why:
+#   indexing_slicing, cast_possible_truncation, cast_sign_loss,
+#   cast_possible_wrap, cast_precision_loss: hundreds of deliberate indexes
+#     and numeric casts in graphics and math code
+#   unwrap_used, expect_used, panic, undocumented_unsafe_blocks: worth it
+#     (a panic across the Lua FFI boundary is undefined behaviour) but a
+#     project of their own, see TODO.md
+#   float_cmp: the exact comparisons here detect changes, where exact is right
+#   string_slice: slices at positions found by searching ASCII, always on a
+#     character boundary
+#   let_underscore_must_use, let_underscore_drop: `let _ =` is the codebase's
+#     way to ignore a result on purpose (channel sends at shutdown, GPU polls)
 [workspace.lints.rust]
 unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"    # an unsafe fn's body is not one big unsafe block
+meta_variable_misuse = "warn"      # macro_rules! variables used wrongly
+unit_bindings = "warn"             # `let x = f();` where f returns ()
+non_ascii_idents = "deny"
+
+[workspace.lints.clippy]
+# Unfinished or debugging code left in
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+# Values that are wrong or lost
+lossy_float_literal = "warn"
+suspicious_xor_used_as_pow = "warn"
+mixed_read_write_in_expression = "warn"
+checked_conversions = "warn"
+implicit_saturating_sub = "warn"
+unchecked_time_subtraction = "warn"
+match_wild_err_arm = "warn"
+fallible_impl_from = "warn"
+unwrap_in_result = "warn"
+path_buf_push_overwrite = "warn"
+same_name_method = "warn"
+debug_assert_with_mut_call = "warn"
+# Determinism: hash map iteration order changes from run to run
+iter_over_hash_type = "warn"
+# Resources and locks
+mem_forget = "warn"
+empty_drop = "warn"
+significant_drop_in_scrutinee = "warn"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+rc_mutex = "warn"
+large_stack_arrays = "warn"
+infinite_loop = "warn"
+exit = "warn"
+# Borrows that claim more than they use
+mut_mut = "warn"
+needless_pass_by_ref_mut = "warn"
+# Pointer casts that can change type, mutability or alignment unnoticed
+ptr_as_ptr = "warn"
+ptr_cast_constness = "warn"
+borrow_as_ptr = "warn"
+as_ptr_cast_mut = "warn"
+cast_ptr_alignment = "warn"
+fn_to_numeric_cast_any = "warn"
 
 [workspace.dependencies]
-# workspace bin crates
-ltr = { path = "engine/bin/ltr" }
-
 # workspace lib crates
 internal = { path = "engine/lib/internal" }
 phx = { path = "engine/lib/phx" }

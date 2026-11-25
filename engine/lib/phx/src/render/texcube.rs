@@ -256,7 +256,9 @@ impl TexCube {
             if let Some(image_buffer) =
                 ImageBuffer::<Rgba<u8>, _>::from_raw(size as u32, size as u32, data)
             {
-                let _ = image_buffer.save(face_path);
+                if let Err(e) = image_buffer.save(&face_path) {
+                    tracing::error!("TexCube_Save: Failed to save '{face_path}': {e}");
+                }
             }
         }
     }

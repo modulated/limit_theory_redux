@@ -451,7 +451,7 @@ pub fn convert_floats(pixel: PixelFormat, floats: &[f32], dst: TexFormat) -> Vec
     #[allow(unsafe_code)]
     // SAFETY: reinterpreting `f32`s as their bytes.
     let bytes = unsafe {
-        std::slice::from_raw_parts(floats.as_ptr() as *const u8, std::mem::size_of_val(floats))
+        std::slice::from_raw_parts(floats.as_ptr().cast::<u8>(), std::mem::size_of_val(floats))
     };
     convert_texels(pixel, DataFormat::Float, bytes, dst).into_owned()
 }
@@ -462,7 +462,7 @@ pub fn convert_slice<T>(data: &[T], pixel: PixelFormat, df: DataFormat, dst: Tex
     #[allow(unsafe_code)]
     // SAFETY: a byte view of plain data the caller owns for the call.
     let bytes = unsafe {
-        std::slice::from_raw_parts(data.as_ptr() as *const u8, std::mem::size_of_val(data))
+        std::slice::from_raw_parts(data.as_ptr().cast::<u8>(), std::mem::size_of_val(data))
     };
     convert_texels(pixel, df, bytes, dst).into_owned()
 }

@@ -3,8 +3,11 @@ use winit::keyboard::KeyCode as WinitKeyCode;
 use super::{CursorIcon, WindowTheme};
 use crate::input::{KeyboardButton, MouseControl};
 
-pub fn convert_keycode(keycode: WinitKeyCode) -> KeyboardButton {
-    match keycode {
+/// The game's button for a winit key code; None for a key the game doesn't
+/// know (winit's KeyCode is non-exhaustive: new keys, media and language
+/// keys). That used to be a `todo!()`: pressing such a key panicked.
+pub fn convert_keycode(keycode: WinitKeyCode) -> Option<KeyboardButton> {
+    let button = match keycode {
         WinitKeyCode::Backquote => KeyboardButton::Backquote,
         WinitKeyCode::Backslash => KeyboardButton::Backslash,
         WinitKeyCode::BracketLeft => KeyboardButton::BracketLeft,
@@ -199,8 +202,9 @@ pub fn convert_keycode(keycode: WinitKeyCode) -> KeyboardButton {
         WinitKeyCode::F33 => KeyboardButton::F33,
         WinitKeyCode::F34 => KeyboardButton::F34,
         WinitKeyCode::F35 => KeyboardButton::F35,
-        _ => todo!(), // this should never happen
-    }
+        _ => return None,
+    };
+    Some(button)
 }
 
 pub fn convert_cursor_icon(cursor_icon: CursorIcon) -> winit::window::CursorIcon {

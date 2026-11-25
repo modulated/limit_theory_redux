@@ -63,7 +63,10 @@ pub(super) fn render_glyph(
             }
         }
         Content::SubpixelMask => {
-            unimplemented!("Subpixel mask format is not implemented for the text rendering")
+            // Not supported (the glyphs are rendered as alpha masks): the
+            // glyph is left out rather than panicking across the FFI boundary
+            // (this was an `unimplemented!()`).
+            tracing::warn!("Text rendering: subpixel mask glyphs are not supported, glyph skipped");
         }
         Content::Color => {
             let row_size = glyph_width as usize * 4;

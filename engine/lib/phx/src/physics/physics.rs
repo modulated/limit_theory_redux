@@ -289,8 +289,8 @@ impl Physics {
             }
 
             iterator.count += 1;
-            iterator.body0 = c1_parent.unwrap() as *mut RigidBody;
-            iterator.body1 = c2_parent.unwrap() as *mut RigidBody;
+            iterator.body0 = c1_parent.unwrap().cast::<RigidBody>();
+            iterator.body1 = c2_parent.unwrap().cast::<RigidBody>();
             return true;
         }
 

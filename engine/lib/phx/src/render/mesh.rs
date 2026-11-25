@@ -166,6 +166,8 @@ impl Mesh {
     /// built) the executor-owned GPU resource, and return its id. Shared by
     /// `draw_bind` (which only cares that the resource exists) and
     /// `resource_id` (which also needs the id itself, e.g. for the batch API).
+    // needless_pass_by_ref_mut is wrong here: create_resource and create_mesh take &mut
+    #[allow(clippy::needless_pass_by_ref_mut)]
     fn ensure_resource(&mut self, r: &mut Renderer) -> ResourceId {
         let this = &mut *self.shared.as_mut();
 
@@ -184,7 +186,7 @@ impl Mesh {
             #[allow(unsafe_code)] // TODO: refactor
             let vertex_bytes = unsafe {
                 std::slice::from_raw_parts(
-                    this.vertex.as_ptr() as *const u8,
+                    this.vertex.as_ptr().cast::<u8>(),
                     std::mem::size_of_val(this.vertex.as_slice()),
                 )
             }
@@ -547,7 +549,7 @@ impl Mesh {
     }
 
     pub fn get_vertex(&mut self, index: i32) -> &mut Vertex {
-        let ptr = &mut self.shared.as_mut().vertex[index as usize] as *mut _;
+        let ptr = &raw mut self.shared.as_mut().vertex[index as usize];
         #[allow(unsafe_code)] // TODO: remove
         unsafe {
             &mut *ptr

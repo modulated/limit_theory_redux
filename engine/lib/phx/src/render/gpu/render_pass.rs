@@ -307,7 +307,7 @@ impl RenderPass {
         // SAFETY: `InstanceData` is repr(C) plain floats without padding.
         let bytes = unsafe {
             std::slice::from_raw_parts(
-                instances.as_ptr() as *const u8,
+                instances.as_ptr().cast::<u8>(),
                 std::mem::size_of_val(instances),
             )
         };
@@ -335,7 +335,7 @@ impl RenderPass {
         // SAFETY: plain `u32`s viewed as bytes.
         let bytes = unsafe {
             std::slice::from_raw_parts(
-                indices.as_ptr() as *const u8,
+                indices.as_ptr().cast::<u8>(),
                 std::mem::size_of_val(indices),
             )
         };

@@ -212,7 +212,7 @@ impl RigidBody {
     #[allow(clippy::borrowed_box)]
     pub(crate) fn encode_as_user_data(rb: &Box<RigidBody>) -> u128 {
         // TODO: Replace this with an arena index into the PhysicsWorld.
-        &**rb as *const RigidBody as *mut RigidBody as u128
+        (&raw const **rb).cast_mut() as u128
     }
 
     /// Retrieves a reference to the RigidBody linked to a Rapier Collider.
@@ -258,7 +258,7 @@ impl RigidBody {
         self.triggers.push(type_to_non_null(trigger));
     }
 
-    pub(crate) fn remove_trigger(&mut self, trigger: &mut Trigger) {
+    pub(crate) fn remove_trigger(&mut self, trigger: &Trigger) {
         self.triggers.swap_remove(
             self.triggers
                 .iter()
@@ -293,14 +293,13 @@ impl RigidBody {
         if self.is_child() {
             unsafe {
                 self.parent
-                    .as_ref()
-                    .unwrap()
+                    .as_ref()?
                     .rigid_body
                     .as_ref()
                     .get_rigid_body_handle()
             }
         } else if self.rigid_body.is_added() {
-            Some(*self.rigid_body.added_as_ref().unwrap().0)
+            Some(*self.rigid_body.added_as_ref()?.0)
         } else {
             None
         }

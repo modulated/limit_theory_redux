@@ -1069,7 +1069,7 @@ fn bytemuck_bytes<T: Copy>(v: &[T]) -> &[u8] {
     #[allow(unsafe_code)]
     // SAFETY: `Imm2DVertex`/`Imm3DVertex` are `repr(C)` structs of `f32`.
     unsafe {
-        std::slice::from_raw_parts(v.as_ptr() as *const u8, std::mem::size_of_val(v))
+        std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), std::mem::size_of_val(v))
     }
 }
 

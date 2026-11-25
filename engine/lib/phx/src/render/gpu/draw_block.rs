@@ -70,7 +70,9 @@ impl DrawBlock {
     pub fn as_bytes(&self) -> &[u8] {
         // SAFETY: repr(C) POD without padding (every member is a multiple of
         // 16 bytes and the struct is 16-aligned).
-        unsafe { std::slice::from_raw_parts(self as *const Self as *const u8, Self::SIZE as usize) }
+        unsafe {
+            std::slice::from_raw_parts((self as *const Self).cast::<u8>(), Self::SIZE as usize)
+        }
     }
 
     /// Compare a reflected block against this struct. Used at shader link and

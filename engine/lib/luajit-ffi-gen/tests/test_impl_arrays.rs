@@ -287,8 +287,10 @@ fn test_null_slice_should_panic() {
 
 #[test]
 fn test_zero_length_slice_is_empty() {
-    let mut t = ArraysTest::default();
-    t.val_array_primitive = vec![1, 2, 3];
+    let mut t = ArraysTest {
+        val_array_primitive: vec![1, 2, 3],
+        ..Default::default()
+    };
     let data = [0; 3];
     unsafe {
         ArraysTest_SetPrimitiveSlice(&mut t, data.as_ptr(), 0);
