@@ -34,6 +34,17 @@ impl<const N: usize> AxisState<N> {
         }
     }
 
+    /// Adds to an axis (for per-frame totals: several events can arrive in
+    /// one frame, and each must count).
+    pub fn add(&mut self, index: usize, value: f32) -> bool {
+        if index < N {
+            self.current[index] += value;
+            true
+        } else {
+            false // TODO: wrong index. Return an error/panic?
+        }
+    }
+
     /// Returns the current position of the axis
     pub fn value(&self, index: usize) -> f32 {
         if index < N {

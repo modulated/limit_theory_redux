@@ -131,6 +131,13 @@ end)
 step("course", function()
     if Game.jump then return "wait" end
     if state.arrivedFrom then
+        -- The jump starts in a simulation step after the ship was moved
+        if Game.currentSystemId == state.arrivedFrom then
+            state.startWait = (state.startWait or 0) + 1
+            check(state.startWait < SETTLE_FRAMES, "no jump from %s", systemName(state.arrivedFrom))
+            return "wait"
+        end
+        state.startWait = 0
         if not state.arrivalChecked then
             checkArrival(state.arrivedFrom)
             Log.Info("JumpTest: arrived in %s", systemName(Game.currentSystemId))

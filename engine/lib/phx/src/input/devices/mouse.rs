@@ -55,6 +55,9 @@ pub struct MouseState {
 
     position: Vec2,
     in_window: bool,
+    /// Raw motion events (`update_raw_delta`) have arrived: they are the
+    /// mouse's movement from then on, and cursor moves no longer count.
+    has_raw_motion: bool,
 }
 
 impl MouseState {
@@ -87,15 +90,18 @@ impl MouseState {
             && self.control_state.update()
     }
 
+    // Scroll and movement are per-frame totals (zeroed in `reset`): a frame
+    // can get several events, and setting the value would keep only the last.
+
     pub fn update_scroll_pixel(&mut self, x: f32, y: f32) -> bool {
-        self.axis_state.update(MouseControl::ScrollPixelX as _, x)
-            && self.axis_state.update(MouseControl::ScrollPixelY as _, y)
+        self.axis_state.add(MouseControl::ScrollPixelX as _, x)
+            && self.axis_state.add(MouseControl::ScrollPixelY as _, y)
             && self.control_state.update()
     }
 
     pub fn update_scroll_line(&mut self, x: f32, y: f32) -> bool {
-        self.axis_state.update(MouseControl::ScrollX as _, x)
-            && self.axis_state.update(MouseControl::ScrollY as _, y)
+        self.axis_state.add(MouseControl::ScrollX as _, x)
+            && self.axis_state.add(MouseControl::ScrollY as _, y)
             && self.control_state.update()
     }
 
@@ -104,12 +110,15 @@ impl MouseState {
 
         self.position = Vec2::new(x, y);
 
-        self.axis_state
-            .update(MouseControl::DeltaX as _, x - prev_pos.x)
-            && self
-                .axis_state
-                .update(MouseControl::DeltaY as _, y - prev_pos.y)
-            && self.control_state.update()
+        // Only where no raw motion arrives: a cursor held in the window (the
+        // camera's grab) stops at its edge while the mouse keeps moving.
+        if !self.has_raw_motion {
+            self.axis_state
+                .add(MouseControl::DeltaX as _, x - prev_pos.x);
+            self.axis_state
+                .add(MouseControl::DeltaY as _, y - prev_pos.y);
+        }
+        self.control_state.update()
     }
 
     pub fn update_in_window(&mut self, in_window: bool) -> bool {
@@ -119,9 +128,12 @@ impl MouseState {
     }
 
     pub fn update_raw_delta(&mut self, dx: f32, dy: f32) -> bool {
-        // Directly set the axis values for delta without relying on absolute position.
-        self.axis_state.update(MouseControl::DeltaX as _, dx)
-            && self.axis_state.update(MouseControl::DeltaY as _, dy)
+        // The device's own movement, independent of the cursor. Windows sends
+        // one event per mouse report (up to the mouse's polling rate, often
+        // 1000 Hz), so many arrive per frame: they add up.
+        self.has_raw_motion = true;
+        self.axis_state.add(MouseControl::DeltaX as _, dx)
+            && self.axis_state.add(MouseControl::DeltaY as _, dy)
             && self.control_state.update()
     }
 }
