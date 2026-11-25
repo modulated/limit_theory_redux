@@ -5,10 +5,12 @@ local Action = require("Modules.NPC.Actions.Action")
 --- spot every few seconds so the fight keeps moving. The turrets aim and
 --- fire by themselves (the ship's weapon battery engages hostile teams in
 --- range); this only flies. Ends when the target is gone, or after it has
---- stayed out of reach for a while.
+--- stayed out of reach for a while, or (a guard's attack) when the fight
+--- has drawn it further than its leash from the ship it guards.
 ---@class NpcAttack: NpcAction
-local Attack = Subclass("NpcAttack", Action, function(self, target)
+local Attack = Subclass("NpcAttack", Action, function(self, target, leash)
     self.target = target
+    self.leash = leash -- { entity, distance } or nil
 end)
 
 local RADIUS_MIN, RADIUS_MAX = 0.8, 2.6 -- game units (weapon reach is ~3.5)
@@ -34,6 +36,14 @@ function Attack:onUpdate(npc, ctx, dt)
 
     local myPos = ctx:positionOf(npc.entity)
     local dist = ctx:distance(npc, targetPos)
+
+    if self.leash then
+        local anchor = ctx:positionOf(self.leash.entity)
+        if not anchor or ctx:distance(npc, anchor) > self.leash.distance then
+            self:finish(npc) -- back to its charge
+            return
+        end
+    end
 
     -- A new spot around the target from time to time, or once reached
     self.timer = self.timer - dt

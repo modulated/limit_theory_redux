@@ -75,12 +75,32 @@ function SystemMap3D:setSkybox(state, skyboxEntity)
     state.skyboxEntity = skyboxEntity
 end
 
-function SystemMap3D:collectEntities(state, rootEntity, shipEntity)
+---@param npcEntries table[]|nil the NPC ships ({entity, label, color})
+function SystemMap3D:collectEntities(state, rootEntity, shipEntity, npcEntries)
     state.entities = {}
     state.shipEntity = shipEntity
     state._planetIdx = 0
     state.maxOrbit = 1
     self:_walk(state, rootEntity, nil)
+
+    -- NPC ships: a label each, below the bodies' in priority
+    local live = {}
+    for _, npc in ipairs(npcEntries or {}) do
+        local rbCmp = npc.entity:get(PhysicsComponents.RigidBody)
+        local body = rbCmp and rbCmp:getRigidBody()
+        if body then
+            live[npc.entity] = true
+            table.insert(state.entities, {
+                entity = npc.entity, label = npc.label, pos = body:getPos(),
+                scale = body:getBoundingRadius(), orbitRadius = 0, inclination = 0,
+                isMoon = false, parentPos = nil, trailWidth = 0, isNpc = true, labelPriority = 30,
+                color = Color(npc.color[1], npc.color[2], npc.color[3], 0.8),
+            })
+        end
+    end
+    if state.selected and state.selected.isNpc and not live[state.selected.entity] then
+        state.selected = nil
+    end
 
     if shipEntity then
         local rbCmp = shipEntity:get(PhysicsComponents.RigidBody)
@@ -498,7 +518,7 @@ function SystemMap3D:renderOverlay(state, x, y, sx, sy)
             local isSelected = state.selected ~= nil and state.selected.entity == entry.entity
             MapLabels.add(labels, {
                 text = entry.label, x = screenX, y = screenY, anchor = 6, size = 11,
-                priority = MapLabels.priorityOf(entry.entity),
+                priority = entry.labelPriority or MapLabels.priorityOf(entry.entity),
                 always = isSelected,
                 color = { c.r, c.g, c.b, isSelected and 1.0 or 0.8 },
             })

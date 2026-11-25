@@ -194,58 +194,97 @@ Config.game = {
     factions = {
         player   = { name = "You",      color = { 0.3, 1.0, 0.45 }, hostileTo = { pirate = true } },
         security = { name = "Security", color = { 0.35, 0.65, 1.0 }, hostileTo = { pirate = true } },
-        trader   = { name = "Trader",   color = { 0.85, 0.85, 0.7 }, hostileTo = {} },
+        -- Traders' own ships are unarmed; their mercenaries fight pirates
+        trader   = { name = "Trader",   color = { 0.85, 0.85, 0.7 }, hostileTo = { pirate = true } },
         pirate   = { name = "Pirate",   color = { 1.0, 0.3, 0.25 },
                      hostileTo = { player = true, security = true, trader = true } },
     },
 
     -- How dangerous each star system is (galaxy map colour, arrival banner,
-    -- and which NPCs it has). The first system is `homeLevel`; the others
-    -- are picked by weight, with the weights moving toward the dangerous end
-    -- with jumps from home (`distanceBias` per jump).
+    -- and which NPCs it has: ships per role of Config.game.npc.roles; escorts
+    -- come with the ships they guard). The first system is `homeLevel`; the
+    -- others are picked by weight, with the weights moving toward the
+    -- dangerous end with jumps from home (`distanceBias` per jump).
     hostility = {
         homeLevel    = 1,
         distanceBias = 0.6,
         levels = {
-            { name = "Secure", description = "Security patrols. Pirates are rarely seen.",    color = { 0.35, 0.75, 1.0 }, weight = 3,
-              npcs = { security = 3, trader = 3, pirate = 0 } },
-            { name = "Guarded", description = "Patrolled. Expect the odd pirate.",   color = { 0.45, 0.9, 0.5 },  weight = 3,
-              npcs = { security = 2, trader = 2, pirate = 1 } },
-            { name = "Contested", description = "Pirates and security fight over this system.", color = { 1.0, 0.75, 0.25 }, weight = 2,
-              npcs = { security = 1, trader = 1, pirate = 3 } },
-            { name = "Lawless", description = "No security. Pirates attack on sight.",   color = { 1.0, 0.3, 0.25 },  weight = 1,
-              npcs = { security = 0, trader = 1, pirate = 5 } },
+            { name = "Secure", description = "Security patrols. Pirates are rarely seen.",
+              color = { 0.35, 0.75, 1.0 }, weight = 3,
+              npcs = { security = 3, trader = 3, pirate = 0, pirateMerchant = 0 } },
+            { name = "Guarded", description = "Patrolled. Expect the odd pirate.",
+              color = { 0.45, 0.9, 0.5 },  weight = 3,
+              npcs = { security = 2, trader = 2, pirate = 1, pirateMerchant = 0 } },
+            { name = "Contested", description = "Pirates and security fight over this system.",
+              color = { 1.0, 0.75, 0.25 }, weight = 2,
+              npcs = { security = 1, trader = 1, pirate = 3, pirateMerchant = 1 } },
+            { name = "Lawless", description = "No security. Pirates attack on sight.",
+              color = { 1.0, 0.3, 0.25 },  weight = 1,
+              npcs = { security = 0, trader = 1, pirate = 4, pirateMerchant = 2 } },
         },
     },
 
-    -- NPC ships (Modules/NPC). Speeds in game units/s (the player's ship
-    -- tops out at ~0.9 without boost), accel in units/s², turn as a rate.
+    -- NPC ships (Modules/NPC), by role: each role is a faction's kind of ship
+    -- with its job (NPC/Jobs/Think). Speeds in game units/s (the player's
+    -- ship tops out at ~0.9 without boost), accel in units/s², turn as a rate.
+    --   faction     Config.game.factions entry (who it fights, its colour)
+    --   label       shown on the ship and the maps
+    --   gunship     armed (GunshipRecipe); otherwise an unarmed hauler
+    --   detectRange armed ships attack hostiles this close
+    --   fleeFrom, fleeRange   haulers run from these factions this close
+    --   stops       haulers' trade stops: "stations" or "hideouts" (gates, belts, planets)
+    --   escorts     {min, max, role}: ships of `role` guarding each one
     npc = {
-        pirate = {
-            gunship = true, scale = 0.025, sizeClass = "medium",
-            maxHealth = 500, maxShield = 80, shieldRegen = 6,
-            maxSpeed = 0.7, accel = 0.25, turnRate = 1.2,
-            detectRange = 6.0, -- looks for prey this close
+        roles = {
+            security = {
+                faction = "security", label = "Security",
+                gunship = true, scale = 0.03, sizeClass = "medium",
+                maxHealth = 700, maxShield = 150, shieldRegen = 10,
+                maxSpeed = 0.6, accel = 0.2, turnRate = 1.0,
+                detectRange = 7.0,
+            },
+            trader = {
+                faction = "trader", label = "Trader",
+                gunship = false, hull = 3, scale = 0.035, sizeClass = "medium",
+                maxHealth = 400, maxShield = 60, shieldRegen = 4,
+                maxSpeed = 0.4, accel = 0.12, turnRate = 0.8,
+                fleeFrom = { "pirate" }, fleeRange = 3.0,
+                stops = "stations",
+                escorts = { min = 0, max = 2, role = "mercenary" },
+            },
+            mercenary = {
+                faction = "trader", label = "Mercenary",
+                gunship = true, scale = 0.022, sizeClass = "medium",
+                maxHealth = 450, maxShield = 100, shieldRegen = 8,
+                -- A little faster than the haulers, to keep up and catch up
+                maxSpeed = 0.55, accel = 0.25, turnRate = 1.3,
+                detectRange = 5.0,
+                -- Guards stay this close to their charge (chasing no further)
+                leash = 4.0,
+            },
+            pirate = {
+                faction = "pirate", label = "Pirate",
+                gunship = true, scale = 0.025, sizeClass = "medium",
+                maxHealth = 500, maxShield = 80, shieldRegen = 6,
+                maxSpeed = 0.7, accel = 0.25, turnRate = 1.2,
+                detectRange = 6.0,
+            },
+            pirateMerchant = {
+                faction = "pirate", label = "Pirate merchant",
+                gunship = false, hull = 3, scale = 0.03, sizeClass = "medium",
+                maxHealth = 350, maxShield = 40, shieldRegen = 3,
+                maxSpeed = 0.45, accel = 0.14, turnRate = 0.9,
+                fleeFrom = { "security", "player" }, fleeRange = 3.5,
+                stops = "hideouts",
+                escorts = { min = 0, max = 1, role = "pirate" },
+            },
         },
-        security = {
-            gunship = true, scale = 0.03, sizeClass = "medium",
-            maxHealth = 700, maxShield = 150, shieldRegen = 10,
-            maxSpeed = 0.6, accel = 0.2, turnRate = 1.0,
-            detectRange = 7.0,
-        },
-        trader = {
-            gunship = false, hull = 3, scale = 0.035, sizeClass = "medium",
-            maxHealth = 400, maxShield = 60, shieldRegen = 4,
-            maxSpeed = 0.4, accel = 0.12, turnRate = 0.8,
-            fleeRange = 3.0, -- runs from pirates this close
-        },
-        -- An NPC whose last order ended keeps the system busy: every
-        -- `replenishInterval` seconds one missing ship (below the level's
-        -- count) arrives through a gate.
+        -- Every `replenishInterval` seconds one missing ship (below the
+        -- level's count) arrives through a gate, with its escorts.
         replenishInterval = 45,
         -- A destroyed NPC's wreck goes after its explosion.
         wreckTime = 3.0,
-        -- How far apart a system's NPCs start, and from their spot.
+        -- How far a system's NPCs start from their spot.
         spawnSpread = 1.5,
     },
 

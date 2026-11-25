@@ -501,6 +501,12 @@ function LimitTheoryRedux:currentHostility()
     return levels[index], index
 end
 
+--- The NPC ships for the system maps ({entity, label, color} each).
+---@return table[]
+function LimitTheoryRedux:mapNpcs()
+    return self.npcs and self.npcs:mapEntries() or {}
+end
+
 --- The NPC ships the current system's hostility calls for.
 function LimitTheoryRedux:populateSystem()
     self.npcs:clear()
@@ -554,8 +560,8 @@ function LimitTheoryRedux:collectSceneSystems()
     GravityWellSystem:collectZones(self.universe)
     self.mapState._entityListBuilt = false
     self.mapState._dotCache = nil
-    SystemMap:collectEntities(self.mapState, self.universe, self.playerShip)
-    SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip)
+    SystemMap:collectEntities(self.mapState, self.universe, self.playerShip, self:mapNpcs())
+    SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip, self:mapNpcs())
 end
 
 --- Generate the universe through UniverseManager + SolarSystemVisualizer.
@@ -1386,7 +1392,7 @@ function LimitTheoryRedux:onRender(data)
     UIViewInGame:setHudShown(not self.hudHidden and self.mapMode ~= 2)
 
     if self.mapMode == 2 then
-        SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip)
+        SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip, self:mapNpcs())
         SystemMap3D:render(self.map3DState, data)
 
         self:immediateUI(function()
@@ -1453,7 +1459,7 @@ function LimitTheoryRedux:onRender(data)
                     self.mapState.autopilotPos = nil
                     self.mapState.autopilotTargetPos = nil
                 end
-                SystemMap:collectEntities(self.mapState, self.universe, self.playerShip)
+                SystemMap:collectEntities(self.mapState, self.universe, self.playerShip, self:mapNpcs())
                 SystemMap:draw(self.mapState, 0, 0, Window:width(), Window:height())
             end
             self:drawMapFrame()
@@ -1516,10 +1522,10 @@ function LimitTheoryRedux:onInput(data)
         if self.mapMode == 1 then
             self.mapState._entityListBuilt = false
             self.mapState._dotCache = nil
-            SystemMap:collectEntities(self.mapState, self.universe, self.playerShip)
+            SystemMap:collectEntities(self.mapState, self.universe, self.playerShip, self:mapNpcs())
             CursorManager:free()
         elseif self.mapMode == 2 then
-            SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip)
+            SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip, self:mapNpcs())
             SystemMap3D:activate(self.map3DState)
         else
             SystemMap3D:deactivate(self.map3DState)

@@ -44,9 +44,8 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    Transport, Think; actions MoveTo, Wait, Attack, Flee, LeaveSystem); the player flies an
    armed gunship. Still to do:
    - [ ] Confirm the gunship recipe builds and the fights play well (untested at the time).
-   - [ ] NPC ships on the 2D/3D system maps.
    - [ ] Manual fire and target lock for the player (turrets only fire automatically).
-   - [ ] Port the rest of Legacy's AI: Escort, Orbit, DockAt/Undock (needs docking),
+   - [ ] Port the rest of Legacy's AI: Orbit, DockAt/Undock (needs docking),
          MineAt and Mine (needs mining), CriminalThink's black-market jobs (needs economy).
    - [ ] Jobs chosen by payout and threat, as Legacy's Think did, once there is an economy.
    - [ ] Respawn or a way back after the player's ship is destroyed (now: GAME OVER).

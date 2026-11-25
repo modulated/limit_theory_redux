@@ -16,7 +16,7 @@ local Component = require("Core.ECS.Component")
 local PilotComponent = Subclass("PilotComponent", Component, function(self, faction, stats)
     self:setComponentName("NPCPilot")
     self.faction = faction
-    self.stats = stats -- Config.game.npc[faction]
+    self.stats = stats -- Config.game.npc.roles[role]
     self.actions = {}
     self.velocity = { x = 0, y = 0, z = 0 }
     self.goal = nil

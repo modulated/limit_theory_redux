@@ -51,7 +51,8 @@ end
 ---@param state table
 ---@param rootEntity Entity
 ---@param shipEntity Entity|nil
-function SystemMap:collectEntities(state, rootEntity, shipEntity)
+---@param npcEntries table[]|nil the NPC ships ({entity, label, color}), refreshed every call
+function SystemMap:collectEntities(state, rootEntity, shipEntity, npcEntries)
     -- Full tree walk only on first call or explicit invalidation
     if not state._entityListBuilt then
         state.entities = {}
@@ -75,6 +76,39 @@ function SystemMap:collectEntities(state, rootEntity, shipEntity)
             end
         end
         state._entityListBuilt = true
+        state._staticCount = #state.entities
+        state._npcEntries = {}
+    end
+
+    -- NPC ships come and go: after the static entries, refreshed every call.
+    -- Each ship keeps its entry table, so a selection of it holds; a
+    -- selected ship that is gone is deselected.
+    for i = #state.entities, (state._staticCount or #state.entities) + 1, -1 do
+        state.entities[i] = nil
+    end
+    local live = {}
+    for _, npc in ipairs(npcEntries or {}) do
+        local entry = state._npcEntries[npc.entity]
+        if not entry then
+            entry = { entity = npc.entity, isNpc = true, size = 4, labelPriority = 30 }
+            state._npcEntries[npc.entity] = entry
+        end
+        local rbCmp = npc.entity:get(PhysicsComponents.RigidBody)
+        local body = rbCmp and rbCmp:getRigidBody()
+        if body then
+            entry.label = npc.label
+            entry.color = npc.color
+            entry.pos = body:getPos()
+            entry.scale = body:getBoundingRadius()
+            live[npc.entity] = entry
+            table.insert(state.entities, entry)
+        end
+    end
+    for entity in pairs(state._npcEntries) do
+        if not live[entity] then state._npcEntries[entity] = nil end
+    end
+    if state.selected and state.selected.isNpc and not live[state.selected.entity] then
+        state.selected = nil
     end
 
     -- Cheap per-frame position update (no tree walk)
@@ -626,7 +660,7 @@ function SystemMap:draw(state, x, y, sx, sy)
             local isSelected = state.selected ~= nil and state.selected.entity == entry.entity
             MapLabels.add(labels, {
                 text = entry.label, x = screenX, y = screenY, anchor = ps / 2 + (isSelected and 6 or 0),
-                priority = MapLabels.priorityOf(entry.entity),
+                priority = entry.labelPriority or MapLabels.priorityOf(entry.entity),
                 always = isSelected,
                 color = { c[1], c[2], c[3], 0.9 },
             })

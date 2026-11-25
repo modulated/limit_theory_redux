@@ -148,26 +148,76 @@ end
 function NpcSystem:isFighting(npc) return stackHas(npc, "isAttack") end
 function NpcSystem:isFleeing(npc) return stackHas(npc, "isFlee") end
 
+--- Whether a guard's charge is still there to guard (alive, in the system).
+---@param charge table|nil a record
+function NpcSystem:isGuarding(charge)
+    return charge ~= nil and not charge.dead and not charge.removed and not charge.pilot.leaving
+end
+
+-- Where guards keep station, in the charge's frame (forward is -Z): beside
+-- it and a little behind, alternating sides
+local function guardSlot(index)
+    local side = (index % 2 == 1) and -1 or 1
+    local row = math.ceil(index / 2)
+    return { x = side * 0.6 * row, y = 0.12, z = 0.45 * row }
+end
+
+--- A guard starts guarding a ship.
+---@param guard table record
+---@param charge table record
+function NpcSystem:assignGuard(guard, charge)
+    charge.guards = charge.guards or {}
+    table.insert(charge.guards, guard)
+    guard.isGuard = true
+    guard.charge = charge
+    guard.slot = guardSlot(#charge.guards)
+end
+
+--- The nearest hauler of the guard's faction that has room for another
+--- guard (its role's escort count), or nil.
+---@param guard table record
+---@return table|nil
+function NpcSystem:findUnguarded(guard)
+    local best, bestDist = nil, math.huge
+    for _, record in ipairs(self.records) do
+        local escorts = record.pilot.stats.escorts
+        if record ~= guard and record.faction == guard.faction and escorts
+            and self:isGuarding(record) then
+            local live = 0
+            for _, g in ipairs(record.guards or {}) do
+                if not g.dead and not g.removed then live = live + 1 end
+            end
+            if live < escorts.max then
+                local d = self:distance(guard, record.body:getPos())
+                if d < bestDist then best, bestDist = record, d end
+            end
+        end
+    end
+    return best
+end
+
 -------------------------------------------------------------------------------
 -- Ships
 
---- Build an NPC ship and its pilot. A ship that fails to build is logged
---- and skipped: the game goes on without it.
----@param faction string
+--- Build an NPC ship of a role (Config.game.npc.roles) and its pilot. A
+--- ship that fails to build is logged and skipped: the game goes on without
+--- it.
+---@param role string
 ---@param position table {x, y, z}
 ---@param seed integer
 ---@return table|nil record
-function NpcSystem:spawn(faction, position, seed)
-    local stats = Config.game.npc[faction]
+function NpcSystem:spawn(role, position, seed)
+    local stats = Config.game.npc.roles[role]
     if not stats then
-        Log.Warn("NPC: no ship stats for faction %s", tostring(faction))
+        Log.Warn("NPC: no role %s in Config.game.npc.roles", tostring(role))
         return nil
     end
+    local faction = stats.faction
     local game = self.game
     local sizeClass = SIZE_CLASS[stats.sizeClass] or Enums.Target.SizeClass.Medium
 
     local ok, result = pcall(function()
-        local record = { faction = faction }
+        local record = { faction = faction, role = role }
         if stats.gunship then
             local construction = ArmedShipBuilder:build(GunshipRecipe.build(seed, faction, stats), {
                 constructManager = game.constructManager,
@@ -183,7 +233,7 @@ function NpcSystem:spawn(faction, position, seed)
             record.body = construction.shipBody
             record.entity:add(ConstructComponents.Targetable(faction, sizeClass))
             record.battery = game.weaponCombat:addBattery(WeaponBattery(construction, {
-                name = Factions.name(faction) .. " " .. self.spawnCount,
+                name = (stats.label or role) .. " " .. self.spawnCount,
                 aiActive = true,
                 team = faction,
                 hostileTeams = Factions.hostileTeams(faction),
@@ -211,14 +261,15 @@ function NpcSystem:spawn(faction, position, seed)
         return record
     end)
     if not ok then
-        Log.Error("NPC: could not build a %s ship (seed %s): %s", faction, tostring(seed), tostring(result))
+        Log.Error("NPC: could not build a %s (seed %s): %s", role, tostring(seed), tostring(result))
         return nil
     end
 
     local record = result
     self.spawnCount = self.spawnCount + 1
     local r, g, b = Factions.color(faction)
-    record.labelEntry = { entity = record.entity, label = Factions.name(faction), color = { r, g, b } }
+    record.label = stats.label or Factions.name(faction)
+    record.labelEntry = { entity = record.entity, label = record.label, color = { r, g, b } }
     table.insert(game.labeledEntities, record.labelEntry)
     table.insert(self.records, record)
     return record
@@ -227,6 +278,7 @@ end
 --- Remove an NPC ship now (its battery goes with it on the next weapons step).
 ---@param record table
 function NpcSystem:remove(record)
+    record.removed = true
     for i, r in ipairs(self.records) do
         if r == record then table.remove(self.records, i) break end
     end
@@ -242,13 +294,26 @@ function NpcSystem:remove(record)
     self.game.constructManager:destroy(record.handle)
 end
 
---- How many live NPCs of a faction the system has.
-function NpcSystem:count(faction)
+--- How many live NPCs of a role the system has (guards not counted: they
+--- come with their charges).
+function NpcSystem:count(role)
     local n = 0
     for _, record in ipairs(self.records) do
-        if record.faction == faction and not record.dead then n = n + 1 end
+        if record.role == role and not record.dead and not record.isGuard then n = n + 1 end
     end
     return n
+end
+
+--- The live NPCs as map entries: { entity, label, color }.
+---@return table[]
+function NpcSystem:mapEntries()
+    local list = {}
+    for _, record in ipairs(self.records) do
+        if not record.dead then
+            list[#list + 1] = { entity = record.entity, label = record.label, color = record.labelEntry.color }
+        end
+    end
+    return list
 end
 
 --- Remove every NPC (the scene is going).
@@ -270,12 +335,12 @@ function NpcSystem:near(pos, spread)
     return { x = pos.x + dir.x * r, y = pos.y + dir.y * r * 0.3, z = pos.z + dir.z * r }
 end
 
---- Where a ship of a faction starts: security and traders at stations,
---- pirates at gates and belts (where traffic passes).
-function NpcSystem:startingSpot(faction)
-    local places = self.places
+--- Where a ship of a role starts: haulers that stop at hideouts and armed
+--- pirates at gates and belts (where traffic passes); the rest at stations.
+function NpcSystem:startingSpot(role)
+    local places, stats = self.places, Config.game.npc.roles[role]
     local pool = {}
-    if faction == Factions.Pirate then
+    if stats.faction == Factions.Pirate then
         for _, gate in ipairs(places.gates) do pool[#pool + 1] = gate.position end
         for _, p in ipairs(places.pointsOfInterest) do pool[#pool + 1] = p end
     else
@@ -288,6 +353,25 @@ function NpcSystem:startingSpot(faction)
     return self:near(pool[self.rng:getInt(1, #pool)], Config.game.npc.spawnSpread)
 end
 
+--- A ship of a role and, if the role has escorts, its guards beside it.
+---@param role string
+---@param spot table {x, y, z}
+---@return table|nil record
+function NpcSystem:spawnWithEscorts(role, spot)
+    local record = self:spawn(role, spot, self.rng:get64())
+    local escorts = record and record.pilot.stats.escorts
+    if escorts then
+        for _ = 1, self.rng:getInt(escorts.min, escorts.max) do
+            local guard = self:spawn(escorts.role, self:near(spot, 0.6), self.rng:get64())
+            if guard then self:assignGuard(guard, record) end
+        end
+    end
+    return record
+end
+
+-- The roles in the order a system is filled and topped up
+local ROLES = { "security", "trader", "pirate", "pirateMerchant" }
+
 --- Fill the system with the NPCs its hostility level calls for.
 ---@param level table Config.game.hostility.levels[n]
 ---@param seed integer the system's seed
@@ -295,24 +379,31 @@ function NpcSystem:populate(level, seed)
     self.rng = RNG.Create(seed + 3)
     self.level = level
     self.replenish = Config.game.npc.replenishInterval
-    for _, faction in ipairs({ Factions.Security, Factions.Trader, Factions.Pirate }) do
-        for _ = 1, level.npcs[faction] or 0 do
-            local spot = self:startingSpot(faction)
-            if spot then self:spawn(faction, spot, self.rng:get64()) end
+    for _, role in ipairs(ROLES) do
+        for _ = 1, level.npcs[role] or 0 do
+            local spot = self:startingSpot(role)
+            if spot then self:spawnWithEscorts(role, spot) end
         end
     end
-    Log.Info("NPC: %s system: %d security, %d traders, %d pirates", level.name,
-        self:count(Factions.Security), self:count(Factions.Trader), self:count(Factions.Pirate))
+    local counts = {}
+    for _, record in ipairs(self.records) do
+        counts[record.role] = (counts[record.role] or 0) + 1
+    end
+    local parts = {}
+    for role, n in pairs(counts) do parts[#parts + 1] = string.format("%d %s", n, role) end
+    table.sort(parts)
+    Log.Info("NPC: %s system: %s", level.name, table.concat(parts, ", "))
 end
 
---- One missing ship (below the level's count) arrives through a gate.
+--- One missing ship (below the level's count) arrives through a gate, with
+--- its escorts.
 function NpcSystem:replenishOne()
     local level = self.level
     if not level or #self.places.gates == 0 then return end
-    for _, faction in ipairs({ Factions.Pirate, Factions.Trader, Factions.Security }) do
-        if self:count(faction) < (level.npcs[faction] or 0) then
+    for _, role in ipairs({ "pirate", "pirateMerchant", "trader", "security" }) do
+        if self:count(role) < (level.npcs[role] or 0) then
             local gate = self.places.gates[self.rng:getInt(1, #self.places.gates)]
-            self:spawn(faction, self:near(gate.position, gate.radius * 3), self.rng:get64())
+            self:spawnWithEscorts(role, self:near(gate.position, gate.radius * 3))
             return
         end
     end
@@ -406,7 +497,7 @@ function NpcSystem:update(dt)
                     top:onUpdate(record, self, dt)
                 end
                 steer(record, dt)
-                record.labelEntry.label = Factions.name(record.faction) .. " · " .. pilot:getActivity()
+                record.labelEntry.label = record.label .. " · " .. pilot:getActivity()
             end
         end
     end
@@ -418,6 +509,10 @@ function NpcSystem:update(dt)
             record.dead = record.dead - dt
             if record.dead <= 0 then self:remove(record) end
         elseif record.pilot.leaving then
+            -- Its guards jump out with it
+            for _, guard in ipairs(record.guards or {}) do
+                if not guard.dead and not guard.removed then guard.pilot.leaving = true end
+            end
             self:remove(record)
         end
     end
