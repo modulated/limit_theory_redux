@@ -14,6 +14,8 @@
 --   ruleset      the star system (default: Rulesets.SinglePlanetWithBelt)
 --   orbits       planets and moons move along their orbits (default: false)
 --   stations     the stations near planets (default: true)
+--   gates        the jump gates to the neighbouring star systems (default:
+--                true; scenarios without stations get none either)
 --   spawnShip(game)        where the player's ship starts: a Position, or nil
 --                          for the default (next to the belt rock nearest the
 --                          first planet)
@@ -34,7 +36,9 @@
 --
 -- `game` is the game state. What a scenario uses of it:
 --   game.world, game.constructManager, game.seed, game.rng, game.universe,
---   game.planets, game.starEntity, game.playerShip, game.player (the
+--   game.planets, game.starEntity, game.starSystem, game.galaxy (the
+--   systems and gate network, see Modules/Navigation), game.jumpGates,
+--   game.playerShip, game.player (the
 --   PlayerController), game.weaponCombat (runs armed ships: add a ship's
 --   WeaponBattery with game.weaponCombat:addBattery(battery); it is cleared
 --   with the scene), game.scenarioData (a table of the scenario's own, new
@@ -49,6 +53,7 @@
 ---@field ruleset Ruleset|nil
 ---@field orbits boolean|nil
 ---@field stations boolean|nil
+---@field gates boolean|nil
 ---@field spawnShip fun(game: table): Position|nil
 ---@field setup fun(game: table)|nil
 ---@field update fun(game: table, dt: number)|nil
@@ -68,6 +73,7 @@ local ids = {
     "ExplosionShowcase",
     "ShipShowcase",
     "StationShowcase",
+    "JumpGateShowcase",
     "MoonShowcase",
     "PlanetShowcase",
     "PhysicsTest",

@@ -150,6 +150,11 @@ function SystemMap:_walk(state, entity, parentPos, parentEntity)
             label = "Station"
             color = { 1.0, 0.5, 0.1 }
             pointSize = 4
+        elseif name:find("JumpGateEntity") then
+            local nameCmp = entity:get(CoreComponents.Name)
+            label = nameCmp and nameCmp:getName() or "Jump Gate"
+            color = { 0.35, 0.85, 1.0 }
+            pointSize = 4
         elseif name:find("AsteroidBeltEntity") then
             label = "Asteroid Belt"
             color = { 0.7, 0.5, 0.3 }

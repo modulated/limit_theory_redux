@@ -53,6 +53,9 @@ local SystemMap3D = require('Modules.CelestialObjects.Systems.SystemMap3D')
 local MemoryReporter = require('Modules.Profiling.MemoryReporter')
 local ConstructManager = require('Modules.Constructs.Managers.ConstructManager')
 local StationGenerator = require('Modules.Constructs.Managers.Generators.StationGenerator')
+local GalaxyGenerator = require('Modules.Navigation.Managers.GalaxyGenerator')
+local JumpGateGenerator = require('Modules.Navigation.Managers.JumpGateGenerator')
+local UniverseScaleConfig = require('Config.Gen.UniverseScaleConfig')
 local WeaponCombatSystem = require('Modules.Constructs.Systems.WeaponCombatSystem')
 local ExplosionEffectSystem = require('Modules.Constructs.Systems.ExplosionEffectSystem')
 
@@ -455,6 +458,10 @@ function LimitTheoryRedux:buildScene()
     else
         self.stations = {}
     end
+    self.jumpGates = {}
+    if self.scenario.gates ~= false and self.scenario.stations ~= false then
+        self:spawnJumpGates()
+    end
 end
 
 --- Run the scenario's setup (after the scene and the player controller exist).
@@ -490,6 +497,16 @@ function LimitTheoryRedux:generateUniverse(ruleset)
 
     -- Rebase all entities to star-system-local coordinates (near origin)
     self.systemOrigin = CoordinateRebaser:rebaseStarSystem(self.universe)
+    self.starSystem = nil
+    local universeChildren = self.universe:get(CoreComponents.Children)
+    if universeChildren then
+        for child in universeChildren:iterChildren() do
+            if tostring(child):find("StarSystemEntity") then
+                self.starSystem = child
+                break
+            end
+        end
+    end
 
     SolarSystemVisualizer:materialize(self.universe, self.world)
 
@@ -631,6 +648,18 @@ function LimitTheoryRedux:destroyScene(keepShip)
         Registry:destroyEntity(station, Enums.Registry.EntityDestroyMode.DestroyChildren)
     end
     self.stations = {}
+
+    -- The gates are children of the star system: the universe takes their
+    -- entities with it below, but their bodies have to leave the world first.
+    for _, gate in ipairs(self.jumpGates or {}) do
+        local rbCmp = gate.entity:get(PhysicsComponents.RigidBody)
+        if rbCmp and rbCmp:getRigidBody() then
+            self.world:removeRigidBody(rbCmp:getRigidBody())
+        end
+    end
+    self.jumpGates = {}
+    self.galaxy = nil
+    self.starSystem = nil
 
     if self.universe then
         Registry:destroyEntity(self.universe, Enums.Registry.EntityDestroyMode.DestroyChildren)
@@ -849,6 +878,43 @@ function LimitTheoryRedux:spawnStations()
 
         table.insert(self.stations, station)
         table.insert(self.labeledEntities, { entity = station, label = "Station " .. i })
+    end
+end
+
+--- The galaxy around this star system (the other systems and the gate
+--- network between them) and this system's jump gates, one per link,
+--- gathered at one or two planets or belts.
+function LimitTheoryRedux:spawnJumpGates()
+    if not self.starSystem then return end
+
+    -- Seeds of their own, next to the game seed (RNG.Create mixes the seed,
+    -- so neighbouring seeds give unrelated streams): the gates never change
+    -- the star system the game seed makes.
+    local galaxySeed = self.seed + 1
+    local gateSeed = self.seed + 2
+
+    self.galaxy = GalaxyGenerator:generate(galaxySeed, { position = self.systemOrigin },
+        UniverseScaleConfig.universe, Config.game.galaxy)
+    for _, line in ipairs(GalaxyGenerator:describe(self.galaxy)) do
+        Log.Info("Galaxy: %s", line)
+    end
+
+    self.jumpGates = JumpGateGenerator:createGates({
+        seed = gateSeed,
+        galaxy = self.galaxy,
+        systemId = 1,
+        starSystem = self.starSystem,
+        planets = self.planets or {},
+        belts = self.beltEntities or {},
+        star = self.starEntity,
+        world = self.world,
+        cfg = Config.game.jumpGates,
+    })
+    for _, gate in ipairs(self.jumpGates) do
+        table.insert(self.labeledEntities, {
+            entity = gate.entity,
+            label = "Gate to " .. gate.destination.name,
+        })
     end
 end
 

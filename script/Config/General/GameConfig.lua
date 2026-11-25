@@ -135,6 +135,43 @@ Config.game = {
         },
     },
 
+    -- The galaxy around the played star system: other systems as nodes, and
+    -- the jump-gate network between them (Modules/Navigation). Only the
+    -- played system is generated in full; the others are names, seeds and
+    -- positions until something travels there.
+    galaxy = {
+        systemCount       = { min = 10, max = 16 }, -- including the played system
+        -- Nodes closer than this fraction of the universe radius are re-rolled
+        -- (up to `placementTries` times), so systems don't clump.
+        minSeparation     = 0.25,
+        placementTries    = 30,
+        -- On top of the spanning tree that keeps every system reachable: links
+        -- to each system's nearest neighbours, while both ends have room.
+        nearestLinks      = 2,
+        maxLinksPerSystem = 4,
+        -- A neighbour farther than this many times the system's nearest one
+        -- gets no extra link (keeps the graph local; the tree still links it).
+        maxLinkStretch    = 2.5,
+    },
+
+    -- Jump gates in the played system, one per link of its node.
+    jumpGates = {
+        -- How many of the system's points of interest (planets, asteroid
+        -- belts) the gates gather at; the gates are shared out between them.
+        pointsOfInterest = { min = 1, max = 2 },
+        radius           = 0.4,  -- ring radius in game units (~4 km)
+        -- Distance from a planet, in planet radii (stations sit at 2.5).
+        planetDistance   = 4.0,
+        -- Distance from an asteroid belt's centre line, in belt widths.
+        beltDistance     = 0.75,
+        -- Distance from the star, in star radii, when the system has no
+        -- planets or belts.
+        starDistance     = 6.0,
+        -- Up or down from the point of interest's plane, as a fraction of
+        -- the distance above.
+        heightJitter     = 0.15,
+    },
+
     autoPilot = {
         arrivalRange      = 500,    -- distance to target to consider arrived
         travelDriveDelay  = 5.0,    -- seconds before auto-engaging travel drive
