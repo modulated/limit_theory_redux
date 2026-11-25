@@ -16,6 +16,10 @@
 --   stations     the stations near planets (default: true)
 --   gates        the jump gates to the neighbouring star systems (default:
 --                true; scenarios without stations get none either)
+--   combat       the travel game's combat (default: true; scenarios without
+--                stations get none either): NPC ships by the system's
+--                hostility (Modules/NPC), and the player flies an armed
+--                gunship
 --   spawnShip(game)        where the player's ship starts: a Position, or nil
 --                          for the default (next to the belt rock nearest the
 --                          first planet)
@@ -54,6 +58,7 @@
 ---@field orbits boolean|nil
 ---@field stations boolean|nil
 ---@field gates boolean|nil
+---@field combat boolean|nil
 ---@field spawnShip fun(game: table): Position|nil
 ---@field setup fun(game: table)|nil
 ---@field update fun(game: table, dt: number)|nil

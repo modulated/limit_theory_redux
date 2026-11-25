@@ -15,8 +15,9 @@
 ---                  render entity
 ---
 ---A battery engages the Targetable contacts within its engagement range,
----except its own ship and contacts of its own team. Ships without a
----Targetable component (the player's ship, for now) are never shot at.
+---except its own ship and contacts of its own team; a battery with
+---`hostileTeams` (a faction's) engages only contacts of those teams. Ships
+---without a Targetable component are never shot at.
 ---Batteries whose ship was destroyed are dropped on the next preUpdate.
 ---A contact that dies explodes where it was (Config.weapons.deathExplosion,
 ---by its size class); ExplosionEffectSystem ages the explosions and removes
@@ -195,7 +196,13 @@ local function selectCandidates(battery, live)
     local rangeSquared = battery.engagementRange * battery.engagementRange
     local shipId = battery.ship.id
     for _, record in ipairs(live) do
-        if record.id ~= shipId and (battery.team == nil or record.team ~= battery.team) then
+        local engages
+        if battery.hostileTeams then
+            engages = battery.hostileTeams[record.team] == true
+        else
+            engages = battery.team == nil or record.team ~= battery.team
+        end
+        if record.id ~= shipId and engages then
             local dx = record.position.x - origin.x
             local dy = record.position.y - origin.y
             local dz = record.position.z - origin.z
@@ -225,6 +232,18 @@ function WeaponCombatSystem:preUpdate(dt)
         selectCandidates(battery, live)
         battery:assignTargets()
         battery:syncTurretTransforms()
+    end
+end
+
+---Right after the physics step, before `update`: put every battery's turrets
+---back on their ships. preUpdate places them before the physics step, so a
+---ship the physics moved (the player's) would otherwise carry its turrets one
+---step behind, far behind under travel drive.
+function WeaponCombatSystem:syncTurrets()
+    for _, battery in ipairs(self.batteries) do
+        if battery:isValid() then
+            battery:syncTurretTransforms()
+        end
     end
 end
 

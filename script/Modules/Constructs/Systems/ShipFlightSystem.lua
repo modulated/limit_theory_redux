@@ -41,6 +41,15 @@ local function applyInversion(yaw, pitch)
     return yaw, pitch
 end
 
+--- How much a ship's turning torque is scaled: a bigger hull of the same
+--- mass turns slower (inertia grows with the radius squared), so a ship can
+--- carry a multiplier that keeps the reference fighter's feel
+--- (ShipFlightControl.torqueScale, set when the ship is built; default 1).
+local function torqueScale(shipEntity)
+    local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
+    return flightCtrl and flightCtrl.torqueScale or 1
+end
+
 --- Update ship from input.
 ---@param dt number
 ---@param shipEntity Entity
@@ -123,10 +132,11 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
 
     -- Apply torque in local space
     if math.max(math.max(math.abs(pitch), math.abs(yaw)), math.abs(roll)) > 1e-6 then
+        local k = torqueScale(shipEntity)
         local localTorque = Vec3f(
-            pitch * cfg.torquePitch,
-            -yaw  * cfg.torqueYaw,
-            -roll * cfg.torqueRoll * 0.5
+            pitch * cfg.torquePitch * k,
+            -yaw  * cfg.torqueYaw * k,
+            -roll * cfg.torqueRoll * 0.5 * k
         )
         rb:applyTorque(rot:mulV(localTorque))
     end
@@ -167,10 +177,11 @@ function ShipFlightSystem:updateSteeringOnly(dt, shipEntity, mouseAim, useDelta)
     local steerFactor = 0.1
     local rot = rb:getRot()
     if math.max(math.max(math.abs(pitch), math.abs(yaw)), math.abs(roll)) > 1e-6 then
+        local k = torqueScale(shipEntity) * steerFactor
         local localTorque = Vec3f(
-            pitch * cfg.torquePitch * steerFactor,
-            -yaw  * cfg.torqueYaw * steerFactor,
-            -roll * cfg.torqueRoll * 0.5 * steerFactor
+            pitch * cfg.torquePitch * k,
+            -yaw  * cfg.torqueYaw * k,
+            -roll * cfg.torqueRoll * 0.5 * k
         )
         rb:applyTorque(rot:mulV(localTorque))
     end

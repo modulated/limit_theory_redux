@@ -57,6 +57,11 @@ local GalaxyGenerator = require('Modules.Navigation.Managers.GalaxyGenerator')
 local JumpGateGenerator = require('Modules.Navigation.Managers.JumpGateGenerator')
 local JumpGateSystem = require('Modules.Navigation.Systems.JumpGateSystem')
 local GalaxyMap = require('Modules.Navigation.Systems.GalaxyMap')
+local NpcSystem = require('Modules.NPC.Systems.NpcSystem')
+local Factions = require('Modules.NPC.Factions')
+local GunshipRecipe = require('Modules.NPC.Managers.GunshipRecipe')
+local ArmedShipBuilder = require('Modules.Constructs.Managers.ArmedShipBuilder')
+local WeaponBattery = require('Modules.Constructs.Systems.WeaponBattery')
 local DrawEx = require('UI.DrawEx')
 local MapFrame = require('UI.MapFrame')
 local UniverseScaleConfig = require('Config.Gen.UniverseScaleConfig')
@@ -97,6 +102,8 @@ local SceneConfig = {
 -- Frames between tearing a scene down and building it again (Regenerate): the
 -- renderer keeps up to three frames in flight.
 local REBUILD_DELAY_FRAMES = 4
+-- Seconds the name and hostility of a system just entered stay on screen
+local SYSTEM_BANNER_TIME = 6.0
 
 local function releaseGpuMemory()
     collectgarbage('collect')
@@ -403,6 +410,8 @@ function LimitTheoryRedux:startGame(seed, scenario)
     self.constructManager = ConstructManager(Registry, self.world)
     -- Every armed ship's weapons (WeaponBattery) run through this
     self.weaponCombat = WeaponCombatSystem(self.world)
+    -- The star system's NPC ships (combat scenarios only)
+    self.npcs = NpcSystem(self)
     RenderCoreSystem:setDebugPhysics(self.world)
 
     self:createSkybox()
@@ -470,6 +479,52 @@ function LimitTheoryRedux:buildScene()
         self:spawnJumpGates()
     end
     self.gateWatch = JumpGateSystem:watch(self.jumpGates)
+    self:populateSystem()
+    -- The system's banner at the start of a game too
+    self.systemBanner = self.galaxy and SYSTEM_BANNER_TIME or nil
+end
+
+--- Whether this is the travel game (the star-system scenarios): stations,
+--- gates, NPCs, combat and the player's gunship. The showcases and tests
+--- leave it out.
+---@return boolean
+function LimitTheoryRedux:isTravelGame()
+    return self.scenario ~= nil and self.scenario.stations ~= false and self.scenario.combat ~= false
+end
+
+--- The current system's hostility level (Config.game.hostility.levels).
+---@return table|nil level, integer|nil index
+function LimitTheoryRedux:currentHostility()
+    local levels = Config.game.hostility.levels
+    local system = self.galaxy and self.galaxy.systems[self.currentSystemId]
+    local index = system and system.hostility or Config.game.hostility.homeLevel
+    return levels[index], index
+end
+
+--- The NPC ships the current system's hostility calls for.
+function LimitTheoryRedux:populateSystem()
+    self.npcs:clear()
+    if not self:isTravelGame() then return end
+    local places = { stations = {}, gates = self.jumpGates or {}, pointsOfInterest = {} }
+    for _, station in ipairs(self.stations or {}) do
+        local rbCmp = station:get(PhysicsComponents.RigidBody)
+        if rbCmp and rbCmp:getRigidBody() then
+            table.insert(places.stations, rbCmp:getRigidBody():getPos())
+        end
+    end
+    for _, list in ipairs({ self.planets or {}, self.beltEntities or {} }) do
+        for _, entity in ipairs(list) do
+            local transform = entity:get(PhysicsComponents.Transform)
+            if transform then table.insert(places.pointsOfInterest, transform:getPos()) end
+        end
+    end
+    self.npcs:setPlaces(places)
+    self.npcs:setPlayer(self.playerShip)
+    local system = self.galaxy and self.galaxy.systems[self.currentSystemId]
+    local level = self:currentHostility()
+    if level then
+        self.npcs:populate(level, system and system.seed or self.seed)
+    end
 end
 
 --- A new game or a regenerated one starts in a new galaxy, in its first
@@ -647,6 +702,9 @@ function LimitTheoryRedux:destroyScene(keepShip)
     if self.weaponCombat then
         self.weaponCombat:clear()
     end
+    if self.npcs then
+        self.npcs:clear()
+    end
     -- Before the things it may follow go
     if self.player then
         self.player:setOrbitTarget(nil)
@@ -819,25 +877,36 @@ function LimitTheoryRedux:createPlayerShip(position, shipType, hullIdx, seed)
     local flightCfg = Config.game.shipFlight
     local hullCfg = Config.game.shipHulls
 
-    self.playerShipHandle = self.constructManager:createShip({
-        seed = seed,
-        shipType = shipType,
-        config = {
-            position = position,
-            scale = hullCfg.scale[hullIdx],
-            isKinematic = false,
-            -- The Legacy basic and capital generators size the hull by its
-            -- index; the fighter's has its own size
-            hull = shipType ~= Enums.ShipType.Fighter and hullIdx or nil,
-        },
-    })
+    -- The travel game: an armed gunship (its turrets engage hostile ships by
+    -- themselves). Anything else, or a gunship that fails to build: the
+    -- plain ship asked for.
+    self.playerBattery = nil
+    local gunship = self:isTravelGame() and Config.game.playerGunship.enabled
+        and self:buildPlayerGunship(position, seed)
+    if gunship then
+        self.playerShipHandle = gunship.shipHandle
+    else
+        self.playerShipHandle = self.constructManager:createShip({
+            seed = seed,
+            shipType = shipType,
+            config = {
+                position = position,
+                scale = hullCfg.scale[hullIdx],
+                isKinematic = false,
+                -- The Legacy basic and capital generators size the hull by its
+                -- index; the fighter's has its own size
+                hull = shipType ~= Enums.ShipType.Fighter and hullIdx or nil,
+            },
+        })
+    end
     self.playerShip = self.playerShipHandle.root
     -- What placeShipAtArrival rebuilds after a jump
     self.playerShipSpec = { shipType = shipType, hullIdx = hullIdx, seed = seed }
 
     self.playerShip:add(ConstructComponents.TravelDrive())
     self.playerShip:add(ConstructComponents.AutoPilot())
-    self.playerShip:add(ConstructComponents.ShipFlightControl())
+    local flightCtrl = ConstructComponents.ShipFlightControl()
+    self.playerShip:add(flightCtrl)
 
     local rbCmp = self.playerShip:get(PhysicsComponents.RigidBody)
     local rb = rbCmp:getRigidBody()
@@ -846,7 +915,53 @@ function LimitTheoryRedux:createPlayerShip(position, shipType, hullIdx, seed)
     rb:setFriction(0)
     rb:setSleepThreshold(0, 0)
 
+    if self:isTravelGame() then
+        -- NPCs see it, pirates shoot at it, and its death ends the game
+        self.playerShip:add(ConstructComponents.Targetable(Factions.Player, Enums.Target.SizeClass.Medium))
+        if self.npcs then self.npcs:setPlayer(self.playerShip) end
+    end
+    if gunship then
+        -- Turn like the fighter: torque scaled by the size difference
+        local turnScale = Config.game.playerGunship.turnScale
+        if turnScale == "auto" then
+            local ratio = rb:getBoundingRadius() / hullCfg.radius[hullIdx]
+            turnScale = math.max(1, math.min(400, ratio * ratio))
+        end
+        flightCtrl.torqueScale = turnScale
+        self.playerBattery = self.weaponCombat:addBattery(WeaponBattery(gunship, {
+            name = "Your ship",
+            aiActive = true,
+            team = Factions.Player,
+            hostileTeams = Factions.hostileTeams(Factions.Player),
+        }))
+    end
+
     Log.Info("Player ship spawned at (%.1f, %.1f, %.1f)", position.x, position.y, position.z)
+end
+
+--- The player's gunship (an ArmedShipBuilder construction), or nil if it
+--- could not be built (logged; the caller builds the plain ship instead).
+---@param position Position
+---@param seed integer
+---@return table|nil construction
+function LimitTheoryRedux:buildPlayerGunship(position, seed)
+    local cfg = Config.game.playerGunship
+    local ok, result = pcall(function()
+        return ArmedShipBuilder:build(GunshipRecipe.build(seed, Factions.Player, cfg), {
+            constructManager = self.constructManager,
+            shipConfig = {
+                position = position,
+                scale = cfg.scale,
+                isKinematic = false,
+            },
+        })
+    end)
+    if not ok then
+        Log.Error("Player gunship could not be built, flying the plain ship: %s", tostring(result))
+        return nil
+    end
+    result.shipBody:setCollidable(true)
+    return result
 end
 
 --- Swap the player's ship for a new one in the same place (a scenario's
@@ -931,10 +1046,14 @@ function LimitTheoryRedux:spawnJumpGates()
         world = self.world,
         cfg = Config.game.jumpGates,
     })
+    -- Each gate's label says, in its colour, how dangerous the other side is
+    local levels = Config.game.hostility.levels
     for _, gate in ipairs(self.jumpGates) do
+        local level = levels[gate.destination.hostility] or levels[1]
         table.insert(self.labeledEntities, {
             entity = gate.entity,
-            label = "Gate to " .. gate.destination.name,
+            label = string.format("Gate to %s · %s", gate.destination.name, level.name),
+            color = level.color,
         })
     end
 end
@@ -957,6 +1076,37 @@ function LimitTheoryRedux:assignRulesets()
                 pick = pick - choice.weight
                 if pick <= 0 or choice == choices[#choices] then
                     system.ruleset = Rulesets[choice.name]
+                    break
+                end
+            end
+        end
+    end
+    self:assignHostility()
+end
+
+--- Each galaxy system's hostility level (an index into
+--- Config.game.hostility.levels): the first system's is `homeLevel`; the
+--- others pick by weight, the weights leaning toward the dangerous levels
+--- the more jumps a system is from the first.
+function LimitTheoryRedux:assignHostility()
+    local cfg = Config.game.hostility
+    for _, system in ipairs(self.galaxy.systems) do
+        if system.id == 1 then
+            system.hostility = cfg.homeLevel
+        else
+            local route = GalaxyGenerator:route(self.galaxy, 1, system.id)
+            local jumps = route and #route or 1
+            local weights, total = {}, 0
+            for i, level in ipairs(cfg.levels) do
+                weights[i] = level.weight * (1 + cfg.distanceBias * jumps) ^ (i - 1)
+                total = total + weights[i]
+            end
+            local pick = RNG.Create(system.seed + 5):getUniformRange(0, total)
+            system.hostility = #cfg.levels
+            for i, w in ipairs(weights) do
+                pick = pick - w
+                if pick <= 0 then
+                    system.hostility = i
                     break
                 end
             end
@@ -1084,10 +1234,12 @@ function LimitTheoryRedux:finishJump()
     self:placeShipAtArrival(jump.from)
     self.player:setShip(self.playerShip)
     UIViewInGame:setPlayer(self.player)
+    self:populateSystem()
     self:collectSceneSystems()
 
     self.jump = nil
     self.jumpFade = Config.game.jumpGates.fadeTime
+    self.systemBanner = SYSTEM_BANNER_TIME
     self:continueCourse()
 end
 
@@ -1141,34 +1293,66 @@ function LimitTheoryRedux:closeMap()
     self.mapClosedFrame = true
 end
 
---- The navigation line under the HUD (gate in range, course) and the jump's
---- fade.
+--- The navigation overlay: the jump's fade, the banner of the system just
+--- entered (its name and how dangerous it is), and the lines under the HUD
+--- (the system and its hostility, a gate in range, the course).
 function LimitTheoryRedux:drawNavigation()
     local w, h = Window:width(), Window:height()
+    local levels = Config.game.hostility.levels
+    local font = 'Unageo-Medium'
 
     if self.jump or (self.jumpFade and self.jumpFade > 0) then
         local alpha = self.jump and 1.0 or math.min(1.0, self.jumpFade / Config.game.jumpGates.fadeTime)
         DrawEx.SimpleRect(0, 0, w, h, Color(0, 0, 0, alpha))
-        local name = self.jump and self.jump.name or self.galaxy.systems[self.currentSystemId].name
-        DrawEx.TextAlpha('Unageo-Medium', (self.jump and "Jumping to " or "") .. name, 24,
-            0, h * 0.45, w, 40, 0.6, 0.9, 1.0, alpha, 0.5, 0.5)
-        if self.jump then return end
+        if self.jump then
+            local destination = self.galaxy.systems[self.jump.to]
+            local level = levels[destination.hostility] or levels[1]
+            DrawEx.TextAlpha(font, "Jumping to " .. self.jump.name, 24,
+                0, h * 0.42, w, 40, 0.6, 0.9, 1.0, alpha, 0.5, 0.5)
+            DrawEx.TextAlpha(font, level.name:upper() .. " SPACE", 18,
+                0, h * 0.42 + 44, w, 30, level.color[1], level.color[2], level.color[3], alpha, 0.5, 0.5)
+            return
+        end
     end
 
-    if self.mapMode ~= 0 or self.hudHidden or self.pauseMenuOpen or not self.galaxy then return end
+    if not self.galaxy then return end
+    local level = self:currentHostility() or levels[1]
+    local c = level.color
+    local name = self.galaxy.systems[self.currentSystemId].name
+
+    -- The banner after arriving: fades out over its last second
+    if self.systemBanner and self.systemBanner > 0 and self.mapMode == 0 and not self.pauseMenuOpen then
+        local alpha = math.min(1.0, self.systemBanner)
+        local y = h * 0.16
+        DrawEx.SimpleRect(0, y - 12, w, 104, Color(0, 0, 0, 0.45 * alpha))
+        DrawEx.SimpleRect(0, y - 12, w, 2, Color(c[1], c[2], c[3], 0.8 * alpha))
+        DrawEx.SimpleRect(0, y + 90, w, 2, Color(c[1], c[2], c[3], 0.8 * alpha))
+        DrawEx.TextAlpha(font, name, 30, 0, y, w, 40, 1.0, 1.0, 1.0, alpha, 0.5, 0.5)
+        DrawEx.TextAlpha(font, level.name:upper() .. " SPACE", 20, 0, y + 40, w, 26,
+            c[1], c[2], c[3], alpha, 0.5, 0.5)
+        DrawEx.TextAlpha(font, level.description or "", 13, 0, y + 66, w, 20,
+            0.85, 0.85, 0.85, alpha, 0.5, 0.5)
+    end
+
+    if self.mapMode ~= 0 or self.hudHidden or self.pauseMenuOpen then return end
     local lines = {}
+    table.insert(lines, { text = string.format("%s  ·  %s", name, level.name), color = c })
     local gate = self:gateInRange()
     if gate then
-        table.insert(lines, "J: jump to " .. gate.destination.name)
+        local gl = levels[gate.destination.hostility] or levels[1]
+        table.insert(lines, {
+            text = string.format("J: jump to %s (%s)", gate.destination.name, gl.name),
+            color = { 0.6, 0.9, 1.0 },
+        })
     end
     if self.course and #self.course > 0 then
         local names = {}
         for _, id in ipairs(self.course) do table.insert(names, self.galaxy.systems[id].name) end
-        table.insert(lines, "Course: " .. table.concat(names, " > "))
+        table.insert(lines, { text = "Course: " .. table.concat(names, " > "), color = { 0.6, 0.9, 1.0 } })
     end
-    for i, text in ipairs(lines) do
-        DrawEx.TextAlpha('Unageo-Medium', text, 14, 0, h - 120 + (i - 1) * 20, w, 18,
-            0.6, 0.9, 1.0, 0.9, 0.5, 0.5)
+    for i, line in ipairs(lines) do
+        DrawEx.TextAlpha(font, line.text, 14, 0, h - 140 + (i - 1) * 20, w, 18,
+            line.color[1], line.color[2], line.color[3], 0.9, 0.5, 0.5)
     end
 end
 
@@ -1192,6 +1376,10 @@ function LimitTheoryRedux:onRender(data)
     if self.jumpFade then
         self.jumpFade = self.jumpFade - data:deltaTime()
         if self.jumpFade <= 0 then self.jumpFade = nil end
+    end
+    if self.systemBanner and not self.jump then
+        self.systemBanner = self.systemBanner - data:deltaTime()
+        if self.systemBanner <= 0 then self.systemBanner = nil end
     end
 
     -- The HUD text (In_Game view) hides with the HUD toggle and in the 3D map.
@@ -1443,6 +1631,8 @@ function LimitTheoryRedux:onStateSim(data)
     MemoryReporter:update(dt)
 
     self.player:update(dt)
+    -- NPC ships fly (kinematic) before the physics step, like scenario things
+    self.npcs:update(dt)
     if self.scenario.update then self.scenario.update(self, dt) end
     -- Weapons: targets and turrets before the physics step, AI, aim and
     -- firing right after it (shots in flight: onStatePostSim)
@@ -1450,6 +1640,7 @@ function LimitTheoryRedux:onStateSim(data)
     self.world:update(dt)
     self:updateJumps()
     if self.jump then return end -- the scene (and the scenario) just went
+    self.weaponCombat:syncTurrets()
     self.weaponCombat:update(dt)
     if self.scenario.postUpdate then self.scenario.postUpdate(self, dt) end
 end

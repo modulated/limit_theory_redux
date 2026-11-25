@@ -189,6 +189,78 @@ Config.game = {
         fadeTime         = 1.0,
     },
 
+    -- Factions (Modules/NPC/Factions.lua): a faction is also the ship's
+    -- Targetable team. `hostileTo`: the factions its ships attack.
+    factions = {
+        player   = { name = "You",      color = { 0.3, 1.0, 0.45 }, hostileTo = { pirate = true } },
+        security = { name = "Security", color = { 0.35, 0.65, 1.0 }, hostileTo = { pirate = true } },
+        trader   = { name = "Trader",   color = { 0.85, 0.85, 0.7 }, hostileTo = {} },
+        pirate   = { name = "Pirate",   color = { 1.0, 0.3, 0.25 },
+                     hostileTo = { player = true, security = true, trader = true } },
+    },
+
+    -- How dangerous each star system is (galaxy map colour, arrival banner,
+    -- and which NPCs it has). The first system is `homeLevel`; the others
+    -- are picked by weight, with the weights moving toward the dangerous end
+    -- with jumps from home (`distanceBias` per jump).
+    hostility = {
+        homeLevel    = 1,
+        distanceBias = 0.6,
+        levels = {
+            { name = "Secure", description = "Security patrols. Pirates are rarely seen.",    color = { 0.35, 0.75, 1.0 }, weight = 3,
+              npcs = { security = 3, trader = 3, pirate = 0 } },
+            { name = "Guarded", description = "Patrolled. Expect the odd pirate.",   color = { 0.45, 0.9, 0.5 },  weight = 3,
+              npcs = { security = 2, trader = 2, pirate = 1 } },
+            { name = "Contested", description = "Pirates and security fight over this system.", color = { 1.0, 0.75, 0.25 }, weight = 2,
+              npcs = { security = 1, trader = 1, pirate = 3 } },
+            { name = "Lawless", description = "No security. Pirates attack on sight.",   color = { 1.0, 0.3, 0.25 },  weight = 1,
+              npcs = { security = 0, trader = 1, pirate = 5 } },
+        },
+    },
+
+    -- NPC ships (Modules/NPC). Speeds in game units/s (the player's ship
+    -- tops out at ~0.9 without boost), accel in units/s², turn as a rate.
+    npc = {
+        pirate = {
+            gunship = true, scale = 0.025, sizeClass = "medium",
+            maxHealth = 500, maxShield = 80, shieldRegen = 6,
+            maxSpeed = 0.7, accel = 0.25, turnRate = 1.2,
+            detectRange = 6.0, -- looks for prey this close
+        },
+        security = {
+            gunship = true, scale = 0.03, sizeClass = "medium",
+            maxHealth = 700, maxShield = 150, shieldRegen = 10,
+            maxSpeed = 0.6, accel = 0.2, turnRate = 1.0,
+            detectRange = 7.0,
+        },
+        trader = {
+            gunship = false, hull = 3, scale = 0.035, sizeClass = "medium",
+            maxHealth = 400, maxShield = 60, shieldRegen = 4,
+            maxSpeed = 0.4, accel = 0.12, turnRate = 0.8,
+            fleeRange = 3.0, -- runs from pirates this close
+        },
+        -- An NPC whose last order ended keeps the system busy: every
+        -- `replenishInterval` seconds one missing ship (below the level's
+        -- count) arrives through a gate.
+        replenishInterval = 45,
+        -- A destroyed NPC's wreck goes after its explosion.
+        wreckTime = 3.0,
+        -- How far apart a system's NPCs start, and from their spot.
+        spawnSpread = 1.5,
+    },
+
+    -- The player's armed ship in the travel scenarios (those with stations):
+    -- a small gunship whose turrets engage hostile ships by themselves.
+    playerGunship = {
+        enabled = true,
+        scale = 0.02,
+        maxHealth = 1500, maxShield = 300, shieldRegen = 15,
+        -- Turning torque multiplier: "auto" keeps the fighter's turning feel
+        -- (scaled by (radius / fighter radius)², see ShipFlightSystem); a
+        -- number sets it directly, if the gunship turns too fast or slow.
+        turnScale = "auto",
+    },
+
     autoPilot = {
         arrivalRange      = 500,    -- distance to target to consider arrived
         travelDriveDelay  = 5.0,    -- seconds before auto-engaging travel drive

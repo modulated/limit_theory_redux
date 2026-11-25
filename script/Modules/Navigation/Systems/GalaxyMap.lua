@@ -91,6 +91,11 @@ local function toScreen(state, system, cx, cy)
            cy + (p.z - state.centerZ + state.panY) * state.zoom
 end
 
+--- A system's hostility level (Config.game.hostility.levels), or nil.
+local function hostilityOf(system)
+    return system.hostility and Config.game.hostility.levels[system.hostility] or nil
+end
+
 local function lightYears(gameUnits)
     local meters = gameUnits / UniverseScaleConfig.globalScale
     return meters / UniverseScaleConfig.units.LIGHT_YEAR_TO_METERS
@@ -188,17 +193,20 @@ function GalaxyMap:draw(state, x, y, sx, sy)
     for _, system in ipairs(galaxy.systems) do
         local px, py = toScreen(state, system, cx, cy)
         if px > x - 50 and px < x + sx + 50 and py > y - 50 and py < y + sy + 50 then
-            local c, size = COLORS.system, 6
-            if system.id == state.currentId then
-                c, size = COLORS.current, 10
-            elseif onRoute[system.id] then
-                c = COLORS.route
-            elseif state.visited[system.id] then
-                c = COLORS.visited
-            end
+            -- Coloured by hostility; visited systems bigger, where you
+            -- are biggest with a green ring, the route ringed in yellow
+            local level = hostilityOf(system)
+            local c = level and level.color or COLORS.system
+            local size = state.visited[system.id] and 8 or 6
+            if system.id == state.currentId then size = 10 end
             DrawEx.Rect(px - size / 2, py - size / 2, size, size, Color(c[1], c[2], c[3], 1.0))
+            if system.id == state.currentId then
+                DrawEx.Ring(px, py, size + 4, { r = 0.3, g = 1.0, b = 0.45, a = 1.0 }, true)
+            elseif onRoute[system.id] then
+                DrawEx.Ring(px, py, size + 4, { r = 1.0, g = 0.8, b = 0.3, a = 0.9 }, false)
+            end
             if system.id == state.selectedId then
-                DrawEx.Ring(px, py, size + 6, COLORS.selected, true)
+                DrawEx.Ring(px, py, size + 9, COLORS.selected, true)
             end
             local label = system.name
             if system.id == state.currentId then label = label .. "  (you are here)" end
@@ -213,7 +221,21 @@ function GalaxyMap:draw(state, x, y, sx, sy)
     end
     MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 
-    self:drawInfo(state, x + 10, y + sy - 150, 360)
+    self:drawInfo(state, x + 10, y + sy - 170, 360)
+    self:drawLegend(x + sx - 200, y + sy - 130)
+end
+
+--- What the colours mean, in the bottom-right corner.
+function GalaxyMap:drawLegend(x, y)
+    local levels = Config.game.hostility.levels
+    DrawEx.Rect(x - 8, y - 8, 196, 26 + #levels * 18, Color(0.1, 0.1, 0.12, 0.9))
+    DrawEx.TextAlpha(FONT, "Hostility", 12, x, y, 180, 16, 0.85, 0.85, 0.85, 0.9, 0.0, 0.5)
+    for i, level in ipairs(levels) do
+        local ly = y + 4 + i * 18
+        local c = level.color
+        DrawEx.Rect(x + 2, ly + 4, 8, 8, Color(c[1], c[2], c[3], 1.0))
+        DrawEx.TextAlpha(FONT, level.name, 11, x + 18, ly, 160, 16, c[1], c[2], c[3], 0.95, 0.0, 0.5)
+    end
 end
 
 --- The selected system (or the course) in the bottom-left corner.
@@ -229,15 +251,21 @@ function GalaxyMap:drawInfo(state, x, y, w)
 
     local system = galaxy.systems[id]
     local route = state.selectedId and state.route or state.course
-    DrawEx.Rect(x - 5, y - 5, w + 10, 140, Color(0.1, 0.1, 0.12, 0.9))
+    DrawEx.Rect(x - 5, y - 5, w + 10, 158, Color(0.1, 0.1, 0.12, 0.9))
     local lineH, ty = 18, y
     DrawEx.TextAlpha(FONT, system.name, 14, x, ty, w, lineH, 1.0, 0.8, 0.3, 1.0, 0.0, 0.5)
     ty = ty + lineH + 4
 
     local here = galaxy.systems[state.currentId]
-    local function line(text)
-        DrawEx.TextAlpha(FONT, text, 10, x, ty, w, lineH, 0.85, 0.85, 0.85, 0.85, 0.0, 0.5)
+    local function line(text, color)
+        local c = color or { 0.85, 0.85, 0.85 }
+        DrawEx.TextAlpha(FONT, text, 10, x, ty, w, lineH, c[1], c[2], c[3], 0.9, 0.0, 0.5)
         ty = ty + lineH
+    end
+
+    local level = hostilityOf(system)
+    if level then
+        line(string.format("%s: %s", level.name, level.description or ""), level.color)
     end
 
     if id == state.currentId then
@@ -249,9 +277,17 @@ function GalaxyMap:drawInfo(state, x, y, w)
             system.position.z - here.position.z
         line(string.format("Distance: %.0f ly", lightYears(math.sqrt(dx * dx + dy * dy + dz * dz))))
         line(string.format("Jumps: %d", #route))
-        local names = {}
-        for _, rid in ipairs(route) do table.insert(names, galaxy.systems[rid].name) end
+        local names, worst = {}, nil
+        for _, rid in ipairs(route) do
+            table.insert(names, galaxy.systems[rid].name)
+            local h = galaxy.systems[rid].hostility
+            if h and (not worst or h > worst) then worst = h end
+        end
         line("Route: " .. table.concat(names, " > "))
+        local worstLevel = worst and Config.game.hostility.levels[worst]
+        if worstLevel and #route > 1 then
+            line("Most dangerous stop: " .. worstLevel.name, worstLevel.color)
+        end
         if state.selectedId then
             line("N: set course")
         else

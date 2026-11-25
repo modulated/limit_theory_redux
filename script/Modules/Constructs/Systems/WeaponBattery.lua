@@ -57,6 +57,7 @@ end
 ---@class WeaponBatteryOptions
 ---@field name string|nil shown in logs and overlays (default: "battery")
 ---@field team string|nil contacts of this Targetable team are not engaged
+---@field hostileTeams string[]|nil when set, only contacts of these Targetable teams are engaged (factions)
 ---@field aiActive boolean|nil the weapon AI picks targets and fires (default: the control's own setting)
 ---@field targetPoint table|nil {motionAmplitude, motionFrequency, minFacingDot} for surface target points
 ---@field engagementRange number|nil contacts further away are ignored (default: twice the longest weapon range)
@@ -83,6 +84,13 @@ local WeaponBattery = Class("WeaponBattery", function(self, construction, option
     self.name = options.name or "battery"
     self.construction = construction
     self.team = options.team
+    -- Set of the teams this battery engages (nil: every team but its own)
+    if options.hostileTeams then
+        self.hostileTeams = {}
+        for _, team in ipairs(options.hostileTeams) do
+            self.hostileTeams[team] = true
+        end
+    end
     self.ship = construction.ship
     self.shipHandle = construction.shipHandle
     self.shipBody = construction.shipBody

@@ -39,9 +39,17 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    orders, prices, bank account) but no system runs trading. The old economy and AI jobs
    (mining, trading routes) are only in `script/Legacy/`; `script/Enums/JobEnums.lua` still
    describes them.
-7. **NPC behaviour.** NPCs only aim and fire (`AIWeaponSystem`). Flight behaviour (patrol,
-   orbit, move-to) and the "Think" decision logic exist only in `script/Legacy/` and need
-   porting to ECS systems.
+7. **NPCs and combat** (started: `script/Modules/NPC/`). Security, trader and pirate ships
+   by each system's hostility, flying jobs ported from Legacy (Patrolling, Marauding,
+   Transport, Think; actions MoveTo, Wait, Attack, Flee, LeaveSystem); the player flies an
+   armed gunship. Still to do:
+   - [ ] Confirm the gunship recipe builds and the fights play well (untested at the time).
+   - [ ] NPC ships on the 2D/3D system maps.
+   - [ ] Manual fire and target lock for the player (turrets only fire automatically).
+   - [ ] Port the rest of Legacy's AI: Escort, Orbit, DockAt/Undock (needs docking),
+         MineAt and Mine (needs mining), CriminalThink's black-market jobs (needs economy).
+   - [ ] Jobs chosen by payout and threat, as Legacy's Think did, once there is an economy.
+   - [ ] Respawn or a way back after the player's ship is destroyed (now: GAME OVER).
 8. **Scenario list.** The New Game test-seed list is a stopgap
    (`script/UI/HmGui/Views/MainMenu/Newgame.lua:15`).
 
