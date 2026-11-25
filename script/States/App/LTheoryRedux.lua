@@ -55,6 +55,9 @@ local ConstructManager = require('Modules.Constructs.Managers.ConstructManager')
 local StationGenerator = require('Modules.Constructs.Managers.Generators.StationGenerator')
 local GalaxyGenerator = require('Modules.Navigation.Managers.GalaxyGenerator')
 local JumpGateGenerator = require('Modules.Navigation.Managers.JumpGateGenerator')
+local JumpGateSystem = require('Modules.Navigation.Systems.JumpGateSystem')
+local GalaxyMap = require('Modules.Navigation.Systems.GalaxyMap')
+local DrawEx = require('UI.DrawEx')
 local UniverseScaleConfig = require('Config.Gen.UniverseScaleConfig')
 local WeaponCombatSystem = require('Modules.Constructs.Systems.WeaponCombatSystem')
 local ExplosionEffectSystem = require('Modules.Constructs.Systems.ExplosionEffectSystem')
@@ -402,6 +405,7 @@ function LimitTheoryRedux:startGame(seed, scenario)
     RenderCoreSystem:setDebugPhysics(self.world)
 
     self:createSkybox()
+    self:resetGalaxy()
     self:buildScene()
 
     -- Player controller owns camera modes, input routing, and ship reference
@@ -428,7 +432,8 @@ function LimitTheoryRedux:startGame(seed, scenario)
     self.mapState = SystemMap:create()
     self.map3DState = SystemMap3D:create()
     SystemMap3D:setSkybox(self.map3DState, self.skybox)
-    self.mapMode = 0  -- 0=off, 1=2D, 2=3D
+    self.galaxyMapState = GalaxyMap:create()
+    self.mapMode = 0  -- 0=off, 1=2D, 2=3D, 3=galaxy
 
     self:setupScenario()
     self:collectSceneSystems()
@@ -442,16 +447,17 @@ function LimitTheoryRedux:startGame(seed, scenario)
     UIPageGameplay:setView("In_Game")
 end
 
---- The skybox for `self.seed`: nebula, stars, light direction.
-function LimitTheoryRedux:createSkybox()
-    self.skybox = Skybox.Create(self.seed)
+--- The skybox for a seed (default `self.seed`): nebula, stars, light direction.
+---@param seed integer|nil
+function LimitTheoryRedux:createSkybox(seed)
+    self.skybox = Skybox.Create(seed or self.seed)
 end
 
 --- The star system, the player's ship and the stations, from the scenario.
 function LimitTheoryRedux:buildScene()
     self.sceneEntities = {}
     self.sceneConstructs = {}
-    self:generateUniverse(self.scenario.ruleset or Scenarios.default.ruleset)
+    self:generateUniverse(self.scenario.ruleset or Scenarios.default.ruleset, self.seed)
     self:spawnPlayerShip()
     if self.scenario.stations ~= false then
         self:spawnStations()
@@ -462,6 +468,17 @@ function LimitTheoryRedux:buildScene()
     if self.scenario.gates ~= false and self.scenario.stations ~= false then
         self:spawnJumpGates()
     end
+    self.gateWatch = JumpGateSystem:watch(self.jumpGates)
+end
+
+--- A new game or a regenerated one starts in a new galaxy, in its first
+--- system, with no course.
+function LimitTheoryRedux:resetGalaxy()
+    self.galaxy = nil
+    self.currentSystemId = 1
+    self.course = nil
+    self.jump = nil
+    if self.galaxyMapState then GalaxyMap:reset(self.galaxyMapState) end
 end
 
 --- Run the scenario's setup (after the scene and the player controller exist).
@@ -487,8 +504,9 @@ end
 
 --- Generate the universe through UniverseManager + SolarSystemVisualizer.
 ---@param ruleset Ruleset
-function LimitTheoryRedux:generateUniverse(ruleset)
-    self.universe = UniverseManager:createUniverse(ruleset, self.seed)
+---@param seed integer the star system's seed
+function LimitTheoryRedux:generateUniverse(ruleset, seed)
+    self.universe = UniverseManager:createUniverse(ruleset, seed)
 
     if not self.universe then
         Log.Error("Failed to generate universe!")
@@ -658,7 +676,7 @@ function LimitTheoryRedux:destroyScene(keepShip)
         end
     end
     self.jumpGates = {}
-    self.galaxy = nil
+    self.gateWatch = nil
     self.starSystem = nil
 
     if self.universe then
@@ -813,6 +831,8 @@ function LimitTheoryRedux:createPlayerShip(position, shipType, hullIdx, seed)
         },
     })
     self.playerShip = self.playerShipHandle.root
+    -- What placeShipAtArrival rebuilds after a jump
+    self.playerShipSpec = { shipType = shipType, hullIdx = hullIdx, seed = seed }
 
     self.playerShip:add(ConstructComponents.TravelDrive())
     self.playerShip:add(ConstructComponents.AutoPilot())
@@ -881,28 +901,28 @@ function LimitTheoryRedux:spawnStations()
     end
 end
 
---- The galaxy around this star system (the other systems and the gate
---- network between them) and this system's jump gates, one per link,
---- gathered at one or two planets or belts.
+--- The galaxy around the first star system (made once per game: jumps keep
+--- it) and the current system's jump gates, one per link, gathered at one or
+--- two planets or belts.
 function LimitTheoryRedux:spawnJumpGates()
     if not self.starSystem then return end
 
-    -- Seeds of their own, next to the game seed (RNG.Create mixes the seed,
-    -- so neighbouring seeds give unrelated streams): the gates never change
-    -- the star system the game seed makes.
-    local galaxySeed = self.seed + 1
-    local gateSeed = self.seed + 2
-
-    self.galaxy = GalaxyGenerator:generate(galaxySeed, { position = self.systemOrigin },
-        UniverseScaleConfig.universe, Config.game.galaxy)
-    for _, line in ipairs(GalaxyGenerator:describe(self.galaxy)) do
-        Log.Info("Galaxy: %s", line)
+    if not self.galaxy then
+        -- A seed of its own, next to the game seed (RNG.Create mixes the
+        -- seed, so neighbouring seeds give unrelated streams)
+        self.galaxy = GalaxyGenerator:generate(self.seed + 1, { position = self.systemOrigin },
+            UniverseScaleConfig.universe, Config.game.galaxy)
+        self:assignRulesets()
+        for _, line in ipairs(GalaxyGenerator:describe(self.galaxy)) do
+            Log.Info("Galaxy: %s", line)
+        end
     end
 
+    local system = self.galaxy.systems[self.currentSystemId]
     self.jumpGates = JumpGateGenerator:createGates({
-        seed = gateSeed,
+        seed = system.seed + 2,
         galaxy = self.galaxy,
-        systemId = 1,
+        systemId = system.id,
         starSystem = self.starSystem,
         planets = self.planets or {},
         belts = self.beltEntities or {},
@@ -915,6 +935,225 @@ function LimitTheoryRedux:spawnJumpGates()
             entity = gate.entity,
             label = "Gate to " .. gate.destination.name,
         })
+    end
+end
+
+--- Each galaxy system's seed and ruleset: the first is the game's own star
+--- system (the game seed, the scenario's ruleset); the others pick a ruleset
+--- by weight (Config.game.galaxy.rulesets) from their seed.
+function LimitTheoryRedux:assignRulesets()
+    local choices = Config.game.galaxy.rulesets
+    local total = 0
+    for _, choice in ipairs(choices) do total = total + choice.weight end
+
+    for _, system in ipairs(self.galaxy.systems) do
+        if system.id == 1 then
+            system.seed = self.seed
+            system.ruleset = self.scenario.ruleset or Scenarios.default.ruleset
+        else
+            local pick = RNG.Create(system.seed):getUniformRange(0, total)
+            for _, choice in ipairs(choices) do
+                pick = pick - choice.weight
+                if pick <= 0 or choice == choices[#choices] then
+                    system.ruleset = Rulesets[choice.name]
+                    break
+                end
+            end
+        end
+    end
+end
+
+--- Follow a route through the galaxy: autopilot to the gate of the next
+--- system on it; arriving there jumps (see `updateJumps`), and in each new
+--- system the course carries on until the last.
+---@param route integer[] the systems after the current one
+function LimitTheoryRedux:setCourse(route)
+    if not route or #route == 0 then
+        self.course = nil
+        return
+    end
+    self.course = route
+    self:continueCourse()
+end
+
+--- Autopilot to the gate of the course's next system, if there is one here.
+function LimitTheoryRedux:continueCourse()
+    if not self.course or #self.course == 0 or not self.gateWatch then
+        self.course = nil
+        return
+    end
+    local gate = JumpGateSystem:gateTo(self.gateWatch, self.course[1])
+    if not gate then
+        Log.Warn("Course: no gate to %s here", self.galaxy.systems[self.course[1]].name)
+        self.course = nil
+        return
+    end
+    AutoPilotSystem:engageEntity(self.playerShip, gate.entity,
+        Config.game.jumpGates.activationRange * 0.5)
+end
+
+--- Each simulation step: a jump when the ship flew through a gate, or when
+--- the course's autopilot brought it in range of the gate it heads for.
+function LimitTheoryRedux:updateJumps()
+    if self.jump or not self.gateWatch or #self.gateWatch.gates == 0 then return end
+    local rb = self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody()
+    local pos = rb:getPos()
+
+    local crossed = JumpGateSystem:update(self.gateWatch, pos)
+    if crossed then
+        self:startJump(crossed)
+        return
+    end
+
+    if self.course and #self.course > 0 then
+        local gate = JumpGateSystem:gateTo(self.gateWatch, self.course[1])
+        if gate and pos:distance(gate.position) < Config.game.jumpGates.activationRange then
+            self:startJump(gate)
+        end
+    end
+end
+
+--- The nearest gate, if it is close enough to jump through with J.
+---@return JumpGatePlacement|nil
+function LimitTheoryRedux:gateInRange()
+    if not self.gateWatch or not self.playerShip then return nil end
+    local pos = self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody():getPos()
+    local gate, dist = JumpGateSystem:nearest(self.gateWatch, pos)
+    if gate and dist < Config.game.jumpGates.activationRange then return gate end
+    return nil
+end
+
+--- Jump through a gate: the screen goes dark, this star system goes, and a
+--- few frames later (the GPU frees the old system's memory meanwhile) the
+--- destination is built and the ship arrives at its gate back.
+---@param gate JumpGatePlacement
+function LimitTheoryRedux:startJump(gate)
+    local from = self.currentSystemId
+    local to = gate.destination.id
+    Log.Info("Jump: %s -> %s", self.galaxy.systems[from].name, gate.destination.name)
+
+    if self.course and self.course[1] == to then
+        table.remove(self.course, 1)
+        if #self.course == 0 then self.course = nil end
+    elseif self.course then
+        self.course = nil -- flew off course
+    end
+    AutoPilotSystem:disengage(self.playerShip)
+
+    -- Close any map (a course can jump while one is open)
+    if self.mapMode ~= 0 then
+        SystemMap3D:deactivate(self.map3DState)
+        self.mapState.enabled = false
+        self.map3DState.enabled = false
+        self.galaxyMapState.enabled = false
+        self.mapMode = 0
+        self.mapClosedFrame = true
+    end
+
+    -- Leaving the scenario's own system ends the scenario: its things go
+    -- with the scene (destroyScene runs its teardown), and from the next
+    -- system on it is plain travel (finishJump).
+    self.jump = { from = from, to = to, name = gate.destination.name, frames = REBUILD_DELAY_FRAMES }
+    self:destroyScene(true)
+    if self.skybox then
+        Registry:destroyEntity(self.skybox, Enums.Registry.EntityDestroyMode.DestroyChildren)
+        self.skybox = nil
+    end
+    UIViewInGame:setPlayer(nil)
+end
+
+--- The second half of a jump: build the destination system around the ship.
+function LimitTheoryRedux:finishJump()
+    local jump = self.jump
+    local system = self.galaxy.systems[jump.to]
+    self.currentSystemId = jump.to
+
+    self.scenario = {
+        name = self.scenario.name,
+        ruleset = self.scenario.ruleset,
+        orbits = self.scenario.orbits,
+    }
+    UIViewInGame:setOverlayLines(nil)
+
+    self.rng = RNG.Create(system.seed)
+    self:createSkybox(system.seed)
+    SystemMap3D:setSkybox(self.map3DState, self.skybox)
+
+    self.sceneEntities = {}
+    self.sceneConstructs = {}
+    self:generateUniverse(system.ruleset, system.seed)
+    self:spawnStations()
+    self:spawnJumpGates()
+    self.gateWatch = JumpGateSystem:watch(self.jumpGates)
+
+    self:placeShipAtArrival(jump.from)
+    self.player:setShip(self.playerShip)
+    UIViewInGame:setPlayer(self.player)
+    self:collectSceneSystems()
+
+    self.jump = nil
+    self.jumpFade = Config.game.jumpGates.fadeTime
+    self:continueCourse()
+end
+
+--- Put the player's ship (a new one of the same kind: it arrives at rest)
+--- just outside the gate that leads back to `fromId`, on the far side from
+--- that system, facing away from the gate.
+---@param fromId integer
+function LimitTheoryRedux:placeShipAtArrival(fromId)
+    local cfg = Config.game.jumpGates
+    local gate = JumpGateSystem:gateTo(self.gateWatch, fromId)
+    local position, facing
+    if gate then
+        local a, d = gate.axis, gate.radius * cfg.arrivalDistance
+        position = Position(gate.position.x - a.x * d, gate.position.y - a.y * d, gate.position.z - a.z * d)
+        facing = Vec3f(-a.x, -a.y, -a.z)
+    else
+        position = self:defaultShipSpawn()
+    end
+
+    local spec = self.playerShipSpec
+    if self.player:getOrbitTarget() == self.playerShip then
+        self.player:setOrbitTarget(nil)
+    end
+    self.constructManager:destroy(self.playerShipHandle)
+    self:createPlayerShip(position, spec.shipType, spec.hullIdx, spec.seed)
+
+    if facing then
+        local up = math.abs(facing.y) > 0.99 and Vec3f(1, 0, 0) or Vec3f(0, 1, 0)
+        self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody():setRot(Quat.FromLookUp(facing, up))
+    end
+    JumpGateSystem:reset(self.gateWatch)
+end
+
+--- The navigation line under the HUD (gate in range, course) and the jump's
+--- fade.
+function LimitTheoryRedux:drawNavigation()
+    local w, h = Window:width(), Window:height()
+
+    if self.jump or (self.jumpFade and self.jumpFade > 0) then
+        local alpha = self.jump and 1.0 or math.min(1.0, self.jumpFade / Config.game.jumpGates.fadeTime)
+        DrawEx.SimpleRect(0, 0, w, h, Color(0, 0, 0, alpha))
+        local name = self.jump and self.jump.name or self.galaxy.systems[self.currentSystemId].name
+        DrawEx.TextAlpha('Unageo-Medium', (self.jump and "Jumping to " or "") .. name, 24,
+            0, h * 0.45, w, 40, 0.6, 0.9, 1.0, alpha, 0.5, 0.5)
+        if self.jump then return end
+    end
+
+    if self.mapMode ~= 0 or self.hudHidden or self.pauseMenuOpen or not self.galaxy then return end
+    local lines = {}
+    local gate = self:gateInRange()
+    if gate then
+        table.insert(lines, "J: jump to " .. gate.destination.name)
+    end
+    if self.course and #self.course > 0 then
+        local names = {}
+        for _, id in ipairs(self.course) do table.insert(names, self.galaxy.systems[id].name) end
+        table.insert(lines, "Course: " .. table.concat(names, " > "))
+    end
+    for i, text in ipairs(lines) do
+        DrawEx.TextAlpha('Unageo-Medium', text, 14, 0, h - 120 + (i - 1) * 20, w, 18,
+            0.6, 0.9, 1.0, 0.9, 0.5, 0.5)
     end
 end
 
@@ -935,6 +1174,10 @@ function LimitTheoryRedux:onRender(data)
     end
 
     CelestialLightingSystem:update(self.starEntity)
+    if self.jumpFade then
+        self.jumpFade = self.jumpFade - data:deltaTime()
+        if self.jumpFade <= 0 then self.jumpFade = nil end
+    end
 
     -- The HUD text (In_Game view) hides with the HUD toggle and in the 3D map.
     UIViewInGame:setHudShown(not self.hudHidden and self.mapMode ~= 2)
@@ -986,6 +1229,11 @@ function LimitTheoryRedux:onRender(data)
                 WorldLabelRenderSystem:draw(asteroidLabels, 20000)
             end
 
+            self:drawNavigation()
+            if self.mapMode == 3 then
+                GalaxyMap:draw(self.galaxyMapState, 0, 0, Window:width(), Window:height())
+            end
+
             if self.mapMode == 1 then
                 local ap = self.playerShip:get(ConstructComponents.AutoPilot)
                 if ap and ap:isActive() then
@@ -1021,6 +1269,14 @@ function LimitTheoryRedux:onInput(data)
         end
     end
 
+    if self.jump then
+        self.jump.frames = self.jump.frames - 1
+        if self.jump.frames <= 0 then
+            self:finishJump()
+        end
+        return
+    end
+
     if not self.playerShip then return end
     local dt = data:deltaTime()
 
@@ -1041,11 +1297,14 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.AutoPilotToggle:update(dt)
     GeneralActions.Regenerate:update(dt)
     GeneralActions.ReloadShaders:update(dt)
+    GeneralActions.Jump:update(dt)
 
     if GeneralActions.CycleMapMode:isPressed() then
-        self.mapMode = (self.mapMode + 1) % 3
+        -- 2D map, 3D map, then the galaxy map when there is a galaxy
+        self.mapMode = (self.mapMode + 1) % (self.galaxy and 4 or 3)
         self.mapState.enabled = (self.mapMode == 1)
         self.map3DState.enabled = (self.mapMode == 2)
+        self.galaxyMapState.enabled = (self.mapMode == 3)
 
         if self.mapMode == 1 then
             self.mapState._entityListBuilt = false
@@ -1057,7 +1316,12 @@ function LimitTheoryRedux:onInput(data)
             SystemMap3D:activate(self.map3DState)
         else
             SystemMap3D:deactivate(self.map3DState)
-            self.mapClosedFrame = true
+            if self.mapMode == 3 then
+                GalaxyMap:open(self.galaxyMapState, self.galaxy, self.currentSystemId, self.course)
+                CursorManager:free()
+            else
+                self.mapClosedFrame = true
+            end
         end
     end
 
@@ -1071,7 +1335,17 @@ function LimitTheoryRedux:onInput(data)
         if ctrl and ctrl:isEnabled() then ctrl:disable() end
         self.player:setInputBlocked(true)
 
-        if self.mapMode == 1 then
+        if self.mapMode == 3 then
+            GalaxyMap:updateInput(self.galaxyMapState, dt)
+
+            local route = self.galaxyMapState.route
+            if GeneralActions.AutoPilotToggle:isPressed() and route and #route > 0 then
+                self:setCourse(route)
+                self.mapMode = 0
+                self.galaxyMapState.enabled = false
+                self.mapClosedFrame = true
+            end
+        elseif self.mapMode == 1 then
             SystemMap:updateInput(self.mapState, dt)
 
             if GeneralActions.AutoPilotToggle:isPressed() and self.mapState.selected then
@@ -1107,7 +1381,13 @@ function LimitTheoryRedux:onInput(data)
     if GeneralActions.AutoPilotToggle:isPressed() then
         if AutoPilotSystem:isActive(self.playerShip) then
             AutoPilotSystem:disengage(self.playerShip)
+            self.course = nil -- cancelling the autopilot cancels the course
         end
+    end
+
+    if GeneralActions.Jump:isPressed() then
+        local gate = self:gateInRange()
+        if gate then self:startJump(gate) end
     end
 
     if self.scenario.onInput then
@@ -1127,7 +1407,7 @@ end
 
 ---@param data EventData
 function LimitTheoryRedux:onStateSim(data)
-    if not self.playerShip then return end
+    if not self.playerShip or self.jump then return end
     local dt = data:deltaTime()
 
     -- Static star system: skip orbital motion so bodies stay at their
@@ -1149,6 +1429,8 @@ function LimitTheoryRedux:onStateSim(data)
     -- firing right after it (shots in flight: onStatePostSim)
     self.weaponCombat:preUpdate(dt)
     self.world:update(dt)
+    self:updateJumps()
+    if self.jump then return end -- the scene (and the scenario) just went
     self.weaponCombat:update(dt)
     if self.scenario.postUpdate then self.scenario.postUpdate(self, dt) end
 end
@@ -1189,6 +1471,7 @@ end
 --- The second half of `regenerate`: build the scene again.
 function LimitTheoryRedux:finishRegenerate()
     self.rng = RNG.Create(self.seed)
+    self:resetGalaxy()
     self:buildScene()
     self.player:setShip(self.playerShip)
     UIViewInGame:setPlayer(self.player)

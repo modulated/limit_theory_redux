@@ -190,6 +190,9 @@ end
 ---@field entity Entity the gate
 ---@field poi string the point of interest it stands at
 ---@field destination GalaxySystem
+---@field position Position its centre
+---@field axis Vec3f unit axis of the ring: points toward the destination
+---@field radius number ring radius
 
 --- Create the played system's gates and add them to the physics world. They
 --- are attached to the star system entity, so they go with it (and the maps
@@ -244,12 +247,19 @@ function JumpGateGenerator:createGates(args)
             -- Facing the destination: the ring's axis points along the
             -- direction to the other system in the galaxy.
             local gateCmp = NavigationComponents.JumpGate(linkId, system.id, destination.id, destination.name)
-            local gate = self:createGate(rng:get64(), gateCmp, position,
-                direction(system.position, destination.position), cfg.radius, model)
+            local axis = direction(system.position, destination.position) or Vec3f(0, 0, 1)
+            local gate = self:createGate(rng:get64(), gateCmp, position, axis, cfg.radius, model)
             args.world:addRigidBody(gate:get(PhysicsComponents.RigidBody):getRigidBody())
 
             Registry:attachEntity(args.starSystem, gate)
-            table.insert(gates, { entity = gate, poi = poi.label, destination = destination })
+            table.insert(gates, {
+                entity = gate,
+                poi = poi.label,
+                destination = destination,
+                position = position,
+                axis = axis,
+                radius = cfg.radius,
+            })
             Log.Info("JumpGate to %s at %s (%.0f, %.0f, %.0f)",
                 destination.name, poi.label, position.x, position.y, position.z)
         end

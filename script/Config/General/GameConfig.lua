@@ -152,6 +152,15 @@ Config.game = {
         -- A neighbour farther than this many times the system's nearest one
         -- gets no extra link (keeps the graph local; the tree still links it).
         maxLinkStretch    = 2.5,
+        -- The star-system ruleset of each system other than the one the game
+        -- started in (which is the scenario's), picked by weight from the
+        -- system's seed. Standard systems need far more GPU memory.
+        rulesets = {
+            { name = "SinglePlanetWithBelt",       weight = 4 },
+            { name = "StandardSolarSystem",        weight = 2 },
+            { name = "StandardBinarySolarSystem",  weight = 1 },
+            { name = "StandardTrinarySolarSystem", weight = 1 },
+        },
     },
 
     -- Jump gates in the played system, one per link of its node.
@@ -170,6 +179,14 @@ Config.game = {
         -- Up or down from the point of interest's plane, as a fraction of
         -- the distance above.
         heightJitter     = 0.15,
+        -- J jumps through the nearest gate within this distance of its
+        -- centre; a course's autopilot jumps on its own once this close.
+        activationRange  = 8.0,
+        -- Where a jump arrives: this many ring radii out from the arrival
+        -- gate, on the side away from the system the ship came from.
+        arrivalDistance  = 4.0,
+        -- Seconds the screen fades back in after a jump.
+        fadeTime         = 1.0,
     },
 
     autoPilot = {

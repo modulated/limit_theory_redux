@@ -23,6 +23,12 @@ local GeneralActions = {
     }),
 
     ---@type ActionBinding
+    Jump = ActionBinding({
+        label = "Jump through the nearest gate (in range)", group = "Map",
+        keyboard = { Control.Single(Button.KeyboardJ) },
+    }),
+
+    ---@type ActionBinding
     ReloadShaders = ActionBinding({
         label = "Reload shaders", group = "Debug",
         keyboard = { Control.Single(Button.KeyboardF5) },

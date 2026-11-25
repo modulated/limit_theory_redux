@@ -50,7 +50,7 @@ function Words.genName(rng)
         insert(name, cons:sample(rng))
         insert(name, vowels:sample(rng))
     end
-    name[1] = name[1]:upper()
+    name[1] = name[1]:sub(1, 1):upper() .. name[1]:sub(2)
     name = join(name)
     return name
 end

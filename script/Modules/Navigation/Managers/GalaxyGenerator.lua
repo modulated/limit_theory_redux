@@ -214,6 +214,59 @@ function GalaxyGenerator:otherEnd(galaxy, link, from)
     return galaxy.systems[link.a == from and link.b or link.a]
 end
 
+--- The shortest route through the gate network (Dijkstra on link lengths).
+---@param galaxy Galaxy
+---@param from integer system id
+---@param to integer system id
+---@return integer[]|nil route the systems after `from`, ending with `to` ({} when from == to); nil when unreachable
+function GalaxyGenerator:route(galaxy, from, to)
+    if from == to then return {} end
+    local systems = galaxy.systems
+    local dist, prev, done = { [from] = 0 }, {}, {}
+
+    while true do
+        local current, best = nil, math.huge
+        for id in pairs(dist) do
+            if not done[id] and dist[id] < best then
+                current, best = id, dist[id]
+            end
+        end
+        if not current then return nil end
+        if current == to then break end
+        done[current] = true
+
+        for _, linkId in ipairs(systems[current].links) do
+            local link = galaxy.links[linkId]
+            local next = link.a == current and link.b or link.a
+            local d = best + link.distance
+            if not done[next] and (dist[next] == nil or d < dist[next]) then
+                dist[next], prev[next] = d, current
+            end
+        end
+    end
+
+    local route = {}
+    local id = to
+    while id ~= from do
+        table.insert(route, 1, id)
+        id = prev[id]
+    end
+    return route
+end
+
+--- The link between two systems, or nil if they are not neighbours.
+---@param galaxy Galaxy
+---@param a integer
+---@param b integer
+---@return GalaxyLink|nil
+function GalaxyGenerator:linkBetween(galaxy, a, b)
+    for _, linkId in ipairs(galaxy.systems[a].links) do
+        local link = galaxy.links[linkId]
+        if link.a == b or link.b == b then return link end
+    end
+    return nil
+end
+
 --- One line per system and its links, for the log.
 ---@param galaxy Galaxy
 ---@return string[]
