@@ -133,6 +133,10 @@ From a terminal in the directory of the checked-out repository, run:
 
 - `./build.sh`
 
+On Windows without Git Bash, `build.ps1` does the same from PowerShell and takes the same flags:
+
+- `.\build.ps1` (or `powershell -ExecutionPolicy Bypass -File .\build.ps1` if Windows refuses to run scripts)
+
 This will build the engine code and place it in the `bin` directory. `build.sh` is a helper script that does two things: runs `cargo build` then copies the binaries out of the `target` directory into `bin`. It takes these flags:
 
 - `--debug`: disable optimizations for the engine and incorporate debug symbols (dependencies stay optimized).
