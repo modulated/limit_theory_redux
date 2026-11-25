@@ -25,8 +25,8 @@ writes the player's user.ini (leaving the Settings screen saves it).
 
 It needs a GPU and a window, so CI does not run it.
 
-Not covered: the Ship_Creation and System_Map views of the Gameplay page, which
-still use Legacy objects and are not wired into the new game yet.
+Not covered: the System_Map view of the Gameplay page, and the Station view
+(the docked station's market), which need a game with a station to dock at.
 ]]
 
 local Game = require('States.App.LTheoryRedux')

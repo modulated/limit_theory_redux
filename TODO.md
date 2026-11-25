@@ -34,11 +34,16 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    Bézier curve.
 5. **Save and load.** Nothing is saved. Start with the universe seed and player state
    (`script/Types/GameState.lua:123` has a placeholder for world state).
-6. **Economy.** Data components exist (`script/Modules/Economy/`: inventory, marketplace,
-   orders, prices, bank account) but no system runs trading. The old economy and AI jobs
-   (mining, trading routes) are only in `script/Legacy/`; `script/Enums/JobEnums.lua` still
-   describes them. The item list, the mined ores, the trade state and the production chains,
-   with the gaps and an implementation order, are in [doc/items.md](doc/items.md).
+6. **Economy.** Stations hold stock, price it by scarcity, run the production chains against it
+   and trade with the player on the docked station screen; the player has a hold, a mining laser
+   and credits; NPC miners deliver their ore. Legacy's economy is deleted. The item list, the
+   chains and what is left are in [doc/items.md](doc/items.md). Still to do:
+   - [ ] NPC traders that haul goods between stations instead of waiting at a stop.
+   - [ ] Equipment and hulls that can be fitted and flown, not just bought.
+   - [ ] Biomass has no source, so the hydrocarbon chain runs on imports.
+   - [ ] One market model: the order-book `MarketplaceSystem` and the station shop both price goods.
+   - [ ] Saving the hold, the wallet, station stock and production progress.
+   - [ ] Balance: `Config.game.trade` and `Config.game.production` were set by eye.
 7. **NPCs and combat** (started: `script/Modules/NPC/`). Security, trader and pirate ships
    by each system's hostility, flying jobs ported from Legacy (Patrolling, Marauding,
    Transport, Think; actions MoveTo, Wait, Attack, Flee, LeaveSystem); the player flies an
@@ -46,10 +51,9 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    - [ ] Confirm the gunship recipe builds and the fights play well (untested at the time).
    - [ ] Manual fire and target lock for the player (turrets only fire automatically).
    - [ ] CriminalThink's black-market jobs (needs the economy).
-   - [ ] Player mining (NPC miners work: MiningField, Jobs/Mining).
    - [ ] Prospecting scanner: rocks already carry their ore and remaining yield
-         (`Shared/Helpers/AsteroidOre.lua`, `AsteroidOre.ofEntity`); nothing reads it yet.
-         See [doc/items.md](doc/items.md).
+         (`Shared/Helpers/AsteroidOre.lua`, `AsteroidOre.ofEntity`); nothing reads it yet, so the
+         HUD names the ore as soon as a rock is in reach. See [doc/items.md](doc/items.md).
    - [ ] Legacy's dust clouds (only the flecks are ported; the clouds need their texture
          pass and shader converted).
    - [ ] Reputation from more than kills and hits (escorting, trading) once there is more
@@ -64,14 +68,25 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
 
 ## 2. Retiring `script/Legacy/`
 
-- [ ] Write the retirement plan: what the ECS stack still lacks (docking, AI jobs, economy
-      actions), port or drop each, and stop new code from using Legacy.
-- [ ] 24 non-Legacy files still use it. `script/States/App/LTheoryRedux.lua` loads the whole
-      `Legacy` and `Legacy.Systems` namespaces and requires `Legacy.Systems.SFX.SoundManager`
-      and `Legacy.Systems.Files.InitFiles`.
-- [ ] Generation code still used from Legacy: `Legacy.Systems.Gen.{Generator, Starfield,
-      Primitive, GenUtil}` and `Legacy.Systems.Gen.Nebula.Nebula1`; also the ship, station and
-      target generators under `script/Modules/Constructs/Managers/Generators/`.
+132 of the 169 files are gone (the economy, the universe and star-system simulation, the Jobs and
+Actions trees, the NPC elements, the old overlay, command view, menus, cameras and controls, and
+the dead `Ship_Creation` view, `LoadingScreen` page and `_outdated` test states that still reached
+them). 37 files are left, all of them live code:
+
+- [ ] **The procedural generators** are the big one: `Legacy.Systems.Gen.{ShipBasic, ShipCapital,
+      ShipFighter, StationOld, Primitive, Boxes, GenUtil, MeshUtil, MathUtil, UVMap}` with
+      `ShapeLib/` and `ShipLib/`, used by `script/Modules/Constructs/Managers/Generators/` and by
+      `SolarSystemVisualizer`. Port the shape library and the hull generators into
+      `script/Shared/Generation/`.
+- [ ] **`Legacy.Systems.Events`** (`EventManager`, `EventListener`, `OldEvent`) is still loaded by
+      `script/Init.lua` as the `Core.Events` namespace; the Rust `EventBus` replaces it.
+- [ ] **`Legacy.Systems.SFX.SoundManager`** is required by `LTheoryRedux`, `Types/SFXObject.lua`,
+      `Types/MusicObject.lua` and the audio test.
+- [ ] **`Legacy.Systems.Files.InitFiles`** (user.ini and the save folders) and
+      `Legacy.Systems.Controls.Control` (the binding base the UI and application bindings use).
+- [ ] **The leftovers**: `GameObjects/{Entity, Material, LegacyEntityComponent}`,
+      `Entities/Effects/Pulse` (the weapon pulse light), `Systems/Camera/Camera`.
+
 - [ ] `PlanetaryRingMotionComponent` and `CloudMotionComponent` subscribe to events themselves;
       move that logic into a system (`script/Modules/CelestialObjects/Components/Simulation/`).
 - [ ] Move `AutoNav`, `ToggleHUD` and `ToggleSensors` to `ShipBindings.lua`

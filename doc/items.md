@@ -5,10 +5,12 @@ item that is defined, which of them can be mined, which can be traded, and the p
 that turn one into another. It is meant to be edited: the tables are the design surface, and the
 Status sections say how much of each is actually wired up.
 
-Status summary (2026-11): the item **registry** is live (58 items, hand-written permanent ids), the
-galaxy generator gives every belt and ring a composition from it, and mining reads that composition. The **market**, **inventory** and **production** code exists but nothing
-trades or crafts in a running game: the only credits that move are bounties and hull repair, and a
-miner that fills its hold sells it to a log line.
+Status summary (2026-11): it all runs. 58 items with permanent ids; every belt and ring has a
+composition and mining reads it; a rock knows what it holds; stations hold stock, price it by how
+short they are, run the production chains against it, and trade with the player on a docked screen;
+the player has a hold, a mining laser and credits. Legacy's economy is deleted. What is missing is
+listed in section 6 — chiefly NPC traders that actually haul, equipment that can be fitted, and
+saving.
 
 ## 1. Where it lives
 
@@ -22,11 +24,15 @@ miner that fills its hold sells it to a log line.
 | Asteroid entity carrying an item + quantity | `script/Modules/CelestialObjects/Entities/AsteroidEntity.lua` |
 | Mineable rocks, yields and regrowth | `script/Modules/NPC/Managers/MiningField.lua`, `Config.game.mining` |
 | Miner job (mine, dock, sell) | `script/Modules/NPC/Jobs/Mining.lua`, `Actions/MineAt.lua` |
-| Inventory (ECS) | `script/Modules/Economy/Components/{InventoryComponent,ItemComponent}.lua`, `Managers/InventoryManager.lua` |
-| Market (price discovery, orders) | `script/Modules/Economy/Systems/MarketplaceSystem.lua`, `Entities/OrderEntity.lua` |
+| Order-book market (not used by the player) | `script/Modules/Economy/Systems/MarketplaceSystem.lua`, `Components/InventoryComponent.lua`, `Entities/OrderEntity.lua` |
 | Player credits (bounties, repairs) | `script/Modules/Economy/Managers/PlayerWallet.lua`, `Config.game.economy` |
-| Legacy item list and production chains | `script/Legacy/GameObjects/Elements/Economy/Content.lua` |
-| Legacy production/factory/market/yield | `script/Legacy/Systems/Economy/`, `script/Legacy/GameObjects/Elements/Economy/` |
+| **The production recipes** | `script/Shared/Definitions/ProductionDefs.lua`, `Shared/Registries/Productions.lua`, `Shared/Types/ProductionDefinition.lua` |
+| Station stock, prices, buying and selling | `script/Modules/Economy/Systems/StationTradeSystem.lua` |
+| Stations making things | `script/Modules/Economy/Systems/ProductionSystem.lua`, `Components/ProductionComponent.lua` |
+| A store of goods (stations, the hold) | `script/Modules/Economy/Components/StockComponent.lua` |
+| The player's hold | `script/Modules/Economy/Managers/PlayerCargo.lua` |
+| The docked station screen | `script/UI/HmGui/Views/Gameplay/Station.lua` |
+| Mining and trade tuning | `Config.game.mining`, `Config.game.trade`, `Config.game.production`, `Config.game.cargo` |
 
 ### Item definition
 
@@ -225,28 +231,51 @@ player cannot mine at all.
 
 ## 4. Trade
 
-What exists:
+Docking at a station (F) opens its own screen (`UI/HmGui/Views/Gameplay/Station.lua`): what it has,
+what it pays, what the hold is carrying, what its lines are making, hull repair and undock.
 
-- `MarketplaceSystem` (a `PreRender` subscriber) runs price discovery per marketplace entity:
-  random-walk volatility, a pull toward a shifting equilibrium, pull timeouts, a price history and
-  a pending-trade buffer. Every `SpaceStationEntity` gets a `Marketplace` component.
-- `OrderEntity` (buy/sell orders), `ItemEntity`, `ItemComponent`, `QuantityComponent`,
-  `InventoryComponent` and `InventoryManager` for holding items.
-- `Config.game.economy`: `startingCredits = 1000`, `hullRepairCost = 2.0` credits per hull point
-  (shields recharge free), bounties (`pirate` 600, `pirateMerchant` 300, default 250) paid by
-  `security` for the killing blow on an outlaw. This is the only live flow of credits.
-- Legacy has a full market (`Elements/Economy/Market.lua`), a black market with escrow TODOs
-  (`BlackMarket.lua`), traders and a universe economy; none of it is loaded by the current states.
+**Prices come from the shelves.** `Modules/Economy/Systems/StationTradeSystem.lua` gives every item
+a station deals in a target stock, by value (`Config.game.trade.targetValue`), and prices it at its
+equilibrium price scaled by how far the shelves are from that target, bounded both ways
+(`minScarcity`, `maxScarcity`). A refinery drowning in iron sells it cheap; one that has run out of
+energy cells pays over the odds. The `spread` either side is the house's cut, so buying and selling
+the same thing back always costs something. Buying and selling go unit by unit, so a big order
+moves the price rather than clearing the shelves at the first one.
 
-What is missing for trade to be playable: a station inventory stocked with items, a UI to buy and
-sell while docked, a player cargo hold, and NPC traders that move actual items instead of waiting
-6–12 s at a stop.
+A station deals in everything its recipes make or need, plus the ores of its system. It will buy
+something it has no use for at `unwantedFactor` of the price, and deals in it afterwards.
+
+**What moves the stock:**
+
+| Source | What it does |
+|--------|--------------|
+| The station's own production | makes its outputs, eats its inputs (section 5) |
+| NPC miners | `Jobs/Mining.lua` unloads a full hold into the station it docks at |
+| The player | buying and selling on the station screen |
+| Imports | a trickle (`importPerSecond`) of what the station cannot make itself, capped at `importFloor` of its target, standing in for the freighters nobody sees |
+
+**The player's side:** `Modules/Economy/Managers/PlayerCargo.lua` is the hold, kept beside the
+wallet rather than on the ship (which is destroyed and rebuilt on undocking, on a jump and on a
+respawn). Its capacity is a mass (`Config.game.cargo.holdCapacity`), so ore fills it and data cubes
+do not. Mining (E held) takes a unit at a time out of the nearest rock in reach, from the same
+yield the NPC miners work. Credits are `PlayerWallet`; bounties and hull repair go through it too.
+
+Still only NPC-to-NPC: the order-book `MarketplaceSystem` (bids, asks, price discovery, orders as
+entities) is untouched and nothing drives it yet. The station shop above is the one the player
+uses.
 
 ## 5. Production (crafting)
 
-The recipes are Legacy (`Content.lua`) and are not loaded by the game today. They are the design
-intent, so they are listed here in full. Classes: **P0** powerplant, **P1** refinery, **P2**
-factory, **P3** drydock, **P4** misc. "Energy" in the inputs is the **Energy Cell** item.
+The recipes are `script/Shared/Definitions/ProductionDefs.lua`, in the `Productions` registry, and
+`Modules/Economy/Systems/ProductionSystem.lua` runs them: a line takes its inputs out of the
+station's stock when it starts, counts down its duration (compressed by
+`Config.game.production.timeScale`) and puts the outputs in when it finishes. Nothing is made out
+of nothing, so a refinery with no ore waits for a miner. Each station gets a powerplant (mostly a
+solar array, which needs no fuel) plus a refinery or a factory or two from its seed, and one
+station in a system may also build hulls.
+
+Classes: **Powerplant** (Legacy's P0), **Refinery** (P1), **Factory** (P2), **Drydock** (P3),
+**Misc** (P4). "Energy" in the inputs is the **Energy Cell** item.
 
 | Class | Recipe | Inputs | Outputs | Seconds |
 |-------|--------|--------|---------|---------|
@@ -279,10 +308,10 @@ factory, **P3** drydock, **P4** misc. "Energy" in the inputs is the **Energy Cel
 | P2 | Pulse Turret Weapon Factory | Energy ×180, Glassiron ×800, Transp. Alum ×32, Steel ×210, Infolytic ×12 | Ship Weapon, Pulse Turret ×1, Waste ×40 | 790 |
 | P3 | Solo Ship Hull Drydock | Energy ×1500, Glassiron ×10000, Transp. Alum ×900, Steel ×1850, Gold ×285, Platinum ×95, Infolytic ×165, Thorium ×35, Ship Sensor ×1, Ship Computer ×1, Thruster ×1 | Ship Hull, Solo ×1, Waste ×725 | 1800 |
 | P3 | Space Station Fabricator | Energy ×350000, Glassiron ×1000000, Transp. Alum ×180000, Steel ×395000, Gold ×57000, Platinum ×9100, Infolytic ×8500, Ship Sensor ×100, Ship Computer ×100, Thorium ×640 | Space Station, Small ×1, Waste ×9750 | 14400 |
-| P4 | Piracy | Energy ×1 | Credit ×10 | 1 |
 
 Only one weapon (Pulse Turret), one engine (Thruster) and one hull (Solo) have a recipe; the rest of
-the Equipment and Constructs items are sold but not buildable.
+the Equipment and Constructs items are sold but not buildable. Legacy's "Piracy" recipe (energy in,
+credits out) was not ported: pirates earn by raiding.
 
 ### Feedstock items
 
@@ -293,36 +322,30 @@ the tables above now (ids 52–58), with Legacy's masses and energy densities. L
 is this registry's **Hydrocarbons**: it is biomass cracked into fuel and plastics feedstock, and the
 name says so.
 
-Legacy also tiers its items T0–T8 (energy, information, raw inanimate, raw animate, processed
-elemental, processed constructed, ship component, ship hull, station), which the new registry's
-groups mostly mirror.
+Legacy tiered its items T0–T8 (energy, information, raw inanimate, raw animate, processed
+elemental, processed constructed, ship component, ship hull, station), which the registry's groups
+mostly mirror. Those Legacy files are gone now; the recipes above are the port.
 
 ## 6. Gaps and implementation order
 
-- [x] **Add the missing items** so the production chains close (ids 52–58).
-- [x] **Give Carboniferous Ore a source**: weighted into `Config.game.mining.ores` (14%) and into
-      every ruleset's rocky and icy `composition` lists.
-- [x] **One source of truth for ore.** `MiningField` takes each rock's ore from its field's
-      generated composition and keeps the item id on the rock; `Config.game.mining.ores` is only
-      the fallback.
-- [x] **Asteroid entities agree.** Spawned rocks carry `Item`/`Quantity` from the same
-      `AsteroidOre` answer the mining field uses, kept up to date as they are mined.
-- [ ] **Prospecting scanner**: a ship module that sweeps for rocks and reads
-      `AsteroidOre.ofEntity`, with a range and a sweep time, so the ore is something you find
-      rather than something you are told. Needs a HUD readout and a target-info panel.
-- [ ] **Player cargo hold**: an `InventoryComponent` on the player's ship, a HUD readout, and a
-      capacity by hull size.
-- [ ] **Player mining**: a mining laser mount that calls into `MiningField:take`, reusing the NPC
-      `MineAt` timing.
-- [ ] **Docked trade UI**: a station marketplace screen (buy/sell at the `MarketplaceSystem` price),
-      paid through `PlayerWallet`.
-- [ ] **Station stock**: give stations an inventory seeded from their system's ore, and make NPC
-      traders and miners move real items through it (`SellCargo` should sell into the station's
-      market instead of logging).
-- [ ] **Port production**: a `Modules/Economy` production/factory system from Legacy's
-      `Production`/`Factory`, with recipes moved out of `script/Legacy/.../Content.lua` into
-      `script/Shared/Definitions/ProductionDefs.lua` + a registry, like the other definition files.
-- [ ] **Fit Equipment items to ships**: link the Equipment group to `WeaponRegistry` and the
-      procedural module catalog so a bought turret can be mounted.
-- [x] **Stable item ids**: written by hand in `ItemDefs.lua`, never reused, asserted unique by the
-      registry.
+Done: the item registry with permanent ids, the feedstock items, ore from each field's own
+composition, rocks that know what they hold, station stock and prices, production, the player's
+hold, player mining, the docked station screen, and the deletion of Legacy's economy.
+
+- [ ] **Biomass has no source.** The Hydrocarbon Refinery (and so plastics, and so chips) runs on
+      imports alone. It wants a farm or a station recipe, or a mineable source.
+- [ ] **NPC traders should haul goods**, not wait 6–12 s at a stop: buy where a thing is cheap,
+      sell where it is dear, which is what would make prices differ between stations for a reason.
+      `Jobs/Transport.lua` and `StationTradeSystem` already have the pieces.
+- [ ] **Equipment and hulls are inert**: an Equipment item is a good with a price, with no link to
+      `WeaponRegistry` or the procedural module catalog, so a bought turret cannot be fitted. A
+      drydock's hull cannot be flown either.
+- [ ] **A prospecting scanner**: rocks carry their ore and remaining yield
+      (`AsteroidOre.ofEntity`); nothing reads it yet, so the ore is on the HUD as soon as a rock is
+      in reach.
+- [ ] **One market model.** The order-book `MarketplaceSystem` and the station shop both price
+      goods; either the shop should post its orders into the book, or the book should go.
+- [ ] **Saving.** The hold, the wallet, every station's stock and every production line's progress
+      are the state a saved game needs (see item ids, section 1).
+- [ ] **Balance.** `Config.game.trade` and `Config.game.production` were set by eye: the target
+      value, the spread, the import rate and `timeScale` decide whether trading is worth the flying.
