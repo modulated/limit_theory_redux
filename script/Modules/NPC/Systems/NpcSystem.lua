@@ -7,6 +7,9 @@ local Think = require("Modules.NPC.Jobs.Think")
 local GunshipRecipe = require("Modules.NPC.Managers.GunshipRecipe")
 local ArmedShipBuilder = require("Modules.Constructs.Managers.ArmedShipBuilder")
 local WeaponBattery = require("Modules.Constructs.Systems.WeaponBattery")
+local MiningField = require("Modules.NPC.Managers.MiningField")
+local Reputation = require("Modules.NPC.Reputation")
+local RenderComp = require("Modules.Rendering.Components").Render
 
 --- The star system's NPC ships: it builds them, gives them jobs (Think),
 --- runs their action stacks, flies them, and removes the dead and the ones
@@ -29,7 +32,11 @@ local NpcSystem = Class("NpcSystem", function(self, game)
     self.places = { stations = {}, gates = {}, pointsOfInterest = {} }
     self.rng = RNG.Create(1)
     self.player = nil
+    self.playerHidden = false   -- docked: not a contact at all
+    self.playerDetection = 1    -- cloaked: seen only this fraction as far
     self.spawnCount = 0
+    self.mining = MiningField()
+    self.byEntity = {} -- entity -> record
 end)
 
 local SIZE_CLASS = {
@@ -42,9 +49,18 @@ local SIZE_CLASS = {
 -- The world the pilots see
 
 --- The system's places, where jobs send the pilots.
----@param places { stations: table[], gates: JumpGatePlacement[], pointsOfInterest: table[] }
+---@param places { stations: table[], docks: table[], gates: JumpGatePlacement[], pointsOfInterest: table[], belts: Entity[] }
 function NpcSystem:setPlaces(places)
     self.places = places
+end
+
+--- How visible the player's ship is to the pilots: hidden (docked) or seen
+--- only `detection` times as far (cloaked).
+---@param hidden boolean
+---@param detection number
+function NpcSystem:setPlayerVisibility(hidden, detection)
+    self.playerHidden = hidden
+    self.playerDetection = detection
 end
 
 --- The player's ship: a contact like the NPCs (faction "player").
@@ -87,9 +103,10 @@ end
 function NpcSystem:contacts()
     local list = {}
     for _, record in ipairs(self.records) do
-        if not record.dead then list[#list + 1] = record end
+        if not record.dead and not record.pilot.docked then list[#list + 1] = record end
     end
-    if self.player and self:isAlive(self.player.entity) then
+    if self.player and not self.playerHidden and self:isAlive(self.player.entity) then
+        self.player.detection = self.playerDetection
         list[#list + 1] = self.player
     end
     return list
@@ -106,12 +123,16 @@ function NpcSystem:findShip(npc, range, factions)
     local rank = {}
     for i, faction in ipairs(factions) do rank[faction] = i end
     local best, bestRank, bestDist = nil, math.huge, math.huge
+    -- Sensors (Legacy Elements/Components/Sensor): a better rating sees
+    -- further; a cloaked contact is seen only a fraction as far
+    local sensor = npc.pilot and npc.pilot.stats.sensor or 1
     for _, contact in ipairs(self:contacts()) do
         local r = rank[contact.faction]
         if r and contact.entity ~= npc.entity then
             local pos = self:positionOf(contact.entity)
             local d = pos and self:distance(npc, pos) or math.huge
-            if d <= range and (r < bestRank or (r == bestRank and d < bestDist)) then
+            local reach = range * sensor * (contact.detection or 1)
+            if d <= reach and (r < bestRank or (r == bestRank and d < bestDist)) then
                 best, bestRank, bestDist = contact.entity, r, d
             end
         end
@@ -152,6 +173,115 @@ function NpcSystem:isFleeing(npc) return stackHas(npc, "isFlee") end
 ---@param charge table|nil a record
 function NpcSystem:isGuarding(charge)
     return charge ~= nil and not charge.dead and not charge.removed and not charge.pilot.leaving
+end
+
+--- Whether a ship may dock at a station (Legacy Dockable: not banned): the
+--- station is there and its owner isn't hostile to the ship's faction.
+---@param npc table record
+---@param dock table place { entity, position, radius, faction }
+function NpcSystem:canDock(npc, dock)
+    return dock ~= nil and dock.entity:isValid() and not Factions.isHostile(dock.faction, npc.faction)
+end
+
+--- Where ships dock and undock: above the station by its radius (Legacy
+--- DockAt put the dock 1.25 radii along the station's up).
+function NpcSystem:dockingPoint(dock)
+    local p = dock.position
+    return { x = p.x, y = p.y + dock.radius * 1.25 + 0.05, z = p.z }
+end
+
+--- The nearest station a ship may dock at, or nil.
+function NpcSystem:nearestDock(npc)
+    local best, bestDist = nil, math.huge
+    for _, dock in ipairs(self.places.docks or {}) do
+        if self:canDock(npc, dock) then
+            local d = self:distance(npc, dock.position)
+            if d < bestDist then best, bestDist = dock, d end
+        end
+    end
+    return best
+end
+
+local function showLabel(self, record, shown)
+    local labels = self.game.labeledEntities
+    for i = #labels, 1, -1 do
+        if labels[i] == record.labelEntry then table.remove(labels, i) end
+    end
+    if shown then table.insert(labels, record.labelEntry) end
+end
+
+--- A ship docks (Legacy Dockable:addDocked): inside the station, hidden,
+--- out of reach of weapons, its own weapons quiet.
+function NpcSystem:dock(npc, dock)
+    npc.pilot.docked = dock
+    npc.pilot:clearGoal()
+    npc.pilot.velocity.x, npc.pilot.velocity.y, npc.pilot.velocity.z = 0, 0, 0
+    local render = npc.entity:get(RenderComp)
+    if render then render:setVisible(false) end
+    local targetable = npc.entity:get(ConstructComponents.Targetable)
+    if targetable then targetable:setEnabled(false) end
+    npc.body:setCollidable(false)
+    if npc.battery then npc.battery:setAIActive(false) end
+    npc.body:setPos(Position(dock.position.x, dock.position.y, dock.position.z))
+    showLabel(self, npc, false)
+end
+
+--- A docked ship comes out at the docking point (Legacy Undock).
+function NpcSystem:undock(npc)
+    local dock = npc.pilot.docked
+    if not dock then return end
+    npc.pilot.docked = nil
+    local p = self:dockingPoint(dock)
+    npc.body:setPos(Position(p.x, p.y, p.z))
+    local render = npc.entity:get(RenderComp)
+    if render then render:setVisible(true) end
+    local targetable = npc.entity:get(ConstructComponents.Targetable)
+    if targetable then targetable:setEnabled(true) end
+    npc.body:setCollidable(true)
+    if npc.battery then npc.battery:setAIActive(true) end
+    showLabel(self, npc, true)
+end
+
+--- Whether a pilot can still see a ship it is after: the player's ship
+--- vanishes when it docks, and when cloaked is seen only close by (half
+--- again its cloaked detection range, so a chase isn't dropped at once).
+---@param npc table
+---@param entity Entity
+---@return boolean
+function NpcSystem:canSee(npc, entity)
+    local record = self.byEntity[entity]
+    if record then return not record.pilot.docked end -- inside a station
+    if not self.player or entity ~= self.player.entity then return true end
+    if self.playerHidden then return false end
+    if self.playerDetection >= 1 then return true end
+    local pos = self:positionOf(entity)
+    if not pos then return false end
+    local stats = npc.pilot.stats
+    local reach = (stats.detectRange or 6) * (stats.sensor or 1) * self.playerDetection * 1.5
+    return self:distance(npc, pos) <= reach
+end
+
+--- Whether one of the player's turrets is engaging a ship (who gets the
+--- blame for its damage: the weapons don't report their hits).
+---@param entity Entity
+function NpcSystem:isPlayerEngaging(entity)
+    local battery = self.game.playerBattery
+    if not battery or not battery.mountIds then return false end
+    for _, mountId in ipairs(battery.mountIds) do
+        if battery:getMountTarget(mountId) == entity then return true end
+    end
+    return false
+end
+
+--- After the standings changed: who each armed NPC's weapons engage.
+function NpcSystem:refreshHostility()
+    for _, record in ipairs(self.records) do
+        if record.battery then
+            local set = {}
+            for _, team in ipairs(Factions.hostileTeams(record.faction)) do set[team] = true end
+            record.battery.hostileTeams = set
+        end
+    end
 end
 
 -- Where guards keep station, in the charge's frame (forward is -Z): beside
@@ -258,6 +388,7 @@ function NpcSystem:spawn(role, position, seed)
         end
         record.pilot = NpcComponents.Pilot(faction, stats)
         record.entity:add(record.pilot)
+        record.cargo = { count = 0, capacity = stats.cargo or 10 }
         return record
     end)
     if not ok then
@@ -272,6 +403,7 @@ function NpcSystem:spawn(role, position, seed)
     record.labelEntry = { entity = record.entity, label = record.label, color = { r, g, b } }
     table.insert(game.labeledEntities, record.labelEntry)
     table.insert(self.records, record)
+    self.byEntity[record.entity] = record
     return record
 end
 
@@ -279,6 +411,7 @@ end
 ---@param record table
 function NpcSystem:remove(record)
     record.removed = true
+    self.byEntity[record.entity] = nil
     for i, r in ipairs(self.records) do
         if r == record then table.remove(self.records, i) break end
     end
@@ -309,7 +442,7 @@ end
 function NpcSystem:mapEntries()
     local list = {}
     for _, record in ipairs(self.records) do
-        if not record.dead then
+        if not record.dead and not record.pilot.docked then
             list[#list + 1] = { entity = record.entity, label = record.label, color = record.labelEntry.color }
         end
     end
@@ -370,13 +503,14 @@ function NpcSystem:spawnWithEscorts(role, spot)
 end
 
 -- The roles in the order a system is filled and topped up
-local ROLES = { "security", "trader", "pirate", "pirateMerchant" }
+local ROLES = { "security", "trader", "miner", "pirate", "pirateMerchant" }
 
 --- Fill the system with the NPCs its hostility level calls for.
 ---@param level table Config.game.hostility.levels[n]
 ---@param seed integer the system's seed
 function NpcSystem:populate(level, seed)
     self.rng = RNG.Create(seed + 3)
+    self.mining:build(self.places.belts or {}, seed + 4)
     self.level = level
     self.replenish = Config.game.npc.replenishInterval
     for _, role in ipairs(ROLES) do
@@ -400,7 +534,7 @@ end
 function NpcSystem:replenishOne()
     local level = self.level
     if not level or #self.places.gates == 0 then return end
-    for _, role in ipairs({ "pirate", "pirateMerchant", "trader", "security" }) do
+    for _, role in ipairs({ "pirate", "pirateMerchant", "trader", "miner", "security" }) do
         if self:count(role) < (level.npcs[role] or 0) then
             local gate = self.places.gates[self.rng:getInt(1, #self.places.gates)]
             self:spawnWithEscorts(role, self:near(gate.position, gate.radius * 3))
@@ -467,9 +601,27 @@ end
 ---@param dt number
 function NpcSystem:update(dt)
     if dt <= 0 then return end
+    self.mining:update(dt)
 
     for _, record in ipairs(self.records) do
         if not record.dead then
+            -- The player's doing? Hits and kills while its turrets engage
+            -- the ship move the player's standing with its faction.
+            local health = record.entity:isValid() and record.entity:get(CoreComponents.Health)
+            local hp = health and health:getCurrentHealth() or 0
+            if record.lastHealth and hp < record.lastHealth and self:isPlayerEngaging(record.entity) then
+                if hp <= 0 then
+                    Reputation:playerDestroyed(record.faction)
+                else
+                    record.hitCooldown = (record.hitCooldown or 0) - dt
+                    if record.hitCooldown <= 0 then
+                        record.hitCooldown = 1.0
+                        Reputation:playerDamaged(record.faction)
+                    end
+                end
+            end
+            record.lastHealth = hp
+
             if not self:isAlive(record.entity) then
                 -- Destroyed: the weapon system explodes it; the wreck goes later
                 record.dead = Config.game.npc.wreckTime
@@ -496,7 +648,7 @@ function NpcSystem:update(dt)
                     end
                     top:onUpdate(record, self, dt)
                 end
-                steer(record, dt)
+                if not pilot.docked then steer(record, dt) end
                 record.labelEntry.label = record.label .. " · " .. pilot:getActivity()
             end
         end

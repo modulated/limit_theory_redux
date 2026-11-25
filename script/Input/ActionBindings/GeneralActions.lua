@@ -29,6 +29,18 @@ local GeneralActions = {
     }),
 
     ---@type ActionBinding
+    Dock = ActionBinding({
+        label = "Dock at a nearby station / undock", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardF) },
+    }),
+
+    ---@type ActionBinding
+    Cloak = ActionBinding({
+        label = "Cloak on / off", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardX) },
+    }),
+
+    ---@type ActionBinding
     ReloadShaders = ActionBinding({
         label = "Reload shaders", group = "Debug",
         keyboard = { Control.Single(Button.KeyboardF5) },

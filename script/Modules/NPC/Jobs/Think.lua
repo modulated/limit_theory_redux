@@ -2,6 +2,7 @@ local Patrolling = require("Modules.NPC.Jobs.Patrolling")
 local Marauding = require("Modules.NPC.Jobs.Marauding")
 local Transport = require("Modules.NPC.Jobs.Transport")
 local Escort = require("Modules.NPC.Jobs.Escort")
+local Mining = require("Modules.NPC.Jobs.Mining")
 
 --- Give an idle pilot its next job (Legacy Actions/Think and CriminalThink,
 --- without the economy: they weighed job payouts; here each role has its
@@ -40,7 +41,13 @@ local function transportJob(npc, ctx)
         for _, gate in ipairs(places.gates) do pool[#pool + 1] = gate.position end
         for _, p in ipairs(places.pointsOfInterest) do pool[#pool + 1] = p end
     else
-        for _, p in ipairs(places.stations) do pool[#pool + 1] = p end
+        -- Stations it may dock at; their positions otherwise
+        for _, dock in ipairs(places.docks or {}) do
+            if ctx:canDock(npc, dock) then pool[#pool + 1] = { dock = dock } end
+        end
+        if #pool == 0 then
+            for _, p in ipairs(places.stations) do pool[#pool + 1] = p end
+        end
         if #pool == 0 then
             for _, p in ipairs(places.pointsOfInterest) do pool[#pool + 1] = p end
         end
@@ -76,7 +83,9 @@ function Think.chooseJob(npc, ctx)
     end
 
     local stats = npc.pilot.stats
-    if npc.role == "security" then
+    if stats.job == "mine" then
+        return Mining(npc, ctx)
+    elseif npc.role == "security" then
         local nodes = patrolNodes(places)
         return #nodes > 0 and Patrolling(shuffled(rng, nodes)) or nil
     elseif not stats.gunship then

@@ -200,6 +200,15 @@ Config.game = {
                      hostileTo = { player = true, security = true, trader = true } },
     },
 
+    -- The player's standing with each faction (Modules/NPC/Reputation.lua),
+    -- on Legacy's disposition scale (dispoMin..dispoMax, thresholds below).
+    reputation = {
+        initial = { security = 0.2, trader = 0.3, pirate = -0.6 },
+        killPenalty    = 0.25, -- destroying a ship of a faction
+        enemyKillBonus = 0.05, -- ...to each faction hostile to it
+        damagePenalty  = 0.01, -- per hit on a ship of a faction
+    },
+
     -- How dangerous each star system is (galaxy map colour, arrival banner,
     -- and which NPCs it has: ships per role of Config.game.npc.roles; escorts
     -- come with the ships they guard). The first system is `homeLevel`; the
@@ -211,16 +220,16 @@ Config.game = {
         levels = {
             { name = "Secure", description = "Security patrols. Pirates are rarely seen.",
               color = { 0.35, 0.75, 1.0 }, weight = 3,
-              npcs = { security = 3, trader = 3, pirate = 0, pirateMerchant = 0 } },
+              npcs = { security = 3, trader = 3, pirate = 0, pirateMerchant = 0, miner = 2 } },
             { name = "Guarded", description = "Patrolled. Expect the odd pirate.",
               color = { 0.45, 0.9, 0.5 },  weight = 3,
-              npcs = { security = 2, trader = 2, pirate = 1, pirateMerchant = 0 } },
+              npcs = { security = 2, trader = 2, pirate = 1, pirateMerchant = 0, miner = 2 } },
             { name = "Contested", description = "Pirates and security fight over this system.",
               color = { 1.0, 0.75, 0.25 }, weight = 2,
-              npcs = { security = 1, trader = 1, pirate = 3, pirateMerchant = 1 } },
+              npcs = { security = 1, trader = 1, pirate = 3, pirateMerchant = 1, miner = 1 } },
             { name = "Lawless", description = "No security. Pirates attack on sight.",
               color = { 1.0, 0.3, 0.25 },  weight = 1,
-              npcs = { security = 0, trader = 1, pirate = 4, pirateMerchant = 2 } },
+              npcs = { security = 0, trader = 1, pirate = 4, pirateMerchant = 2, miner = 0 } },
         },
     },
 
@@ -234,6 +243,9 @@ Config.game = {
     --   fleeFrom, fleeRange   haulers run from these factions this close
     --   stops       haulers' trade stops: "stations" or "hideouts" (gates, belts, planets)
     --   escorts     {min, max, role}: ships of `role` guarding each one
+    --   sensor      detection range multiplier (Legacy Sensor rating; default 1)
+    --   job         "mine" for miners; otherwise by role (Jobs/Think)
+    --   cargo       units a hauler's hold takes (miners)
     npc = {
         roles = {
             security = {
@@ -241,7 +253,16 @@ Config.game = {
                 gunship = true, scale = 0.03, sizeClass = "medium",
                 maxHealth = 700, maxShield = 150, shieldRegen = 10,
                 maxSpeed = 0.6, accel = 0.2, turnRate = 1.0,
-                detectRange = 7.0,
+                detectRange = 7.0, sensor = 1.25,
+            },
+            miner = {
+                faction = "trader", label = "Miner", job = "mine",
+                gunship = false, hull = 3, scale = 0.03, sizeClass = "medium",
+                maxHealth = 350, maxShield = 50, shieldRegen = 4,
+                maxSpeed = 0.35, accel = 0.12, turnRate = 0.8,
+                fleeFrom = { "pirate" }, fleeRange = 3.0,
+                cargo = 12,
+                escorts = { min = 0, max = 1, role = "mercenary" },
             },
             trader = {
                 faction = "trader", label = "Trader",
@@ -286,6 +307,54 @@ Config.game = {
         wreckTime = 3.0,
         -- How far a system's NPCs start from their spot.
         spawnSpread = 1.5,
+    },
+
+    -- Mining (Modules/NPC/Managers/MiningField.lua, Jobs/Mining.lua): rocks
+    -- picked from each belt, their ore by weight, units by rock size.
+    mining = {
+        rocksPerBelt    = 24,
+        unitsPerScale   = 0.004, -- a rock of this scale holds one unit
+        regrowPerSecond = 0.02,  -- units a rock grows back per second
+        timePerUnit     = 3.0,   -- seconds a miner takes per unit
+        sellTime        = 8.0,   -- seconds docked to sell the hold
+        ores = {
+            { name = "Silicate Ore",  weight = 5 },
+            { name = "Iron Ore",      weight = 4 },
+            { name = "Aluminum Ore",  weight = 3 },
+            { name = "Copper Ore",    weight = 2 },
+            { name = "Beryllium Ore", weight = 1 },
+            { name = "Thorium Ore",   weight = 0.3 },
+        },
+    },
+
+    -- Docking (F): stations belong to `owner` and take ships whose faction
+    -- it isn't hostile to (for the player: standing with the owner).
+    docking = {
+        owner       = "security",
+        rangeFactor = 4.0, -- dock from this many station radii away
+    },
+
+    -- The player's cloak (X; Legacy Elements/Components/Cloak): while it is
+    -- on, weapons can't lock on, NPCs notice the ship only at a fraction of
+    -- their range, and the ship's own turrets hold fire. It runs on its own
+    -- charge, which drains while cloaked and refills while not.
+    cloak = {
+        maxCharge      = 15.0, -- seconds of cloak when full
+        rechargeRate   = 0.5,  -- seconds of cloak regained per second
+        minCharge      = 3.0,  -- needed to switch it on
+        detection      = 0.2,  -- NPCs see a cloaked ship this fraction as far
+    },
+
+    -- Space dust (Legacy Effects/Dust's flecks): streaks around the camera
+    -- that show how fast it moves.
+    dust = {
+        enabled     = true,
+        count       = 400,
+        cubeSize    = 0.4,    -- game units: flecks wrap around a cube this big
+        width       = 0.0006, -- streak width
+        lengthScale = 0.08,   -- streak length per unit of speed
+        maxLength   = 0.06,
+        minSpeed    = 0.02,   -- no streaks below this speed
     },
 
     -- The player's armed ship in the travel scenarios (those with stations):

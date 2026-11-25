@@ -29,7 +29,7 @@ end
 
 function Attack:onUpdate(npc, ctx, dt)
     local targetPos = ctx:positionOf(self.target)
-    if not targetPos or not ctx:isAlive(self.target) then
+    if not targetPos or not ctx:isAlive(self.target) or not ctx:canSee(npc, self.target) then
         self:finish(npc)
         return
     end

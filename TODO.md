@@ -16,11 +16,10 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    (ordered waypoints, current leg, route state) and a `NavigationSystem` that feeds
    `AutoPilotSystem` one leg at a time. On `SystemMap`/`SystemMap3D`, shift-click appends a
    waypoint and the route is drawn with an ETA per leg. Add a `ClearRoute` binding. Pure Lua.
-2. **Docking.** `Dock`/`Undock` are bound but nothing responds to them. Add a
-   `DockableComponent` (ports: offset, approach vector, capacity) on stations and a
-   `DockingSystem` (request → approach → final approach → docked → undocking). Port the intent
-   of `script/Legacy/GameObjects/Actions/DockAt.lua`, not its code. A route waypoint can end
-   docked.
+2. **Docking** (started). F docks at a station in range (repair), NPC traders and miners
+   dock on their runs (Legacy DockAt/Undock). Still to do: docking ports and an approach
+   path (ships now appear inside the station), a station screen, docking as a route
+   waypoint.
 3. **Travel between star systems.** The universe generates many systems but only one is ever
    simulated.
    - Jump gates (`JumpGateEntity` + `JumpLinkComponent`) and a gate graph built at generation
@@ -45,8 +44,12 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    armed gunship. Still to do:
    - [ ] Confirm the gunship recipe builds and the fights play well (untested at the time).
    - [ ] Manual fire and target lock for the player (turrets only fire automatically).
-   - [ ] Port the rest of Legacy's AI: Orbit, DockAt/Undock (needs docking),
-         MineAt and Mine (needs mining), CriminalThink's black-market jobs (needs economy).
+   - [ ] CriminalThink's black-market jobs (needs the economy).
+   - [ ] Player mining (NPC miners work: MiningField, Jobs/Mining).
+   - [ ] Legacy's dust clouds (only the flecks are ported; the clouds need their texture
+         pass and shader converted).
+   - [ ] Reputation from more than kills and hits (escorting, trading) once there is more
+         to do; the player can't attack neutral ships yet, so standing mostly rises.
    - [ ] Jobs chosen by payout and threat, as Legacy's Think did, once there is an economy.
    - [ ] Respawn or a way back after the player's ship is destroyed (now: GAME OVER).
 8. **Scenario list.** The New Game test-seed list is a stopgap

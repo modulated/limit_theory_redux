@@ -58,6 +58,10 @@ local JumpGateGenerator = require('Modules.Navigation.Managers.JumpGateGenerator
 local JumpGateSystem = require('Modules.Navigation.Systems.JumpGateSystem')
 local GalaxyMap = require('Modules.Navigation.Systems.GalaxyMap')
 local NpcSystem = require('Modules.NPC.Systems.NpcSystem')
+local Reputation = require('Modules.NPC.Reputation')
+local SpaceDust = require('Modules.Rendering.Systems.SpaceDust')
+local CoreComponentsAll = require('Modules.Core.Components')
+local RenderComponent = require('Modules.Rendering.Components').Render
 local Factions = require('Modules.NPC.Factions')
 local GunshipRecipe = require('Modules.NPC.Managers.GunshipRecipe')
 local ArmedShipBuilder = require('Modules.Constructs.Managers.ArmedShipBuilder')
@@ -104,6 +108,10 @@ local SceneConfig = {
 local REBUILD_DELAY_FRAMES = 4
 -- Seconds the name and hostility of a system just entered stay on screen
 local SYSTEM_BANNER_TIME = 6.0
+
+-- Standing changes reach the game state (registered once; the state is a
+-- single object)
+local reputationListening = false
 
 local function releaseGpuMemory()
     collectgarbage('collect')
@@ -412,6 +420,10 @@ function LimitTheoryRedux:startGame(seed, scenario)
     self.weaponCombat = WeaponCombatSystem(self.world)
     -- The star system's NPC ships (combat scenarios only)
     self.npcs = NpcSystem(self)
+    if not reputationListening then
+        reputationListening = true
+        Reputation:onChange(function(faction, old, new) self:onReputationChanged(faction, old, new) end)
+    end
     RenderCoreSystem:setDebugPhysics(self.world)
 
     self:createSkybox()
@@ -501,6 +513,140 @@ function LimitTheoryRedux:currentHostility()
     return levels[index], index
 end
 
+--- A line under the HUD for a few seconds (standing changes and the like).
+---@param text string
+---@param color table|nil {r, g, b}
+function LimitTheoryRedux:notify(text, color)
+    self.messages = self.messages or {}
+    table.insert(self.messages, { text = text, color = color or { 0.9, 0.9, 0.9 }, time = 5.0 })
+    while #self.messages > 4 do table.remove(self.messages, 1) end
+end
+
+--- A standing changed: who shoots whom changes with it, and the player hears
+--- about it.
+function LimitTheoryRedux:onReputationChanged(faction, old, new)
+    if self.npcs then self.npcs:refreshHostility() end
+    if self.playerBattery then
+        local set = {}
+        for _, team in ipairs(Factions.hostileTeams(Factions.Player)) do set[team] = true end
+        self.playerBattery.hostileTeams = set
+    end
+    local r, g, b = Factions.color(faction)
+    local delta = new - old
+    self:notify(string.format("%s standing %s%.2f (%s)", Factions.name(faction),
+        delta >= 0 and "+" or "", delta, Reputation:describe(faction)), { r, g, b })
+end
+
+--- What the pilots can see of the player's ship: nothing while it is docked,
+--- a fraction of their range while it is cloaked.
+function LimitTheoryRedux:updatePlayerVisibility()
+    if not self.npcs then return end
+    local cloaked = self.cloak and self.cloak.active
+    self.npcs:setPlayerVisibility(self.docked ~= nil, cloaked and Config.game.cloak.detection or 1)
+end
+
+--- The station the player can dock at now: the nearest one in range whose
+--- owner isn't hostile to the player. Second result: the nearest in range
+--- that refuses (to say why).
+---@return table|nil dock, table|nil refused
+function LimitTheoryRedux:dockInRange()
+    local places = self.npcs and self.npcs.places
+    if not places or not places.docks or not self.playerShip then return nil end
+    local pos = self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody():getPos()
+    local best, refused, bestDist = nil, nil, math.huge
+    for _, dock in ipairs(places.docks) do
+        if dock.entity:isValid() then
+            local d = pos:distance(dock.position)
+            if d <= dock.radius * Config.game.docking.rangeFactor and d < bestDist then
+                if Factions.isHostile(dock.faction, Factions.Player) then
+                    refused = dock
+                else
+                    best, bestDist = dock, d
+                end
+            end
+        end
+    end
+    return best, refused
+end
+
+--- Dock the player's ship (Legacy Dockable:addDocked): inside the station,
+--- hidden, out of reach; hull and shields repaired; the camera orbits the
+--- station.
+---@param dock table
+function LimitTheoryRedux:dockPlayer(dock)
+    if self.cloak.active then self:setCloak(false) end
+    AutoPilotSystem:disengage(self.playerShip)
+    self.course = nil
+    local rb = self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody()
+    rb:setKinematic(true)
+    rb:setPos(Position(dock.position.x, dock.position.y, dock.position.z))
+    local render = self.playerShip:get(RenderComponent)
+    if render then render:setVisible(false) end
+    local targetable = self.playerShip:get(ConstructComponents.Targetable)
+    if targetable then targetable:setEnabled(false) end
+    if self.playerBattery then self.playerBattery:setAIActive(false) end
+
+    local health = self.playerShip:get(CoreComponentsAll.Health)
+    if health then health:setCurrentHealth(health:getMaxHealth()) end
+    local defense = self.playerShip:get(ConstructComponents.Defense)
+    if defense then
+        defense:setCurrentHealth(defense:getMaxHealth())
+        defense:setCurrentShield(defense:getMaxShield())
+    end
+
+    self.docked = dock
+    self:updatePlayerVisibility()
+    self:setOrbitFocus(dock.entity, self:orbitDistances(dock.radius))
+    self:notify("Docked. Hull and shields repaired.", { 0.6, 0.9, 1.0 })
+end
+
+--- Undock (Legacy Undock): the ship (a new one of the same kind, at rest)
+--- comes out above the station, and the chase camera takes over again.
+function LimitTheoryRedux:undockPlayer()
+    local dock = self.docked
+    if not dock then return end
+    local p = dock.position
+    local position = Position(p.x, p.y + dock.radius * 1.5 + 0.05, p.z + dock.radius * 0.5)
+    self.docked = nil
+    self:respawnPlayerShip(position, Vec3f(0, 0, -1))
+    self.player:setShip(self.playerShip)
+    self.player:setOrbitTarget(nil)
+    self.player:setMode(Enums.CameraMode.Chase)
+    self.npcs:setPlayer(self.playerShip)
+    self:updatePlayerVisibility()
+    self.mapState._entityListBuilt = false
+end
+
+--- Switch the cloak on or off (Legacy Elements/Components/Cloak): while on,
+--- weapons can't lock on to the ship, NPCs notice it only close by, and its
+--- turrets hold fire.
+---@param active boolean
+function LimitTheoryRedux:setCloak(active)
+    if active and (self.docked or self.cloak.charge < Config.game.cloak.minCharge) then return end
+    self.cloak.active = active
+    local targetable = self.playerShip and self.playerShip:get(ConstructComponents.Targetable)
+    if targetable then targetable:setEnabled(not active) end
+    if self.playerBattery then self.playerBattery:setAIActive(not active) end
+    self:updatePlayerVisibility()
+end
+
+--- The cloak's charge drains while it is on and refills while it is off.
+---@param dt number
+function LimitTheoryRedux:updateCloak(dt)
+    local cloak, cfg = self.cloak, Config.game.cloak
+    if not cloak then return end
+    if cloak.active then
+        cloak.charge = cloak.charge - dt
+        if cloak.charge <= 0 then
+            cloak.charge = 0
+            self:setCloak(false)
+            self:notify("Cloak drained.", { 0.7, 0.7, 1.0 })
+        end
+    else
+        cloak.charge = math.min(cfg.maxCharge, cloak.charge + cfg.rechargeRate * dt)
+    end
+end
+
 --- The NPC ships for the system maps ({entity, label, color} each).
 ---@return table[]
 function LimitTheoryRedux:mapNpcs()
@@ -524,8 +670,33 @@ function LimitTheoryRedux:populateSystem()
             if transform then table.insert(places.pointsOfInterest, transform:getPos()) end
         end
     end
+    -- Stations are docks (Legacy Dockable), owned by Config.game.docking.owner
+    places.docks = {}
+    for _, station in ipairs(self.stations or {}) do
+        local rbCmp = station:get(PhysicsComponents.RigidBody)
+        local body = rbCmp and rbCmp:getRigidBody()
+        if body then
+            table.insert(places.docks, {
+                entity = station,
+                position = body:getPos(),
+                radius = body:getBoundingRadius(),
+                faction = Config.game.docking.owner,
+            })
+        end
+    end
+    places.belts = self.beltEntities or {}
     self.npcs:setPlaces(places)
     self.npcs:setPlayer(self.playerShip)
+    self:updatePlayerVisibility()
+
+    -- Space dust around the camera, streaking with the ship's speed
+    if Config.game.dust.enabled then
+        self:addSceneEntity(SpaceDust.create(function()
+            if self.docked or not self.playerShip or not self.playerShip:isValid() then return nil end
+            local rbCmp = self.playerShip:get(PhysicsComponents.RigidBody)
+            return rbCmp and rbCmp:getRigidBody() and rbCmp:getVelocity() or nil
+        end))
+    end
     local system = self.galaxy and self.galaxy.systems[self.currentSystemId]
     local level = self:currentHostility()
     if level then
@@ -540,6 +711,10 @@ function LimitTheoryRedux:resetGalaxy()
     self.currentSystemId = 1
     self.course = nil
     self.jump = nil
+    Reputation:reset()
+    self.messages = {}
+    self.docked = nil
+    self.cloak = { charge = Config.game.cloak.maxCharge, active = false }
     if self.galaxyMapState then GalaxyMap:reset(self.galaxyMapState) end
 end
 
@@ -1265,21 +1440,33 @@ function LimitTheoryRedux:placeShipAtArrival(fromId)
         position = self:defaultShipSpawn()
     end
 
+    self:respawnPlayerShip(position, facing)
+
+    -- Where and by which gate the ship arrived (for JumpTest)
+    self.lastArrival = { position = position, gate = gate }
+    JumpGateSystem:reset(self.gateWatch)
+end
+
+--- Replace the player's ship with a new one of the same kind (at rest,
+--- whole) at `position`, facing `facing` (nil: as built).
+---@param position Position
+---@param facing Vec3f|nil
+function LimitTheoryRedux:respawnPlayerShip(position, facing)
     local spec = self.playerShipSpec
     if self.player:getOrbitTarget() == self.playerShip then
         self.player:setOrbitTarget(nil)
     end
+    if self.playerBattery then
+        self.weaponCombat:removeBattery(self.playerBattery)
+        self.playerBattery = nil
+    end
     self.constructManager:destroy(self.playerShipHandle)
     self:createPlayerShip(position, spec.shipType, spec.hullIdx, spec.seed)
-
-    -- Where and by which gate the ship arrived (for JumpTest)
-    self.lastArrival = { position = position, gate = gate }
-
     if facing then
         local up = math.abs(facing.y) > 0.99 and Vec3f(1, 0, 0) or Vec3f(0, 1, 0)
         self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody():setRot(Quat.FromLookUp(facing, up))
     end
-    JumpGateSystem:reset(self.gateWatch)
+    if self.cloak then self.cloak.active = false end
 end
 
 --- The frame over an open map: which map, its controls, how to leave.
@@ -1343,8 +1530,26 @@ function LimitTheoryRedux:drawNavigation()
     if self.mapMode ~= 0 or self.hudHidden or self.pauseMenuOpen then return end
     local lines = {}
     table.insert(lines, { text = string.format("%s  ·  %s", name, level.name), color = c })
+    if self.docked then
+        table.insert(lines, { text = "Docked  ·  F: undock", color = { 0.6, 0.9, 1.0 } })
+    elseif self:isTravelGame() then
+        local dock = self:dockInRange()
+        if dock then
+            table.insert(lines, { text = "F: dock", color = { 0.6, 0.9, 1.0 } })
+        end
+    end
+    if self.cloak and self:isTravelGame() then
+        local cfg = Config.game.cloak
+        if self.cloak.active then
+            table.insert(lines, { text = string.format("CLOAKED  %.0fs  ·  X: decloak", self.cloak.charge),
+                color = { 0.7, 0.7, 1.0 } })
+        elseif self.cloak.charge < cfg.maxCharge then
+            table.insert(lines, { text = string.format("Cloak charging %d%%", math.floor(100 * self.cloak.charge / cfg.maxCharge)),
+                color = { 0.55, 0.55, 0.8 } })
+        end
+    end
     local gate = self:gateInRange()
-    if gate then
+    if gate and not self.docked then
         local gl = levels[gate.destination.hostility] or levels[1]
         table.insert(lines, {
             text = string.format("J: jump to %s (%s)", gate.destination.name, gl.name),
@@ -1356,9 +1561,25 @@ function LimitTheoryRedux:drawNavigation()
         for _, id in ipairs(self.course) do table.insert(names, self.galaxy.systems[id].name) end
         table.insert(lines, { text = "Course: " .. table.concat(names, " > "), color = { 0.6, 0.9, 1.0 } })
     end
+    for _, message in ipairs(self.messages or {}) do
+        table.insert(lines, { text = message.text, color = message.color, alpha = math.min(1, message.time) })
+    end
+    local top = h - 140 - math.max(0, #lines - 3) * 20
     for i, line in ipairs(lines) do
-        DrawEx.TextAlpha(font, line.text, 14, 0, h - 140 + (i - 1) * 20, w, 18,
-            line.color[1], line.color[2], line.color[3], 0.9, 0.5, 0.5)
+        DrawEx.TextAlpha(font, line.text, 14, 0, top + (i - 1) * 20, w, 18,
+            line.color[1], line.color[2], line.color[3], 0.9 * (line.alpha or 1), 0.5, 0.5)
+    end
+
+    -- Standing with each faction, top right
+    if self:isTravelGame() then
+        local y = 70
+        for _, faction in ipairs({ Factions.Security, Factions.Trader, Factions.Pirate }) do
+            local r, g, b = Factions.color(faction)
+            DrawEx.TextAlpha(font, string.format("%s  %+.2f  %s", Factions.name(faction),
+                Reputation:get(faction), Reputation:describe(faction)), 12,
+                w - 290, y, 270, 16, r, g, b, 0.85, 1.0, 0.5)
+            y = y + 18
+        end
     end
 end
 
@@ -1382,6 +1603,11 @@ function LimitTheoryRedux:onRender(data)
     if self.jumpFade then
         self.jumpFade = self.jumpFade - data:deltaTime()
         if self.jumpFade <= 0 then self.jumpFade = nil end
+    end
+    for i = #(self.messages or {}), 1, -1 do
+        local message = self.messages[i]
+        message.time = message.time - data:deltaTime()
+        if message.time <= 0 then table.remove(self.messages, i) end
     end
     if self.systemBanner and not self.jump then
         self.systemBanner = self.systemBanner - data:deltaTime()
@@ -1511,6 +1737,8 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.Regenerate:update(dt)
     GeneralActions.ReloadShaders:update(dt)
     GeneralActions.Jump:update(dt)
+    GeneralActions.Dock:update(dt)
+    GeneralActions.Cloak:update(dt)
 
     if GeneralActions.CycleMapMode:isPressed() then
         -- 2D map, 3D map, then the galaxy map when there is a galaxy
@@ -1598,9 +1826,32 @@ function LimitTheoryRedux:onInput(data)
         end
     end
 
-    if GeneralActions.Jump:isPressed() then
+    if GeneralActions.Jump:isPressed() and not self.docked then
         local gate = self:gateInRange()
         if gate then self:startJump(gate) end
+    end
+
+    if GeneralActions.Dock:isPressed() and self:isTravelGame() then
+        if self.docked then
+            self:undockPlayer()
+        else
+            local dock, refused = self:dockInRange()
+            if dock then
+                self:dockPlayer(dock)
+            elseif refused then
+                self:notify(Factions.name(refused.faction) .. " refuse you docking.", { 1.0, 0.4, 0.3 })
+            end
+        end
+    end
+
+    if GeneralActions.Cloak:isPressed() and self:isTravelGame() then
+        if self.cloak.active then
+            self:setCloak(false)
+        elseif self.cloak.charge < Config.game.cloak.minCharge then
+            self:notify("Cloak still charging.", { 0.7, 0.7, 1.0 })
+        else
+            self:setCloak(true)
+        end
     end
 
     if self.scenario.onInput then
@@ -1637,6 +1888,7 @@ function LimitTheoryRedux:onStateSim(data)
     MemoryReporter:update(dt)
 
     self.player:update(dt)
+    self:updateCloak(dt)
     -- NPC ships fly (kinematic) before the physics step, like scenario things
     self.npcs:update(dt)
     if self.scenario.update then self.scenario.update(self, dt) end

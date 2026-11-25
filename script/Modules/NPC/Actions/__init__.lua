@@ -5,4 +5,9 @@ return {
     Attack = require('Modules.NPC.Actions.Attack'),
     Flee = require('Modules.NPC.Actions.Flee'),
     LeaveSystem = require('Modules.NPC.Actions.LeaveSystem'),
+    Orbit = require('Modules.NPC.Actions.Orbit'),
+    Repeat = require('Modules.NPC.Actions.Repeat'),
+    DockAt = require('Modules.NPC.Actions.DockAt'),
+    Undock = require('Modules.NPC.Actions.Undock'),
+    MineAt = require('Modules.NPC.Actions.MineAt'),
 }

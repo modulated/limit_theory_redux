@@ -3,5 +3,6 @@ return {
     Marauding = require('Modules.NPC.Jobs.Marauding'),
     Transport = require('Modules.NPC.Jobs.Transport'),
     Escort = require('Modules.NPC.Jobs.Escort'),
+    Mining = require('Modules.NPC.Jobs.Mining'),
     Think = require('Modules.NPC.Jobs.Think'),
 }

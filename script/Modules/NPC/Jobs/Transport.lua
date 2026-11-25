@@ -9,7 +9,7 @@ local Factions = require("Modules.NPC.Factions")
 --- and the player. Traders stop at stations, pirate merchants at hideouts.
 ---@class NpcTransport: NpcAction
 local Transport = Subclass("NpcTransport", Action, function(self, stops, exitGate, name)
-    self.stops = stops       -- positions {x, y, z}
+    self.stops = stops       -- positions {x, y, z}, or { dock = place } for a station to dock at
     self.exitGate = exitGate -- JumpGatePlacement or nil
     self.name = name or "Hauling cargo"
 end)
@@ -26,7 +26,7 @@ end
 --- Watching for threats the whole time, also on the way and while trading
 function Transport:onUpdatePassive(npc, ctx, dt)
     self.scan = (self.scan or 0) - dt
-    if self.scan > 0 or ctx:isFleeing(npc) then return end
+    if self.scan > 0 or ctx:isFleeing(npc) or npc.pilot.docked then return end
     self.scan = SCAN_INTERVAL
     local stats = npc.pilot.stats
     local range = stats.fleeRange or 3
@@ -40,8 +40,15 @@ function Transport:onUpdate(npc, ctx, dt)
     local stop = self.stops[self.next]
     if stop then
         self.next = self.next + 1
-        npc.pilot:pushAction(Actions.Wait(ctx.rng:getUniformRange(6, 12), "Trading"))
-        npc.pilot:pushAction(Actions.MoveTo(stop, 0.6, self.name))
+        if stop.dock then
+            -- A station: dock, trade a while, undock (pushed in reverse)
+            npc.pilot:pushAction(Actions.Undock())
+            npc.pilot:pushAction(Actions.Wait(ctx.rng:getUniformRange(6, 12), "Trading"))
+            npc.pilot:pushAction(Actions.DockAt(stop.dock))
+        else
+            npc.pilot:pushAction(Actions.Wait(ctx.rng:getUniformRange(6, 12), "Trading"))
+            npc.pilot:pushAction(Actions.MoveTo(stop, 0.6, self.name))
+        end
         return
     end
 
