@@ -66,7 +66,7 @@ local CameraActions = {
 
     ---@type ActionBinding
     MouseCapture = ActionBinding({
-        label = "Capture mouse (free camera)", group = "Camera",
+        label = "Mouse look on / off (free camera)", group = "Camera",
         mouse = { Control.Single(Button.MouseRight) },
     }),
 }

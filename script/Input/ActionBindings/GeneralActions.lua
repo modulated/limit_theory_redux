@@ -12,19 +12,19 @@ local GeneralActions = {
 
     ---@type ActionBinding
     CycleMapMode = ActionBinding({
-        label = "Open / switch map", group = "Map",
+        label = "Open / switch map (2D, 3D, galaxy)", group = "Map",
         keyboard = { Control.Single(Button.KeyboardM) },
     }),
 
     ---@type ActionBinding
     AutoPilotToggle = ActionBinding({
-        label = "Autopilot to selection / cancel", group = "Map",
+        label = "Autopilot / set course / cancel", group = "Map",
         keyboard = { Control.Single(Button.KeyboardN) },
     }),
 
     ---@type ActionBinding
     Jump = ActionBinding({
-        label = "Jump through the nearest gate (in range)", group = "Map",
+        label = "Jump through a nearby gate", group = "Flight",
         keyboard = { Control.Single(Button.KeyboardJ) },
     }),
 
