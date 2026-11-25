@@ -40,7 +40,7 @@ local defs = {
         class = Class.Powerplant,
         duration = 20.0,
         inputs = {
-            { item = Items.Miscellaneous.RadioactiveIsotopes, count = 1 },
+            { item = Items.Miscellaneous.RadioactiveIsotopes, count = 6 },
         },
         outputs = {
             { item = Items.Miscellaneous.EnergyCell, count = 240 },
@@ -53,7 +53,7 @@ local defs = {
         class = Class.Powerplant,
         duration = 40.0,
         inputs = {
-            { item = Items.Consumables.LiquidWater, count = 320 },
+            { item = Items.Consumables.LiquidWater, count = 572 },
         },
         outputs = {
             { item = Items.Miscellaneous.EnergyCell, count = 1000 },
@@ -66,7 +66,7 @@ local defs = {
         class = Class.Powerplant,
         duration = 4.0,
         inputs = {
-            { item = Items.Waste.Waste, count = 20 },
+            { item = Items.Waste.Waste, count = 14 },
         },
         outputs = {
             { item = Items.Miscellaneous.EnergyCell, count = 5 },
@@ -78,8 +78,8 @@ local defs = {
         class = Class.Refinery,
         duration = 6.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 2 },
-            { item = Items.Consumables.WaterIce, count = 10 },
+            { item = Items.Miscellaneous.EnergyCell, count = 3 },
+            { item = Items.Consumables.WaterIce, count = 15 },
         },
         outputs = {
             { item = Items.Consumables.LiquidWater, count = 20 },
@@ -91,8 +91,8 @@ local defs = {
         class = Class.Refinery,
         duration = 12.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 3 },
-            { item = Items.RawMaterials.SilicateOre, count = 12 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RawMaterials.SilicateOre, count = 2 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Silicon, count = 1 },
@@ -105,8 +105,8 @@ local defs = {
         class = Class.Refinery,
         duration = 13.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 3 },
-            { item = Items.RawMaterials.CarboniferousOre, count = 4 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RawMaterials.CarboniferousOre, count = 1 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Carbon, count = 1 },
@@ -119,8 +119,8 @@ local defs = {
         class = Class.Refinery,
         duration = 22.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 8 },
-            { item = Items.RawMaterials.BerylliumOre, count = 13 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RawMaterials.BerylliumOre, count = 1 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Beryllium, count = 1 },
@@ -133,8 +133,8 @@ local defs = {
         class = Class.Refinery,
         duration = 15.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 6 },
-            { item = Items.RawMaterials.AluminumOre, count = 8 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RawMaterials.AluminumOre, count = 1 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Aluminum, count = 1 },
@@ -147,8 +147,8 @@ local defs = {
         class = Class.Refinery,
         duration = 14.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 5 },
-            { item = Items.RawMaterials.IronOre, count = 7 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RawMaterials.IronOre, count = 1 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Iron, count = 1 },
@@ -161,8 +161,8 @@ local defs = {
         class = Class.Refinery,
         duration = 16.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 7 },
-            { item = Items.RawMaterials.CopperOre, count = 11 },
+            { item = Items.Miscellaneous.EnergyCell, count = 2 },
+            { item = Items.RawMaterials.CopperOre, count = 3 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Copper, count = 2 },
@@ -176,8 +176,8 @@ local defs = {
         class = Class.Refinery,
         duration = 20.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 13 },
-            { item = Items.RawMaterials.ThoriumOre, count = 12 },
+            { item = Items.Miscellaneous.EnergyCell, count = 2 },
+            { item = Items.RawMaterials.ThoriumOre, count = 2 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Thorium, count = 1 },
@@ -191,8 +191,8 @@ local defs = {
         class = Class.Refinery,
         duration = 14.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 6 },
-            { item = Items.Consumables.Biomass, count = 22 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.Consumables.Biomass, count = 1 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Hydrocarbons, count = 1 },
@@ -205,7 +205,7 @@ local defs = {
         class = Class.Factory,
         duration = 5.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 3 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
             { item = Items.Consumables.LiquidWater, count = 1 },
         },
         outputs = {
@@ -219,9 +219,9 @@ local defs = {
         class = Class.Factory,
         duration = 13.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 8 },
-            { item = Items.RefinedMaterials.Iron, count = 8 },
-            { item = Items.RefinedMaterials.Carbon, count = 2 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RefinedMaterials.Iron, count = 1 },
+            { item = Items.RefinedMaterials.Carbon, count = 1 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Steel, count = 1 },
@@ -234,8 +234,8 @@ local defs = {
         class = Class.Factory,
         duration = 18.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 12 },
-            { item = Items.Waste.AnodeSludge, count = 8 },
+            { item = Items.Miscellaneous.EnergyCell, count = 4 },
+            { item = Items.Waste.AnodeSludge, count = 3 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Silver, count = 1 },
@@ -248,8 +248,8 @@ local defs = {
         class = Class.Factory,
         duration = 21.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 14 },
-            { item = Items.Waste.AnodeSludge, count = 11 },
+            { item = Items.Miscellaneous.EnergyCell, count = 5 },
+            { item = Items.Waste.AnodeSludge, count = 4 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Gold, count = 1 },
@@ -262,8 +262,8 @@ local defs = {
         class = Class.Factory,
         duration = 25.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 20 },
-            { item = Items.Waste.AnodeSludge, count = 16 },
+            { item = Items.Miscellaneous.EnergyCell, count = 7 },
+            { item = Items.Waste.AnodeSludge, count = 5 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Platinum, count = 1 },
@@ -276,8 +276,8 @@ local defs = {
         class = Class.Factory,
         duration = 11.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 5 },
-            { item = Items.RefinedMaterials.Thorium, count = 12 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RefinedMaterials.Thorium, count = 2 },
         },
         outputs = {
             { item = Items.Miscellaneous.RadioactiveIsotopes, count = 1 },
@@ -291,8 +291,8 @@ local defs = {
         class = Class.Factory,
         duration = 9.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 11 },
-            { item = Items.RefinedMaterials.Hydrocarbons, count = 7 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RefinedMaterials.Hydrocarbons, count = 1 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Plastic, count = 1 },
@@ -305,8 +305,8 @@ local defs = {
         class = Class.Factory,
         duration = 11,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 10 },
-            { item = Items.RefinedMaterials.Plastic, count = 8 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RefinedMaterials.Plastic, count = 1 },
             { item = Items.RefinedMaterials.Gold, count = 1 },
             { item = Items.RefinedMaterials.Silicon, count = 1 },
         },
@@ -321,9 +321,9 @@ local defs = {
         class = Class.Factory,
         duration = 13.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 5 },
-            { item = Items.RefinedMaterials.Silicon, count = 5 },
-            { item = Items.RefinedMaterials.Aluminum, count = 3 },
+            { item = Items.Miscellaneous.EnergyCell, count = 1 },
+            { item = Items.RefinedMaterials.Silicon, count = 1 },
+            { item = Items.RefinedMaterials.Aluminum, count = 1 },
         },
         outputs = {
             { item = Items.RefinedMaterials.TransparentAluminum, count = 1 },
@@ -336,10 +336,10 @@ local defs = {
         class = Class.Factory,
         duration = 17.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 18 },
-            { item = Items.RefinedMaterials.Silicon, count = 5 },
-            { item = Items.RefinedMaterials.Iron, count = 3 },
-            { item = Items.RefinedMaterials.Beryllium, count = 3 },
+            { item = Items.Miscellaneous.EnergyCell, count = 2 },
+            { item = Items.RefinedMaterials.Silicon, count = 1 },
+            { item = Items.RefinedMaterials.Iron, count = 1 },
+            { item = Items.RefinedMaterials.Beryllium, count = 1 },
         },
         outputs = {
             { item = Items.RefinedMaterials.Glassiron, count = 1 },
@@ -352,11 +352,11 @@ local defs = {
         class = Class.Factory,
         duration = 450.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 210 },
-            { item = Items.RefinedMaterials.Glassiron, count = 500 },
-            { item = Items.RefinedMaterials.TransparentAluminum, count = 30 },
-            { item = Items.RefinedMaterials.Steel, count = 75 },
-            { item = Items.Data.InfolyticChip, count = 35 },
+            { item = Items.Miscellaneous.EnergyCell, count = 2 },
+            { item = Items.RefinedMaterials.Glassiron, count = 3 },
+            { item = Items.RefinedMaterials.TransparentAluminum, count = 2 },
+            { item = Items.RefinedMaterials.Steel, count = 2 },
+            { item = Items.Data.InfolyticChip, count = 2 },
         },
         outputs = {
             { item = Items.Equipment.ShipSensor, count = 1 },
@@ -369,12 +369,12 @@ local defs = {
         class = Class.Factory,
         duration = 360.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 240 },
-            { item = Items.RefinedMaterials.Glassiron, count = 420 },
-            { item = Items.RefinedMaterials.TransparentAluminum, count = 28 },
-            { item = Items.RefinedMaterials.Steel, count = 65 },
-            { item = Items.RefinedMaterials.Silicon, count = 25 },
-            { item = Items.Data.InfolyticChip, count = 150 },
+            { item = Items.Miscellaneous.EnergyCell, count = 2 },
+            { item = Items.RefinedMaterials.Glassiron, count = 2 },
+            { item = Items.RefinedMaterials.TransparentAluminum, count = 2 },
+            { item = Items.RefinedMaterials.Steel, count = 2 },
+            { item = Items.RefinedMaterials.Silicon, count = 2 },
+            { item = Items.Data.InfolyticChip, count = 2 },
         },
         outputs = {
             { item = Items.Equipment.ShipComputer, count = 1 },
@@ -387,11 +387,11 @@ local defs = {
         class = Class.Factory,
         duration = 900.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 120 },
-            { item = Items.RefinedMaterials.Glassiron, count = 1000 },
-            { item = Items.RefinedMaterials.TransparentAluminum, count = 20 },
-            { item = Items.RefinedMaterials.Steel, count = 170 },
-            { item = Items.Data.InfolyticChip, count = 12 },
+            { item = Items.Miscellaneous.EnergyCell, count = 2 },
+            { item = Items.RefinedMaterials.Glassiron, count = 12 },
+            { item = Items.RefinedMaterials.TransparentAluminum, count = 2 },
+            { item = Items.RefinedMaterials.Steel, count = 2 },
+            { item = Items.Data.InfolyticChip, count = 2 },
             { item = Items.RefinedMaterials.Thorium, count = 2 },
         },
         outputs = {
@@ -405,11 +405,11 @@ local defs = {
         class = Class.Factory,
         duration = 790.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 180 },
-            { item = Items.RefinedMaterials.Glassiron, count = 800 },
-            { item = Items.RefinedMaterials.TransparentAluminum, count = 32 },
-            { item = Items.RefinedMaterials.Steel, count = 210 },
-            { item = Items.Data.InfolyticChip, count = 12 },
+            { item = Items.Miscellaneous.EnergyCell, count = 2 },
+            { item = Items.RefinedMaterials.Glassiron, count = 3 },
+            { item = Items.RefinedMaterials.TransparentAluminum, count = 2 },
+            { item = Items.RefinedMaterials.Steel, count = 2 },
+            { item = Items.Data.InfolyticChip, count = 2 },
         },
         outputs = {
             { item = Items.Equipment.ShipWeaponPulseTurret, count = 1 },
@@ -422,14 +422,14 @@ local defs = {
         class = Class.Drydock,
         duration = 1800.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 1500 },
-            { item = Items.RefinedMaterials.Glassiron, count = 10000 },
-            { item = Items.RefinedMaterials.TransparentAluminum, count = 900 },
-            { item = Items.RefinedMaterials.Steel, count = 1850 },
-            { item = Items.RefinedMaterials.Gold, count = 285 },
-            { item = Items.RefinedMaterials.Platinum, count = 95 },
-            { item = Items.Data.InfolyticChip, count = 165 },
-            { item = Items.RefinedMaterials.Thorium, count = 35 },
+            { item = Items.Miscellaneous.EnergyCell, count = 4 },
+            { item = Items.RefinedMaterials.Glassiron, count = 21 },
+            { item = Items.RefinedMaterials.TransparentAluminum, count = 3 },
+            { item = Items.RefinedMaterials.Steel, count = 5 },
+            { item = Items.RefinedMaterials.Gold, count = 1 },
+            { item = Items.RefinedMaterials.Platinum, count = 1 },
+            { item = Items.Data.InfolyticChip, count = 1 },
+            { item = Items.RefinedMaterials.Thorium, count = 1 },
             { item = Items.Equipment.ShipSensor, count = 1 },
             { item = Items.Equipment.ShipComputer, count = 1 },
             { item = Items.Equipment.ShipEngineThruster, count = 1 },
@@ -445,16 +445,16 @@ local defs = {
         class = Class.Drydock,
         duration = 14400.0,
         inputs = {
-            { item = Items.Miscellaneous.EnergyCell, count = 350000 },
-            { item = Items.RefinedMaterials.Glassiron, count = 1000000 },
-            { item = Items.RefinedMaterials.TransparentAluminum, count = 180000 },
-            { item = Items.RefinedMaterials.Steel, count = 395000 },
-            { item = Items.RefinedMaterials.Gold, count = 57000 },
-            { item = Items.RefinedMaterials.Platinum, count = 9100 },
-            { item = Items.Data.InfolyticChip, count = 8500 },
-            { item = Items.Equipment.ShipSensor, count = 100 },
-            { item = Items.Equipment.ShipComputer, count = 100 },
-            { item = Items.RefinedMaterials.Thorium, count = 640 },
+            { item = Items.Miscellaneous.EnergyCell, count = 716 },
+            { item = Items.RefinedMaterials.Glassiron, count = 2046 },
+            { item = Items.RefinedMaterials.TransparentAluminum, count = 369 },
+            { item = Items.RefinedMaterials.Steel, count = 809 },
+            { item = Items.RefinedMaterials.Gold, count = 116 },
+            { item = Items.RefinedMaterials.Platinum, count = 19 },
+            { item = Items.Data.InfolyticChip, count = 18 },
+            { item = Items.Equipment.ShipSensor, count = 1 },
+            { item = Items.Equipment.ShipComputer, count = 1 },
+            { item = Items.RefinedMaterials.Thorium, count = 1 },
         },
         outputs = {
             { item = Items.Constructs.SpaceStationSmall, count = 1 },

@@ -8,8 +8,9 @@ Status sections say how much of each is actually wired up.
 Status summary (2026-11): it all runs. 58 items with permanent ids; every belt and ring has a
 composition and mining reads it; a rock knows what it holds; stations hold stock, price it by how
 short they are, run the production chains against it, and trade with the player on a docked screen;
-the player has a hold, a mining laser and credits. Legacy's economy is deleted. What is missing is
-listed in section 6 — chiefly NPC traders that actually haul, equipment that can be fitted, and
+the player has a hold, a mining laser, credits, a hangar at every station and lines they can rent
+there; NPC workers are the hands the factory floors run on. Legacy's economy is deleted. What is
+missing is listed in the last section — chiefly NPC traders that actually haul, equipment that can be fitted, and
 saving.
 
 ## 1. Where it lives
@@ -32,7 +33,9 @@ saving.
 | A store of goods (stations, the hold) | `script/Modules/Economy/Components/StockComponent.lua` |
 | The player's hold | `script/Modules/Economy/Managers/PlayerCargo.lua` |
 | The docked station screen | `script/UI/HmGui/Views/Gameplay/Station.lua` |
-| Mining and trade tuning | `Config.game.mining`, `Config.game.trade`, `Config.game.production`, `Config.game.cargo` |
+| The player's hangar and rented lines | `script/Modules/Economy/Managers/PlayerFactories.lua` |
+| A station's crew | `script/Modules/Economy/Components/WorkforceComponent.lua`, `Modules/NPC/Jobs/Work.lua` |
+| Mining and trade tuning | `Config.game.mining`, `Config.game.trade`, `Config.game.production`, `Config.game.factory`, `Config.game.cargo` |
 
 ### Item definition
 
@@ -71,7 +74,7 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 |------|------|--------|--------|-------|
 | Data Cube | 1 | 2.1 | 2 | 50 |
 | Info Wafer | 1 | 3.82 | 4 | 75 |
-| Infolytic Chip | 3 | 1.35 | 4 | 100 |
+| Infolytic Chip | 3 | 1.35 | 4 | 430 |
 
 ### Raw Materials (mined)
 
@@ -90,18 +93,18 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 | Item | Mass | E/mass | Energy | Price |
 |------|------|--------|--------|-------|
 | Iron | 5 | 1 | 5 | 50 |
-| Copper | 5 | 1 | 5 | 60 |
+| Copper | 5 | 1 | 5 | 70 |
 | Aluminum | 3 | 1.8 | 5 | 55 |
 | Silver | 5 | 1.5 | 8 | 150 |
 | Gold | 6 | 2 | 12 | 200 |
 | Platinum | 8 | 3 | 24 | 250 |
-| Steel | 7 | 1 | 7 | 70 |
-| Transparent Aluminum | 5 | 1.7 | 8 | 80 |
-| Glassiron | 11 | 1 | 11 | 90 |
-| Plastic | 3 | 1.9 | 6 | 45 |
+| Steel | 7 | 1 | 7 | 150 |
+| Transparent Aluminum | 5 | 1.7 | 8 | 165 |
+| Glassiron | 11 | 1 | 11 | 250 |
+| Plastic | 3 | 1.9 | 6 | 70 |
 | Thorium | 9 | 27 | 243 | 300 |
-| Silicon | 2 | 1.7 | 3 | 40 |
-| Carbon | 2 | 1.3 | 3 | 35 |
+| Silicon | 2 | 1.7 | 3 | 55 |
+| Carbon | 2 | 1.3 | 3 | 60 |
 | Beryllium | 2 | 1.3 | 3 | 65 |
 | Lithium | 1 | 1.2 | 1 | 70 |
 | Boron | 2 | 1.2 | 2 | 50 |
@@ -111,10 +114,10 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 
 | Item | Mass | E/mass | Energy | Price |
 |------|------|--------|--------|-------|
-| Hydrogen | 1 | 2 | 2 | 15 |
+| Hydrogen | 1 | 2 | 2 | 25 |
 | Helium | 1 | 1.01 | 1 | 10 |
 | Nitrogen | 1 | 1.05 | 1 | 12 |
-| Oxygen | 1 | 1.5 | 2 | 18 |
+| Oxygen | 1 | 1.5 | 2 | 30 |
 
 ### Consumables
 
@@ -128,11 +131,11 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 
 | Item | Mass | E/mass | Energy | Price |
 |------|------|--------|--------|-------|
-| Ship Computer | 110 | 22 | 2420 | 500 |
-| Ship Sensor | 80 | 19 | 1520 | 400 |
-| Ship Engine, Thruster | 600 | 20 | 12000 | 2000 |
+| Ship Computer | 110 | 22 | 2420 | 2600 |
+| Ship Sensor | 80 | 19 | 1520 | 2500 |
+| Ship Engine, Thruster | 600 | 20 | 12000 | 7200 |
 | Ship Engine, Impeller | 1500 | 18 | 27000 | 4000 |
-| Ship Weapon, Pulse Turret | 100 | 10 | 1000 | 600 |
+| Ship Weapon, Pulse Turret | 100 | 10 | 1000 | 2800 |
 | Ship Weapon, Beam Turret | 120 | 10 | 1200 | 650 |
 | Ship Weapon, Launcher Turret | 90 | 8 | 720 | 550 |
 | Ship Weapon, Pulse Bay | 1000 | 9 | 9000 | 3000 |
@@ -149,7 +152,7 @@ is not implemented.
 
 | Item | Mass | E/mass | Energy | Price |
 |------|------|--------|--------|-------|
-| Ship Hull, Solo | 15000 | 50 | 750000 | 15000 |
+| Ship Hull, Solo | 15000 | 50 | 750000 | 24000 |
 | Ship Hull, Small | 32000 | 49 | 1568000 | 30000 |
 | Ship Hull, Compact | 75000 | 47 | 3525000 | 70000 |
 | Ship Hull, Medium | 102500 | 46 | 4715000 | 100000 |
@@ -170,7 +173,7 @@ is not implemented.
 | Item | Mass | E/mass | Energy | Price |
 |------|------|--------|--------|-------|
 | Energy Cell | 1 | 1 | 1 | 20 |
-| Radioactive Isotopes | 13 | 50 | 650 | 500 |
+| Radioactive Isotopes | 13 | 50 | 650 | 600 |
 
 ## 3. Mined ore
 
@@ -274,40 +277,56 @@ of nothing, so a refinery with no ore waits for a miner. Each station gets a pow
 solar array, which needs no fuel) plus a refinery or a factory or two from its seed, and one
 station in a system may also build hulls.
 
+**A line needs hands.** Every station has a `Workforce`: its own standing crew
+(`production.stationCrew`) plus the workers docked there right now. A line claims
+`production.workersPerLine` of them or stands idle showing "no crew" on the docked screen.
+Workers are an NPC role with a job of their own (`Modules/NPC/Jobs/Work.lua`): fly in, dock, work a
+shift, undock, go somewhere else. A Secure system spawns four of them and a Lawless one none, so
+lawless space has idle factories — and shooting a system's worker shuttles down slows its industry.
+The station's own lines claim the crew first; the player's rented lines (below) take what is left.
+
+**Legacy's quantities were rebalanced.** As ported, almost every recipe destroyed value: the Iron
+Refinery ate 5 energy cells and 7 iron ore (310 credits at equilibrium) to make one iron (50), and
+the reactors made energy out of almost nothing. `luajit tools/economy-sim.lua --recipes` showed it
+and `--rebalance` fixed it: input counts are scaled so a run is worth about 1.4 times what it eats,
+with a handful of built goods repriced where a single unit of an ingredient already cost more than
+the product (Steel 70 → 150, Glassiron 90 → 250, Infolytic Chip 100 → 430, Ship Sensor 400 → 2,500,
+and so on). Every recipe now pays for its inputs and the station's cut.
+
 Classes: **Powerplant** (Legacy's P0), **Refinery** (P1), **Factory** (P2), **Drydock** (P3),
 **Misc** (P4). "Energy" in the inputs is the **Energy Cell** item.
 
 | Class | Recipe | Inputs | Outputs | Seconds |
 |-------|--------|--------|---------|---------|
-| P0 | Solar Energy Array | — | Energy Cell ×10 | 8 |
-| P0 | Nuclear Reactor | Isotopes ×1 | Energy Cell ×240, Radioactive Waste ×8 | 20 |
-| P0 | Fusion Reactor | Liquid Water ×320 | Energy Cell ×1000, Radioactive Waste ×1 | 40 |
-| P0 | Waste Recycler | Waste ×20 | Energy Cell ×5 | 4 |
-| P1 | Water Melter | Energy ×2, Water Ice ×10 | Liquid Water ×20 | 6 |
-| P1 | Silicon Refinery | Energy ×3, Silicate Ore ×12 | Silicon ×1, Waste ×6 | 12 |
-| P1 | Carbon Refinery | Energy ×3, Carboniferous Ore ×4 | Carbon ×1, Waste ×3 | 13 |
-| P1 | Beryllium Refinery | Energy ×8, Beryllium Ore ×13 | Beryllium ×1, Waste ×7 | 22 |
-| P1 | Aluminum Refinery | Energy ×6, Aluminum Ore ×8 | Aluminum ×1, Waste ×5 | 15 |
-| P1 | Iron Refinery | Energy ×5, Iron Ore ×7 | Iron ×1, Waste ×4 | 14 |
-| P1 | Copper Refinery | Energy ×7, Copper Ore ×11 | Copper ×2, Anode Sludge ×1, Waste ×7 | 16 |
-| P1 | Thorium Refinery | Energy ×13, Thorium Ore ×12 | Thorium ×1, Radioactive Waste ×2, Waste ×5 | 20 |
-| P1 | Hydrocarbon Refinery | Energy ×6, Biomass ×22 | Hydrocarbons ×1, Waste ×15 | 14 |
-| P2 | Water Electrolyser | Energy ×3, Liquid Water ×1 | Hydrogen ×2, Oxygen ×1 | 5 |
-| P2 | Steel Foundry | Energy ×8, Iron ×8, Carbon ×2 | Steel ×1, Waste ×4 | 13 |
-| P2 | Silver Recovery Plant | Energy ×12, Anode Sludge ×8 | Silver ×1, Waste ×6 | 18 |
-| P2 | Gold Recovery Plant | Energy ×14, Anode Sludge ×11 | Gold ×1, Waste ×7 | 21 |
-| P2 | Platinum Recovery Plant | Energy ×20, Anode Sludge ×16 | Platinum ×1, Waste ×9 | 25 |
-| P2 | Isotope Factory | Energy ×5, Thorium ×12 | Radioactive Isotopes ×1, Radioactive Waste ×7, Waste ×3 | 11 |
-| P2 | Plastics Factory | Energy ×11, Hydrocarbons ×7 | Plastic ×1, Waste ×8 | 9 |
-| P2 | Infolytic Chip Factory | Energy ×10, Plastic ×8, Gold ×1, Silicon ×1 | Infolytic Chip ×1, Waste ×2 | 11 |
-| P2 | Transparent Aluminum Factory | Energy ×5, Silicon ×5, Aluminum ×3 | Transparent Aluminum ×1, Waste ×3 | 13 |
-| P2 | Glassiron Factory | Energy ×18, Silicon ×5, Iron ×3, Beryllium ×3 | Glassiron ×1, Waste ×3 | 17 |
-| P2 | Ship Sensor Factory | Energy ×210, Glassiron ×500, Transp. Alum ×30, Steel ×75, Infolytic ×35 | Ship Sensor ×1, Waste ×55 | 450 |
-| P2 | Ship Computer Factory | Energy ×240, Glassiron ×420, Transp. Alum ×28, Steel ×65, Silicon ×25, Infolytic ×150 | Ship Computer ×1, Waste ×70 | 360 |
-| P2 | Thruster Engine Factory | Energy ×120, Glassiron ×1000, Transp. Alum ×20, Steel ×170, Infolytic ×12, Thorium ×2 | Ship Engine, Thruster ×1, Waste ×55 | 900 |
-| P2 | Pulse Turret Weapon Factory | Energy ×180, Glassiron ×800, Transp. Alum ×32, Steel ×210, Infolytic ×12 | Ship Weapon, Pulse Turret ×1, Waste ×40 | 790 |
-| P3 | Solo Ship Hull Drydock | Energy ×1500, Glassiron ×10000, Transp. Alum ×900, Steel ×1850, Gold ×285, Platinum ×95, Infolytic ×165, Thorium ×35, Ship Sensor ×1, Ship Computer ×1, Thruster ×1 | Ship Hull, Solo ×1, Waste ×725 | 1800 |
-| P3 | Space Station Fabricator | Energy ×350000, Glassiron ×1000000, Transp. Alum ×180000, Steel ×395000, Gold ×57000, Platinum ×9100, Infolytic ×8500, Ship Sensor ×100, Ship Computer ×100, Thorium ×640 | Space Station, Small ×1, Waste ×9750 | 14400 |
+| Powerplant | Solar Energy Array | -- | Energy Cell x10 | 8 |
+| Powerplant | Nuclear Reactor | Radioactive Isotopes x6 | Energy Cell x240, Radioactive Waste x8 | 20 |
+| Powerplant | Fusion Reactor | Liquid Water x572 | Energy Cell x1000, Radioactive Waste x1 | 40 |
+| Powerplant | Waste Recycler | Waste x14 | Energy Cell x5 | 4 |
+| Refinery | Water Melter | Energy Cell x3, Water Ice x15 | Liquid Water x20 | 6 |
+| Refinery | Silicon Refinery | Energy Cell x1, Silicate Ore x2 | Silicon x1, Waste x6 | 12 |
+| Refinery | Carbon Refinery | Energy Cell x1, Carboniferous Ore x1 | Carbon x1, Waste x3 | 13 |
+| Refinery | Beryllium Refinery | Energy Cell x1, Beryllium Ore x1 | Beryllium x1, Waste x7 | 22 |
+| Refinery | Aluminum Refinery | Energy Cell x1, Aluminum Ore x1 | Aluminum x1, Waste x5 | 15 |
+| Refinery | Iron Refinery | Energy Cell x1, Iron Ore x1 | Iron x1, Waste x4 | 14 |
+| Refinery | Copper Refinery | Energy Cell x2, Copper Ore x3 | Copper x2, Anode Sludge x1, Waste x7 | 16 |
+| Refinery | Thorium Refinery | Energy Cell x2, Thorium Ore x2 | Thorium x1, Radioactive Waste x2, Waste x5 | 20 |
+| Refinery | Hydrocarbon Refinery | Energy Cell x1, Biomass x1 | Hydrocarbons x1, Waste x15 | 14 |
+| Factory | Water Electrolyser | Energy Cell x1, Liquid Water x1 | Hydrogen x2, Oxygen x1 | 5 |
+| Factory | Steel Foundry | Energy Cell x1, Iron x1, Carbon x1 | Steel x1, Waste x4 | 13 |
+| Factory | Silver Recovery Plant | Energy Cell x4, Anode Sludge x3 | Silver x1, Waste x6 | 18 |
+| Factory | Gold Recovery Plant | Energy Cell x5, Anode Sludge x4 | Gold x1, Waste x7 | 21 |
+| Factory | Platinum Recovery Plant | Energy Cell x7, Anode Sludge x5 | Platinum x1, Waste x9 | 25 |
+| Factory | Isotope Factory | Energy Cell x1, Thorium x2 | Radioactive Isotopes x1, Radioactive Waste x7, Waste x3 | 11 |
+| Factory | Plastics Factory | Energy Cell x1, Hydrocarbons x1 | Plastic x1, Waste x8 | 9 |
+| Factory | Infolytic Chip Factory | Energy Cell x1, Plastic x1, Gold x1, Silicon x1 | Infolytic Chip x1, Waste x2 | 11 |
+| Factory | Transparent Aluminum Factory | Energy Cell x1, Silicon x1, Aluminum x1 | Transparent Aluminum x1, Waste x3 | 13 |
+| Factory | Glassiron Factory | Energy Cell x2, Silicon x1, Iron x1, Beryllium x1 | Glassiron x1, Waste x3 | 17 |
+| Factory | Ship Sensor Factory | Energy Cell x2, Glassiron x3, Transparent Aluminum x2, Steel x2, Infolytic Chip x2 | Ship Sensor x1, Waste x55 | 450 |
+| Factory | Ship Computer Factory | Energy Cell x2, Glassiron x2, Transparent Aluminum x2, Steel x2, Silicon x2, Infolytic Chip x2 | Ship Computer x1, Waste x70 | 360 |
+| Factory | Thruster Engine Factory | Energy Cell x2, Glassiron x12, Transparent Aluminum x2, Steel x2, Infolytic Chip x2, Thorium x2 | Ship Engine, Thruster x1, Waste x55 | 900 |
+| Factory | Pulse Turret Weapon Factory | Energy Cell x2, Glassiron x3, Transparent Aluminum x2, Steel x2, Infolytic Chip x2 | Ship Weapon, Pulse Turret x1, Waste x40 | 790 |
+| Drydock | Solo Ship Hull Drydock | Energy Cell x4, Glassiron x21, Transparent Aluminum x3, Steel x5, Gold x1, Platinum x1, Infolytic Chip x1, Thorium x1, Ship Sensor x1, Ship Computer x1, Ship Engine, Thruster x1 | Ship Hull, Solo x1, Waste x725 | 1800 |
+| Drydock | Space Station Fabricator | Energy Cell x716, Glassiron x2046, Transparent Aluminum x369, Steel x809, Gold x116, Platinum x19, Infolytic Chip x18, Ship Sensor x1, Ship Computer x1, Thorium x1 | Space Station, Small x1, Waste x9750 | 14400 |
 
 Only one weapon (Pulse Turret), one engine (Thruster) and one hull (Solo) have a recipe; the rest of
 the Equipment and Constructs items are sold but not buildable. Legacy's "Piracy" recipe (energy in,
@@ -326,7 +345,36 @@ Legacy tiered its items T0–T8 (energy, information, raw inanimate, raw animate
 elemental, processed constructed, ship component, ship hull, station), which the registry's groups
 mostly mirror. Those Legacy files are gone now; the recipes above are the port.
 
-## 6. Tuning it without running the game
+## 6. The player's own industry
+
+Docked, the **Factory** tab shows the station's own lines and what it will rent out, and the
+**Hangar** tab what the player keeps there. `Modules/Economy/Managers/PlayerFactories.lua` holds
+both, beside the wallet and the hold, because stations are destroyed and rebuilt when a system is
+generated again; everything is keyed by `system id:station index`, which is stable.
+
+- **A hangar at every station** used, `factory.hangarCapacity` of mass (20,000 t against the ship's
+  2,400). The Hangar tab moves goods either way between it and the ship, and sells from it; the
+  Market tab has a `trade with: ship hold | hangar` switch, so inputs can be bought straight into
+  the hangar.
+- **Renting a line.** A station rents out `factory.rentableLines` of them, for
+  `factory.rentChoices` recipes of the trades its own floor knows — *not* the ones it is running
+  itself, because a renter fighting the station for the same ore buys dear and sells cheap. A
+  recipe that needs no inputs (a solar array) is never rented out.
+- **The cut.** Holding a lease is free; the station takes `factory.rentShare` of what each finished
+  run is worth (at least `factory.rentMinFee`). If the credits are not there when a run finishes,
+  the station keeps the goods and the lease lapses.
+- **Inputs and outputs** are the hangar's: a line eats from it and fills it back up, so it stalls
+  with "needs Iron Ore x4" or "hangar full" rather than quietly spending money.
+- **Crew is shared** with the station, its own lines first, so a rented line can read "no crew".
+- **While you are away** a lease keeps working: the time is credited when you come back to the
+  system, up to `factory.offlineCatchUpMax` (an hour) of it.
+
+What it pays: `--crafter` in the sim rents the best line at a station, buys its inputs there and
+sells the output back, which is the worst case — about 130 credits an hour. The gain is in sourcing
+the inputs yourself (ore you mined, goods bought where they are cheap), where a refined good is
+worth roughly twice the ore it came from.
+
+## 7. Tuning it without running the game
 
 `tools/economy-sim.lua` runs this economy headless: it loads the real
 `Config.game`, the real item and production registries and the real
@@ -376,11 +424,12 @@ next station, and the prospector mines a full hold and sells it where it pays
 best. Nothing about prices, stock, production or imports is modelled: that is
 the game's own code.
 
-## 7. Gaps and implementation order
+## 8. Gaps and implementation order
 
 Done: the item registry with permanent ids, the feedstock items, ore from each field's own
-composition, rocks that know what they hold, station stock and prices, production, the player's
-hold, player mining, the docked station screen, and the deletion of Legacy's economy.
+composition, rocks that know what they hold, station stock and prices, production with a crew of
+NPC workers, rebalanced recipes, the player's hold, player mining, the docked station screen, a
+hangar and rentable factory lines at every station, and the deletion of Legacy's economy.
 
 - [ ] **Biomass has no source.** The Hydrocarbon Refinery (and so plastics, and so chips) runs on
       imports alone. It wants a farm or a station recipe, or a mineable source.
@@ -389,7 +438,10 @@ hold, player mining, the docked station screen, and the deletion of Legacy's eco
       `Jobs/Transport.lua` and `StationTradeSystem` already have the pieces.
 - [ ] **Equipment and hulls are inert**: an Equipment item is a good with a price, with no link to
       `WeaponRegistry` or the procedural module catalog, so a bought turret cannot be fitted. A
-      drydock's hull cannot be flown either.
+      drydock's hull cannot be flown either. This is the next thing worth building: it is what
+      makes crafting matter.
+- [ ] **Workers are only hands.** A worker shuttle's cargo is irrelevant, it is never paid, and a
+      station does not hire. Pay, wages and a labour market would make the crew a real cost.
 - [ ] **A prospecting scanner**: rocks carry their ore and remaining yield
       (`AsteroidOre.ofEntity`); nothing reads it yet, so the ore is on the HUD as soon as a rock is
       in reach.

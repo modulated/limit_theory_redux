@@ -39,7 +39,10 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    and credits; NPC miners deliver their ore. Legacy's economy is deleted. The item list, the
    chains and what is left are in [doc/items.md](doc/items.md). Still to do:
    - [ ] NPC traders that haul goods between stations instead of waiting at a stop.
-   - [ ] Equipment and hulls that can be fitted and flown, not just bought.
+   - [ ] Workers are only hands: never paid, never hired, their cargo irrelevant. Wages and a
+         labour market would make a station's crew a real cost.
+   - [ ] Equipment and hulls that can be fitted and flown, not just bought (the next thing worth
+         building: it is what makes crafting matter).
    - [ ] Biomass has no source, so the hydrocarbon chain runs on imports.
    - [ ] One market model: the order-book `MarketplaceSystem` and the station shop both price goods.
    - [ ] Saving the hold, the wallet, station stock and production progress.

@@ -62,6 +62,7 @@ local Reputation = require('Modules.NPC.Reputation')
 local CombatLog = require('Modules.Constructs.Systems.CombatLog')
 local PlayerWallet = require('Modules.Economy.Managers.PlayerWallet')
 local PlayerCargo = require('Modules.Economy.Managers.PlayerCargo')
+local PlayerFactories = require('Modules.Economy.Managers.PlayerFactories')
 local StationTradeSystem = require('Modules.Economy.Systems.StationTradeSystem')
 local ProductionSystem = require('Modules.Economy.Systems.ProductionSystem')
 local EconomyComponents = require('Modules.Economy.Components')
@@ -766,6 +767,21 @@ function LimitTheoryRedux:dockPlayer(dock)
     self:openStationScreen()
 end
 
+--- The player's rented lines at this system's stations, after the stations'
+--- own lines have claimed the crew (ProductionSystem:update).
+---@param dt number
+function LimitTheoryRedux:updatePlayerFactories(dt)
+    local places = self.npcs and self.npcs.places
+    for _, dock in ipairs(places and places.docks or {}) do
+        if dock.key and dock.entity:isValid() then
+            for _, event in ipairs(PlayerFactories:update(dock.entity, dock.key, dt)) do
+                self:notify(event.text, { 1.0, 0.7, 0.3 })
+            end
+            PlayerFactories:mark(dock.key, self.simTime or 0)
+        end
+    end
+end
+
 --- Open the docked station's screen (the market). The cursor is freed: the
 --- screen is clicked, not flown.
 function LimitTheoryRedux:openStationScreen()
@@ -858,13 +874,22 @@ function LimitTheoryRedux:populateSystem()
         local rbCmp = station:get(PhysicsComponents.RigidBody)
         local body = rbCmp and rbCmp:getRigidBody()
         if body then
+            -- The key the player's hangar and leases are filed under: the
+            -- system and the station's place in it, which is stable because
+            -- a system's stations are built from the system's own seed
+            local key = string.format("%d:%d", self.currentSystemId or 1, index)
             table.insert(places.docks, {
                 entity = station,
                 label = "Station " .. index,
+                key = key,
                 position = body:getPos(),
                 radius = body:getBoundingRadius(),
                 faction = Config.game.docking.owner,
             })
+            -- What the player's lines made here while they were away
+            for _, event in ipairs(PlayerFactories:catchUp(station, key, self.simTime or 0)) do
+                self:notify(event.text, { 0.6, 0.9, 1.0 })
+            end
         end
     end
     places.belts = self.beltEntities or {}
@@ -897,6 +922,7 @@ function LimitTheoryRedux:resetGalaxy()
     Reputation:reset()
     PlayerWallet:reset()
     PlayerCargo:reset()
+    PlayerFactories:reset()
     self.simTime = 0
     self.messages = {}
     self.docked = nil
@@ -2156,6 +2182,7 @@ function LimitTheoryRedux:onStateSim(data)
     -- The stations' factory floors, and the goods they cannot make arriving
     Profiler.Begin('Sim.Economy')
     ProductionSystem:update(self.stations or {}, dt)
+    self:updatePlayerFactories(dt)
     StationTradeSystem:update(self.stations or {}, dt)
     Profiler.End()
     if self.scenario.update then

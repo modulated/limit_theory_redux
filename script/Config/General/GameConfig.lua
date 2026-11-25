@@ -220,10 +220,10 @@ Config.game = {
         levels = {
             { name = "Secure", description = "Security patrols. Pirates are rarely seen.",
               color = { 0.35, 0.75, 1.0 }, weight = 3,
-              npcs = { security = 3, trader = 3, pirate = 0, pirateMerchant = 0, miner = 2, worker = 3 } },
+              npcs = { security = 3, trader = 3, pirate = 0, pirateMerchant = 0, miner = 2, worker = 4 } },
             { name = "Guarded", description = "Patrolled. Expect the odd pirate.",
               color = { 0.45, 0.9, 0.5 },  weight = 3,
-              npcs = { security = 2, trader = 2, pirate = 1, pirateMerchant = 0, miner = 2, worker = 2 } },
+              npcs = { security = 2, trader = 2, pirate = 1, pirateMerchant = 0, miner = 2, worker = 3 } },
             { name = "Contested", description = "Pirates and security fight over this system.",
               color = { 1.0, 0.75, 0.25 }, weight = 2,
               npcs = { security = 1, trader = 1, pirate = 3, pirateMerchant = 1, miner = 1, worker = 1 } },
@@ -392,7 +392,7 @@ Config.game = {
         -- (Jobs/Work). A Lawless system spawns none, so its factories stand
         -- idle until someone flies workers in.
         workersPerLine = 1,
-        stationCrew    = 1,     -- hands a station has of its own
+        stationCrew    = 2,     -- hands a station has of its own
         shiftSeconds   = 240.0, -- how long a worker stays docked
         linesMin       = 1,    -- recipes besides the powerplant
         linesMax       = 2,
@@ -400,6 +400,19 @@ Config.game = {
         solarChance    = 0.75, -- the powerplant is a solar array this often (it needs no fuel)
         localRefineryChance = 0.85, -- a refinery line runs on a locally mined ore this often
         drydockChance  = 0.25, -- the chance the one allowed station also builds hulls
+    },
+
+    -- The player's own industry (Modules/Economy/Managers/PlayerFactories.lua):
+    -- a hangar at every station used, and lines rented from the station's own
+    -- floor. A rented line takes its inputs from the hangar and puts the
+    -- outputs back in it; the station takes a cut of each finished run.
+    factory = {
+        rentableLines     = 2,     -- lines a station will rent out
+        rentChoices       = 6,     -- recipes it offers to rent them for
+        rentShare         = 0.15,  -- the station's cut of what a run is worth
+        rentMinFee        = 5,     -- ...but never less than this
+        hangarCapacity    = 20000, -- mass a hangar holds (the ship's hold is 2,400)
+        offlineCatchUpMax = 3600,  -- seconds of production credited on coming back
     },
 
     -- What the player's ship can carry (mass, Modules/Economy/Components/StockComponent).

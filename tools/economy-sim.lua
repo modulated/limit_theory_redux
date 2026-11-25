@@ -39,6 +39,10 @@
       --trader           run a trader between the stations and report its profit
       --prospector       run a miner-player (fill the hold, sell it) and report
                          its profit, to compare mining with hauling
+      --crafter          rent a line at the first station, buy its inputs
+                         there, run it and sell the output back: what the
+                         player's own industry pays, and whether the station's
+                         cut (factory.rentShare) leaves anything
       --seed N           the seed everything is drawn from (default 1)
       --seeds N          run N seeds (seed..seed+N-1) and report the spread of
                          the outcomes: income swings by a lot with which
@@ -47,6 +51,22 @@
       --watch "a,b,c"    the items the per-hour table shows (display names)
       --csv FILE         write the per-hour series as CSV
       --quiet            only the summary
+      --recipes          print what every recipe is worth at equilibrium
+                         prices (input value, output value, the station's cut,
+                         credits an hour) and stop: which lines are worth
+                         renting, and which recipes lose money as written
+      --reprice [markup] suggest an equilibrium price for every item that has
+                         a recipe, so that making it pays: the inputs' value
+                         times `markup` (default 1.4), resolved up the chain
+                         from the mined goods. Prints the lines to paste into
+                         Shared/Definitions/ItemDefs.lua, and stops.
+      --rebalance [markup]
+                         suggest input counts for every recipe so that a run
+                         pays: inputs worth the outputs divided by `markup`
+                         (default 1.4), keeping the inputs in proportion.
+                         Legacy's quantities were never balanced against the
+                         item prices -- most recipes destroy value as written.
+                         Prints the counts for ProductionDefs.lua, and stops.
       --help
 
   Read the summary for: lines that never ran (starved: their inputs have no
@@ -135,6 +155,12 @@ require("Shared.Definitions.ItemDefs")
 local Items = require("Shared.Registries.Items")
 require("Shared.Definitions.ProductionDefs")
 local Productions = require("Shared.Registries.Productions")
+-- A Seed component is all PlayerFactories wants of Modules.Core.Components
+local SeedStub = Class("SeedComponent", function(self, seed) self.seed = seed end)
+function SeedStub:getSeed() return self.seed end
+function SeedStub:setComponentName() end
+package.loaded["Modules.Core.Components"] = { Seed = SeedStub }
+
 local StockComponent = require("Modules.Economy.Components.StockComponent")
 local ProductionComponent = require("Modules.Economy.Components.ProductionComponent")
 local WorkforceComponent = require("Modules.Economy.Components.WorkforceComponent")
@@ -150,6 +176,7 @@ package.loaded["Modules.Economy.Components"] = {
 local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
 local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
 local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
+local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
 
 ------------------------------------------------------------------------------
 -- Arguments
@@ -176,6 +203,11 @@ local args = {
     seeds = 1,
     trader = false,
     prospector = false,
+    crafter = false,
+    recipes = false,
+    reprice = false,
+    rebalance = false,
+    markup = 1.4,
     csv = nil,
     watch = nil,
 }
@@ -236,6 +268,22 @@ do
         elseif a == "--seeds" then args.seeds = tonumber(nextArg())
         elseif a == "--trader" then args.trader = true
         elseif a == "--prospector" then args.prospector = true
+        elseif a == "--crafter" then args.crafter = true
+        elseif a == "--recipes" then args.recipes = true
+        elseif a == "--rebalance" then
+            args.rebalance = true
+            local following = arg[i + 1]
+            if following and tonumber(following) then
+                args.markup = tonumber(following)
+                i = i + 1
+            end
+        elseif a == "--reprice" then
+            args.reprice = true
+            local following = arg[i + 1]
+            if following and tonumber(following) then
+                args.markup = tonumber(following)
+                i = i + 1
+            end
         elseif a == "--csv" then args.csv = nextArg()
         elseif a == "--watch" then args.watch = nextArg()
         elseif a == "--quiet" then quiet = true
@@ -246,6 +294,169 @@ do
     end
 end
 for _, assignment in ipairs(overrides) do applyOverride(assignment) end
+
+------------------------------------------------------------------------------
+-- --rebalance: what would a recipe have to eat for making it to pay?
+------------------------------------------------------------------------------
+
+if args.rebalance then
+    local markup = args.markup
+    local function value(entries, counts)
+        local total = 0
+        for index, entry in ipairs(entries) do
+            local count = counts and counts[index] or entry.count
+            total = total + (entry.item.startEquilibriumPrice or Config.game.trade.defaultPrice) * count
+        end
+        return total
+    end
+    out("Input counts at a markup of %.2f: what each recipe should eat for a run", markup)
+    out("to be worth making at the item prices in ItemDefs.lua. The inputs keep")
+    out("their proportions and never fall below one.")
+    out("")
+    for _, recipe in ipairs(Productions:getAll()) do
+        local outValue = value(recipe.outputs)
+        local inValue = value(recipe.inputs)
+        if inValue > 0 then
+            local target = outValue / markup
+            local factor = target / inValue
+            local counts, newValue = {}, 0
+            for index, entry in ipairs(recipe.inputs) do
+                counts[index] = math.max(1, math.floor(entry.count * factor + 0.5))
+                newValue = newValue + (entry.item.startEquilibriumPrice
+                    or Config.game.trade.defaultPrice) * counts[index]
+            end
+            local parts = {}
+            for index, entry in ipairs(recipe.inputs) do
+                parts[#parts + 1] = string.format("%s x%d (was %d)",
+                    entry.item.displayName, counts[index], entry.count)
+            end
+            out("    %-32s out %7d  in %7d -> %7d  (x%.2f)", recipe.displayName,
+                outValue, inValue, newValue, outValue / math.max(1, newValue))
+            out("        %s", table.concat(parts, ", "))
+        else
+            out("    %-32s out %7d  in       0  (nothing to scale)", recipe.displayName, outValue)
+        end
+    end
+    os.exit(0)
+end
+
+------------------------------------------------------------------------------
+-- --reprice: what would each made thing have to be worth for making it to pay?
+------------------------------------------------------------------------------
+
+if args.reprice then
+    local markup = args.markup
+    -- Waste is priced as scrap, not derived: it is an output nobody wants and
+    -- an input to the recycler, so deriving it would chase its own tail.
+    local fixedGroups = { ["Waste"] = true, ["Raw Materials"] = true, ["Gases"] = true,
+                          ["Consumables"] = true, ["Virtual"] = true }
+    local price = {}
+    for id = 1, 1000 do
+        local def = Items:getDefinition(id)
+        if def then price[id] = def.startEquilibriumPrice or Config.game.trade.defaultPrice end
+    end
+
+    --- The recipe that makes an item, if any (the first one found).
+    local maker = {}
+    for _, recipe in ipairs(Productions:getAll()) do
+        for _, entry in ipairs(recipe.outputs) do
+            if not fixedGroups[entry.item.group] and not maker[entry.item.id] then
+                maker[entry.item.id] = recipe
+            end
+        end
+    end
+
+    -- Several passes, so a chain (silicon -> glassiron -> ship sensor) settles
+    for _ = 1, 8 do
+        for id, recipe in pairs(maker) do
+            local inputCost = 0
+            for _, entry in ipairs(recipe.inputs) do
+                inputCost = inputCost + (price[entry.item.id] or 0) * entry.count
+            end
+            -- What the run's other outputs are already worth comes off the
+            -- cost; the rest has to be carried by this one, with the markup
+            local others, count = 0, 0
+            for _, entry in ipairs(recipe.outputs) do
+                if entry.item.id == id then
+                    count = entry.count
+                else
+                    others = others + (price[entry.item.id] or 0) * entry.count
+                end
+            end
+            if count > 0 then
+                local target = (inputCost * markup - others) / count
+                price[id] = math.max(1, math.ceil(target))
+            end
+        end
+    end
+
+    out("Suggested equilibrium prices at a markup of %.2f: what a made thing has", markup)
+    out("to be worth for a line that makes it to pay for its inputs, its")
+    out("by-products and the station's cut. Paste into ItemDefs.lua.")
+    out("")
+    out("    %-24s %-20s %8s %8s", "item", "group", "now", "suggest")
+    local ids = {}
+    for id in pairs(maker) do ids[#ids + 1] = id end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+        local def = Items:getDefinition(id)
+        local now = def.startEquilibriumPrice or 0
+        local suggested = price[id]
+        if suggested ~= now then
+            out("    %-24s %-20s %8d %8d   <- x%.1f", def.displayName, def.group, now, suggested,
+                now > 0 and suggested / now or 0)
+        else
+            out("    %-24s %-20s %8d %8d", def.displayName, def.group, now, suggested)
+        end
+    end
+    out("")
+    out("Mined and raw goods, gases, consumables and waste are left alone: they")
+    out("are what the chain starts from, and what nobody wants at the end of it.")
+    os.exit(0)
+end
+
+------------------------------------------------------------------------------
+-- --recipes: is a recipe worth running at all?
+------------------------------------------------------------------------------
+
+if args.recipes then
+    local cfg = Config.game.factory
+    local function value(entries)
+        local total = 0
+        for _, entry in ipairs(entries) do
+            total = total + (entry.item.startEquilibriumPrice or Config.game.trade.defaultPrice) * entry.count
+        end
+        return total
+    end
+    out("Every recipe at equilibrium prices. `margin` is what a run adds,")
+    out("before the station's cut (`fee`); `cr/h` is the margin less the fee over")
+    out("the run's duration, scaled by production.timeScale (%.0fx).",
+        Config.game.production.timeScale)
+    out("")
+    out("    %-32s %-11s %8s %8s %8s %7s %9s", "recipe", "class", "in", "out", "margin", "fee", "cr/h")
+    local rows = {}
+    for _, recipe in ipairs(Productions:getAll()) do
+        local inValue, outValue = value(recipe.inputs), value(recipe.outputs)
+        local fee = math.max(cfg.rentMinFee, math.ceil(outValue * cfg.rentShare))
+        local perHour = (outValue - inValue - fee) * 3600
+            / (recipe.duration / Config.game.production.timeScale)
+        rows[#rows + 1] = {
+            recipe = recipe, inValue = inValue, outValue = outValue,
+            margin = outValue - inValue, fee = fee, perHour = perHour,
+        }
+    end
+    table.sort(rows, function(a, b) return a.perHour > b.perHour end)
+    for _, row in ipairs(rows) do
+        out("    %-32s %-11s %8d %8d %8d %7d %9.0f", row.recipe.displayName, row.recipe.class,
+            row.inValue, row.outValue, row.margin, row.fee, row.perHour)
+    end
+    out("")
+    out("A negative margin means the recipe destroys value as written: renting it")
+    out("only pays where the scarcity pricing differs enough between what it eats")
+    out("and what it makes (buy the input at a glutted station, sell the output")
+    out("where it is short).")
+    os.exit(0)
+end
 
 ------------------------------------------------------------------------------
 -- Many seeds: run this same tool once per seed and gather the outcomes. What
@@ -348,6 +559,7 @@ for _, ore in ipairs(ores) do oreIds[#oreIds + 1] = ore.def.id end
 local stations = {}
 for index = 1, args.stations do
     local station = FakeEntity("Station " .. index)
+    station:add(SeedStub(index * 7919))
     station:add(StockComponent())
     -- Hands: the standing crew, plus this station's share of the system's
     -- workers, as if they were docked the whole time
@@ -533,6 +745,72 @@ local function updateProspector(dt)
     end
 end
 
+--- The player's own industry: rent the best line the first station offers,
+--- buy its inputs there, let it run, sell what it makes back. The point is to
+--- see whether the station's cut and the spread leave the renter anything.
+local crafter = { spent = 0, earned = 0, runs = 0, recipe = nil, key = "sim:1" }
+
+local function startCrafter()
+    PlayerFactories:reset()
+    local offered = PlayerFactories:offered(stations[1])
+    if #offered == 0 then return end
+    -- The best of what is offered, by what a run adds at equilibrium prices
+    local function value(entries)
+        local total = 0
+        for _, entry in ipairs(entries) do
+            total = total + (entry.item.startEquilibriumPrice or Config.game.trade.defaultPrice) * entry.count
+        end
+        return total
+    end
+    table.sort(offered, function(a, b)
+        return (value(a.outputs) - value(a.inputs)) / a.duration
+            > (value(b.outputs) - value(b.inputs)) / b.duration
+    end)
+    crafter.recipe = offered[1]
+    PlayerFactories:lease(crafter.key, crafter.recipe.id)
+end
+
+---@param dt number
+local function updateCrafter(dt)
+    if not crafter.recipe then return end
+    local station = stations[1]
+    local hangar = PlayerFactories:hangar(crafter.key)
+    local credits = PlayerWallet:get()
+
+    -- Keep a run's worth of inputs in the hangar, bought here
+    for _, entry in ipairs(crafter.recipe.inputs) do
+        local short = entry.count * 2 - hangar:count(entry.item.id)
+        if short > 0 then
+            local _, paid = StationTradeSystem:buy(station, hangar, entry.item.id, short)
+            crafter.spent = crafter.spent + paid
+        end
+    end
+
+    local before = {}
+    for _, entry in ipairs(crafter.recipe.outputs) do
+        before[entry.item.id] = hangar:count(entry.item.id)
+    end
+    PlayerFactories:update(station, crafter.key, dt)
+    for _, entry in ipairs(crafter.recipe.outputs) do
+        if hangar:count(entry.item.id) > (before[entry.item.id] or 0) then
+            crafter.runs = crafter.runs + 1
+            break
+        end
+    end
+
+    -- Sell what it made back to the station
+    for _, entry in ipairs(crafter.recipe.outputs) do
+        local held = hangar:count(entry.item.id)
+        if held > 0 then
+            local _, earned = StationTradeSystem:sell(station, hangar, entry.item.id, held)
+            crafter.earned = crafter.earned + earned
+        end
+    end
+    -- The fee comes out of the wallet inside PlayerFactories:update
+    crafter.fees = (crafter.fees or 0) + math.max(0, credits - PlayerWallet:get()
+        - (crafter.spentThisStep or 0))
+end
+
 ------------------------------------------------------------------------------
 -- The run
 ------------------------------------------------------------------------------
@@ -643,6 +921,8 @@ local function reportHour(hour)
     if csv then csv:write(table.concat(csvRow, ",") .. "\n") end
 end
 
+if args.crafter then startCrafter() end
+
 local totalSeconds = args.hours * 3600
 local step = args.step
 local nextHour = 3600
@@ -687,6 +967,7 @@ while elapsed < totalSeconds do
         record(flows.trader, before)
     end
     if args.prospector then updateProspector(step) end
+    if args.crafter then updateCrafter(step) end
 
     elapsed = elapsed + step
     recordPrices()
@@ -789,6 +1070,21 @@ out("Miners: %d deliveries, %d units of ore in total (%.1f units/hour)",
         for _, miner in ipairs(miners) do units = units + miner.delivered end
         return units / args.hours
     end)())
+
+if args.crafter then
+    if crafter.recipe then
+        local profit = crafter.earned - crafter.spent
+        out("Crafter: %s, %d runs, spent %d on inputs, sold for %d, profit %d (%.0f credits/hour)",
+            crafter.recipe.displayName, crafter.runs, crafter.spent, crafter.earned,
+            profit, profit / args.hours)
+        if profit <= 0 then
+            out("        <- renting a line does not pay here (factory.rentShare, trade.spread,")
+            out("           and how far the station's prices move as you buy and sell)")
+        end
+    else
+        out("Crafter: this station offers no line worth renting")
+    end
+end
 
 if args.prospector then
     out("Prospector: %d loads of %s (%d units a load), %d units mined, earned %d (%.0f credits/hour)",

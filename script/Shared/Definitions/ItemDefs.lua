@@ -21,7 +21,7 @@ ItemGroup {
     items = {
         ItemDefinition { id = 2, name = "Data Cube", mass = 1, energyDensity = 2.1, startEquilibriumPrice = 50 },
         ItemDefinition { id = 3, name = "Info Wafer", mass = 1, energyDensity = 3.82, startEquilibriumPrice = 75 },
-        ItemDefinition { id = 4, name = "Infolytic Chip", mass = 3, energyDensity = 1.35, startEquilibriumPrice = 100 }
+        ItemDefinition { id = 4, name = "Infolytic Chip", mass = 3, energyDensity = 1.35, startEquilibriumPrice = 430 }
     }
 }
 
@@ -43,20 +43,20 @@ ItemGroup {
     name = "Refined Materials",
     items = {
         ItemDefinition { id = 11, name = "Iron", mass = 5, energyDensity = 1, startEquilibriumPrice = 50 },
-        ItemDefinition { id = 12, name = "Copper", mass = 5, energyDensity = 1, startEquilibriumPrice = 60 },
+        ItemDefinition { id = 12, name = "Copper", mass = 5, energyDensity = 1, startEquilibriumPrice = 70 },
         ItemDefinition { id = 13, name = "Aluminum", mass = 3, energyDensity = 1.8, startEquilibriumPrice = 55 },
         ItemDefinition { id = 14, name = "Silver", mass = 5, energyDensity = 1.5, startEquilibriumPrice = 150 },
         ItemDefinition { id = 15, name = "Gold", mass = 6, energyDensity = 2, startEquilibriumPrice = 200 },
         ItemDefinition { id = 16, name = "Platinum", mass = 8, energyDensity = 3, startEquilibriumPrice = 250 },
-        ItemDefinition { id = 17, name = "Steel", mass = 7, energyDensity = 1, startEquilibriumPrice = 70 },
-        ItemDefinition { id = 18, name = "Transparent Aluminum", mass = 5, energyDensity = 1.7, startEquilibriumPrice = 80 },
-        ItemDefinition { id = 19, name = "Glassiron", mass = 11, energyDensity = 1, startEquilibriumPrice = 90 },
-        ItemDefinition { id = 20, name = "Plastic", mass = 3, energyDensity = 1.9, startEquilibriumPrice = 45 },
+        ItemDefinition { id = 17, name = "Steel", mass = 7, energyDensity = 1, startEquilibriumPrice = 150 },
+        ItemDefinition { id = 18, name = "Transparent Aluminum", mass = 5, energyDensity = 1.7, startEquilibriumPrice = 165 },
+        ItemDefinition { id = 19, name = "Glassiron", mass = 11, energyDensity = 1, startEquilibriumPrice = 250 },
+        ItemDefinition { id = 20, name = "Plastic", mass = 3, energyDensity = 1.9, startEquilibriumPrice = 70 },
         ItemDefinition { id = 21, name = "Thorium", mass = 9, energyDensity = 27, startEquilibriumPrice = 300 },
         -- Refinery and factory feedstock: the production chains in
         -- doc/items.md need these between the ores and the built goods.
-        ItemDefinition { id = 53, name = "Silicon", mass = 2, energyDensity = 1.7, startEquilibriumPrice = 40 },
-        ItemDefinition { id = 54, name = "Carbon", mass = 2, energyDensity = 1.3, startEquilibriumPrice = 35 },
+        ItemDefinition { id = 53, name = "Silicon", mass = 2, energyDensity = 1.7, startEquilibriumPrice = 55 },
+        ItemDefinition { id = 54, name = "Carbon", mass = 2, energyDensity = 1.3, startEquilibriumPrice = 60 },
         ItemDefinition { id = 55, name = "Beryllium", mass = 2, energyDensity = 1.3, startEquilibriumPrice = 65 },
         ItemDefinition { id = 56, name = "Lithium", mass = 1, energyDensity = 1.2, startEquilibriumPrice = 70 },
         ItemDefinition { id = 57, name = "Boron", mass = 2, energyDensity = 1.2, startEquilibriumPrice = 50 },
@@ -69,10 +69,10 @@ ItemGroup {
 ItemGroup {
     name = "Gases",
     items = {
-        ItemDefinition { id = 22, name = "Hydrogen", mass = 1, energyDensity = 2, startEquilibriumPrice = 15 },
+        ItemDefinition { id = 22, name = "Hydrogen", mass = 1, energyDensity = 2, startEquilibriumPrice = 25 },
         ItemDefinition { id = 23, name = "Helium", mass = 1, energyDensity = 1.01, startEquilibriumPrice = 10 },
         ItemDefinition { id = 24, name = "Nitrogen", mass = 1, energyDensity = 1.05, startEquilibriumPrice = 12 },
-        ItemDefinition { id = 25, name = "Oxygen", mass = 1, energyDensity = 1.5, startEquilibriumPrice = 18 }
+        ItemDefinition { id = 25, name = "Oxygen", mass = 1, energyDensity = 1.5, startEquilibriumPrice = 30 }
     }
 }
 
@@ -88,11 +88,11 @@ ItemGroup {
 ItemGroup {
     name = "Equipment",
     items = {
-        ItemDefinition { id = 29, name = "Ship Computer", mass = 110, energyDensity = 22, startEquilibriumPrice = 500 },
-        ItemDefinition { id = 30, name = "Ship Sensor", mass = 80, energyDensity = 19, startEquilibriumPrice = 400 },
-        ItemDefinition { id = 31, name = "Ship Engine, Thruster", mass = 600, energyDensity = 20, startEquilibriumPrice = 2000 },
+        ItemDefinition { id = 29, name = "Ship Computer", mass = 110, energyDensity = 22, startEquilibriumPrice = 2600 },
+        ItemDefinition { id = 30, name = "Ship Sensor", mass = 80, energyDensity = 19, startEquilibriumPrice = 2500 },
+        ItemDefinition { id = 31, name = "Ship Engine, Thruster", mass = 600, energyDensity = 20, startEquilibriumPrice = 7200 },
         ItemDefinition { id = 32, name = "Ship Engine, Impeller", mass = 1500, energyDensity = 18, startEquilibriumPrice = 4000 },
-        ItemDefinition { id = 33, name = "Ship Weapon, Pulse Turret", mass = 100, energyDensity = 10, startEquilibriumPrice = 600 },
+        ItemDefinition { id = 33, name = "Ship Weapon, Pulse Turret", mass = 100, energyDensity = 10, startEquilibriumPrice = 2800 },
         ItemDefinition { id = 34, name = "Ship Weapon, Beam Turret", mass = 120, energyDensity = 10, startEquilibriumPrice = 650 },
         ItemDefinition { id = 35, name = "Ship Weapon, Launcher Turret", mass = 90, energyDensity = 8, startEquilibriumPrice = 550 },
         ItemDefinition { id = 36, name = "Ship Weapon, Pulse Bay", mass = 1000, energyDensity = 9, startEquilibriumPrice = 3000 },
@@ -105,7 +105,7 @@ ItemGroup {
 ItemGroup {
     name = "Constructs",
     items = {
-        ItemDefinition { id = 40, name = "Ship Hull, Solo", mass = 15000, energyDensity = 50, startEquilibriumPrice = 15000 },
+        ItemDefinition { id = 40, name = "Ship Hull, Solo", mass = 15000, energyDensity = 50, startEquilibriumPrice = 24000 },
         ItemDefinition { id = 41, name = "Ship Hull, Small", mass = 32000, energyDensity = 49, startEquilibriumPrice = 30000 },
         ItemDefinition { id = 42, name = "Ship Hull, Compact", mass = 75000, energyDensity = 47, startEquilibriumPrice = 70000 },
         ItemDefinition { id = 43, name = "Ship Hull, Medium", mass = 102500, energyDensity = 46, startEquilibriumPrice = 100000 },
@@ -128,7 +128,7 @@ ItemGroup {
     name = "Miscellaneous",
     items = {
         ItemDefinition { id = 50, name = "Energy Cell", mass = 1, energyDensity = 1, startEquilibriumPrice = 20 },
-        ItemDefinition { id = 51, name = "Radioactive Isotopes", mass = 13, energyDensity = 50, startEquilibriumPrice = 500 }
+        ItemDefinition { id = 51, name = "Radioactive Isotopes", mass = 13, energyDensity = 50, startEquilibriumPrice = 600 }
     }
 }
 
