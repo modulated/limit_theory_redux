@@ -20,6 +20,8 @@ This repository continues the game and engine code from the second generation of
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for more information.
 
+Open work, gameplay and engine, is listed in [TODO.md](TODO.md).
+
 ## Licensing
 
 Limit Theory Redux generally contains content under two different licenses based on origin:
