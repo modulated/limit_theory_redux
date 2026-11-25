@@ -27,6 +27,7 @@ local GalaxyGenerator = require('Modules.Navigation.Managers.GalaxyGenerator')
 local GalaxyMap = require('Modules.Navigation.Systems.GalaxyMap')
 local JumpGateSystem = require('Modules.Navigation.Systems.JumpGateSystem')
 local PhysicsComponents = require('Modules.Physics.Components')
+local AutoPilotSystem = require('Modules.Constructs.Systems.AutoPilotSystem')
 local Screenshot = require('Render.ScreenCap')
 
 local GAME_SEED = 7
@@ -140,8 +141,13 @@ step("course", function()
         state.startWait = 0
         if not state.arrivalChecked then
             checkArrival(state.arrivedFrom)
+            check(Game.course == nil or AutoPilotSystem:isActive(Game.playerShip),
+                "the course did not carry on from %s", systemName(Game.currentSystemId))
             Log.Info("JumpTest: arrived in %s", systemName(Game.currentSystemId))
             state.arrivalChecked = true
+            -- The test moves the ship itself: stop the autopilot's flight
+            -- (the course stays), or the ship carries its speed into the move
+            AutoPilotSystem:disengage(Game.playerShip)
         end
         -- The screenshot once the screen has faded back in
         if (state.settle or 0) < SETTLE_FRAMES then

@@ -77,6 +77,28 @@ function JumpGateSystem:reset(watch)
     watch.lastPos = nil
 end
 
+--- Whether a straight move from `from` to `to` came within `range` of the
+--- gate's centre: a fast ship (travel drive) can pass through the range
+--- between two steps without being inside it at either.
+---@param gate JumpGatePlacement
+---@param from Position|nil
+---@param to Position
+---@param range number
+---@return boolean
+function JumpGateSystem:passedWithin(gate, from, to, range)
+    local c = gate.position
+    from = from or to
+    local dx, dy, dz = to.x - from.x, to.y - from.y, to.z - from.z
+    local len2 = dx * dx + dy * dy + dz * dz
+    local t = 0
+    if len2 > 0 then
+        t = ((c.x - from.x) * dx + (c.y - from.y) * dy + (c.z - from.z) * dz) / len2
+        t = math.max(0, math.min(1, t))
+    end
+    local px, py, pz = from.x + dx * t - c.x, from.y + dy * t - c.y, from.z + dz * t - c.z
+    return px * px + py * py + pz * pz < range * range
+end
+
 --- The gate nearest to a position, and how far its centre is.
 ---@param watch JumpGateWatch
 ---@param pos Position

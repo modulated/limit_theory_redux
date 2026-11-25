@@ -999,6 +999,7 @@ function LimitTheoryRedux:updateJumps()
     local rb = self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody()
     local pos = rb:getPos()
 
+    local lastPos = self.gateWatch.lastPos
     local crossed = JumpGateSystem:update(self.gateWatch, pos)
     if crossed then
         self:startJump(crossed)
@@ -1007,7 +1008,7 @@ function LimitTheoryRedux:updateJumps()
 
     if self.course and #self.course > 0 then
         local gate = JumpGateSystem:gateTo(self.gateWatch, self.course[1])
-        if gate and pos:distance(gate.position) < Config.game.jumpGates.activationRange then
+        if gate and JumpGateSystem:passedWithin(gate, lastPos, pos, Config.game.jumpGates.activationRange) then
             self:startJump(gate)
         end
     end
