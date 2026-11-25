@@ -12,6 +12,13 @@ local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
 --- a refinery that runs out of ore stops until a miner brings some, which is
 --- what makes the prices in `StationTradeSystem` mean anything.
 ---
+--- A line also needs hands: `Config.game.production.workersPerLine` of the
+--- station's `Workforce`, which is its standing crew plus the workers docked
+--- there (`Modules/NPC/Jobs/Work.lua`). The station's own lines claim crew
+--- first and the lines the player has rented take what is left
+--- (`PlayerFactories`), so a system whose worker shuttles have been shot down
+--- has idle factories.
+---
 --- Legacy's durations are in real seconds, from 4 s for a waste recycler to
 --- 4 hours for a station fabricator. `Config.game.production.timeScale`
 --- compresses them so a factory does something visible within a session.
@@ -190,10 +197,15 @@ local function updateStation(station, dt)
     local productionCmp = station:get(Economy.Production)
     local stock = station:get(Economy.Stock)
     if not productionCmp or not stock then return end
+    local workforce = station:get(Economy.Workforce)
+    local needed = Config.game.production.workersPerLine
 
     for _, line in ipairs(productionCmp:getLines()) do
         local recipe = Productions:getDefinition(line.id)
-        if recipe then
+        -- Hands first: a line with no one on it neither starts nor advances.
+        -- One already running keeps what it has taken and waits.
+        line.crewed = not workforce or workforce:claim(needed)
+        if recipe and line.crewed then
             if not line.running then
                 -- Idle: start when the store has what the recipe needs, and
                 -- somewhere to put what it makes
@@ -220,7 +232,13 @@ function ProductionSystem:update(stations, dt)
     local scaled = dt * Config.game.production.timeScale
     if scaled <= 0 then return end
     for _, station in ipairs(stations) do
-        if station:isValid() then updateStation(station, scaled) end
+        if station:isValid() then
+            -- A fresh tick: nobody is claimed yet, the station's own lines
+            -- claim here, and PlayerFactories claims what is left after
+            local workforce = station:get(Economy.Workforce)
+            if workforce then workforce:beginTick() end
+            updateStation(station, scaled)
+        end
     end
 end
 
@@ -241,6 +259,7 @@ function ProductionSystem:status(station)
                 running = line.running,
                 progress = recipe.duration > 0 and math.min(1, line.progress / recipe.duration) or 0,
                 -- Why an idle line is idle, for the docked screen
+                crewed = line.crewed ~= false,
                 full = not line.running and stock ~= nil
                     and not hasRoomForOutputs(station, stock, recipe),
             }

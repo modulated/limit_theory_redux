@@ -3,13 +3,15 @@ local Marauding = require("Modules.NPC.Jobs.Marauding")
 local Transport = require("Modules.NPC.Jobs.Transport")
 local Escort = require("Modules.NPC.Jobs.Escort")
 local Mining = require("Modules.NPC.Jobs.Mining")
+local Work = require("Modules.NPC.Jobs.Work")
 
 --- Give an idle pilot its next job (Legacy Actions/Think and CriminalThink,
 --- without the economy: they weighed job payouts; here each role has its
 --- trade). Security patrols the stations and gates; pirates maraud near the
 --- gates and belts; traders haul between stations, pirate merchants between
---- hideouts; a guard escorts its charge, and one whose charge is gone takes
---- on an unguarded hauler of its faction, or patrols.
+--- hideouts; workers fly in to a station and work a shift, which is what
+--- keeps its factory floor running; a guard escorts its charge, and one whose
+--- charge is gone takes on an unguarded hauler of its faction, or patrols.
 local Think = {}
 
 --- A random reordering of a list (a copy).
@@ -85,6 +87,8 @@ function Think.chooseJob(npc, ctx)
     local stats = npc.pilot.stats
     if stats.job == "mine" then
         return Mining(npc, ctx)
+    elseif stats.job == "work" then
+        return Work(npc, ctx)
     elseif npc.role == "security" then
         local nodes = patrolNodes(places)
         return #nodes > 0 and Patrolling(shuffled(rng, nodes)) or nil

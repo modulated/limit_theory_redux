@@ -9,6 +9,7 @@ local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local PlayerCargo = require("Modules.Economy.Managers.PlayerCargo")
 local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
 local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
+local EconomyComponents = require("Modules.Economy.Components")
 
 -- The screen the player sees while docked: what the station has and what it
 -- pays, what the hold is carrying, what its factory floor is making, and the
@@ -197,20 +198,28 @@ local function production(station, s)
     local status = ProductionSystem:status(station)
     if #status == 0 then return nil end
     local size = math.floor(14 * s)
+    -- The hands: the station's standing crew plus the workers docked here,
+    -- and what its lines are using of them
+    local workforce = station:get(EconomyComponents.Workforce)
+    local crewLine = workforce
+        and string.format("PRODUCTION          crew %s on shift", workforce:describe())
+        or "PRODUCTION"
     local rows = {
-        text("PRODUCTION", "Unageo-Medium", math.floor(13 * s), DIM),
+        text(crewLine, "Unageo-Medium", math.floor(13 * s), DIM),
         UIComponent.Divider { color = RULE },
     }
     for _, line in ipairs(status) do
         local state = line.running
             and string.format("%d%%", math.floor(line.progress * 100))
-            or (line.full and "store full" or "waiting for stock")
+            or (not line.crewed and "no crew"
+                or (line.full and "store full" or "waiting for stock"))
         rows[#rows + 1] = Grid {
             fixedHeight = math.floor(22 * s),
             cells = { Grid.Fixed(640 * s), Grid.Fixed(160 * s) },
             contents = {
                 text(line.recipe:describe(), "Unageo-Regular", size, GREY),
-                text(state, "Unageo-Regular", size, line.running and ACCENT or DIM, AlignHorizontal.Right),
+                text(state, "Unageo-Regular", size,
+                    line.running and ACCENT or (not line.crewed and GOLD or DIM), AlignHorizontal.Right),
             }
         }
     end

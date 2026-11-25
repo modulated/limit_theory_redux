@@ -220,16 +220,16 @@ Config.game = {
         levels = {
             { name = "Secure", description = "Security patrols. Pirates are rarely seen.",
               color = { 0.35, 0.75, 1.0 }, weight = 3,
-              npcs = { security = 3, trader = 3, pirate = 0, pirateMerchant = 0, miner = 2 } },
+              npcs = { security = 3, trader = 3, pirate = 0, pirateMerchant = 0, miner = 2, worker = 3 } },
             { name = "Guarded", description = "Patrolled. Expect the odd pirate.",
               color = { 0.45, 0.9, 0.5 },  weight = 3,
-              npcs = { security = 2, trader = 2, pirate = 1, pirateMerchant = 0, miner = 2 } },
+              npcs = { security = 2, trader = 2, pirate = 1, pirateMerchant = 0, miner = 2, worker = 2 } },
             { name = "Contested", description = "Pirates and security fight over this system.",
               color = { 1.0, 0.75, 0.25 }, weight = 2,
-              npcs = { security = 1, trader = 1, pirate = 3, pirateMerchant = 1, miner = 1 } },
+              npcs = { security = 1, trader = 1, pirate = 3, pirateMerchant = 1, miner = 1, worker = 1 } },
             { name = "Lawless", description = "No security. Pirates attack on sight.",
               color = { 1.0, 0.3, 0.25 },  weight = 1,
-              npcs = { security = 0, trader = 1, pirate = 4, pirateMerchant = 2, miner = 0 } },
+              npcs = { security = 0, trader = 1, pirate = 4, pirateMerchant = 2, miner = 0, worker = 0 } },
         },
     },
 
@@ -244,7 +244,7 @@ Config.game = {
     --   stops       haulers' trade stops: "stations" or "hideouts" (gates, belts, planets)
     --   escorts     {min, max, role}: ships of `role` guarding each one
     --   sensor      detection range multiplier (Legacy Sensor rating; default 1)
-    --   job         "mine" for miners; otherwise by role (Jobs/Think)
+    --   job         "mine" for miners, "work" for workers; otherwise by role (Jobs/Think)
     --   cargo       units a hauler's hold takes (miners)
     npc = {
         roles = {
@@ -262,6 +262,16 @@ Config.game = {
                 maxSpeed = 0.35, accel = 0.12, turnRate = 0.8,
                 fleeFrom = { "pirate" }, fleeRange = 3.0,
                 cargo = 12,
+                escorts = { min = 0, max = 1, role = "mercenary" },
+            },
+            worker = {
+                -- The hands that keep the stations' factory floors running:
+                -- they fly in, dock, work a shift and move on (Jobs/Work).
+                faction = "trader", label = "Worker", job = "work",
+                gunship = false, hull = 3, scale = 0.022, sizeClass = "small",
+                maxHealth = 250, maxShield = 40, shieldRegen = 4,
+                maxSpeed = 0.4, accel = 0.14, turnRate = 1.0,
+                fleeFrom = { "pirate" }, fleeRange = 3.0,
                 escorts = { min = 0, max = 1, role = "mercenary" },
             },
             trader = {
@@ -377,6 +387,13 @@ Config.game = {
         timeScale      = 20.0, -- game seconds of production per real second
         stockCeiling   = 3.0,  -- a line stops once its outputs pile past this many targets
         maxLineInputValue = 6000, -- credits' worth of input per run a station can keep up with
+        -- Hands. A line runs only when it has `workersPerLine` of them: a
+        -- station's own standing crew plus the workers docked there
+        -- (Jobs/Work). A Lawless system spawns none, so its factories stand
+        -- idle until someone flies workers in.
+        workersPerLine = 1,
+        stationCrew    = 1,     -- hands a station has of its own
+        shiftSeconds   = 240.0, -- how long a worker stays docked
         linesMin       = 1,    -- recipes besides the powerplant
         linesMax       = 2,
         refineryChance = 0.6,  -- a line is a refinery this often, else a factory

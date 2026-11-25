@@ -9,6 +9,7 @@ local ArmedShipBuilder = require("Modules.Constructs.Managers.ArmedShipBuilder")
 local WeaponBattery = require("Modules.Constructs.Systems.WeaponBattery")
 local MiningField = require("Modules.NPC.Managers.MiningField")
 local RenderComp = require("Modules.Rendering.Components").Render
+local EconomyComponents = require("Modules.Economy.Components")
 
 --- The star system's NPC ships: it builds them, gives them jobs (Think),
 --- runs their action stacks, flies them, and removes the dead and the ones
@@ -213,6 +214,11 @@ end
 --- out of reach of weapons, its own weapons quiet.
 function NpcSystem:dock(npc, dock)
     npc.pilot.docked = dock
+    -- A worker that docks is one of the station's hands until it leaves
+    if npc.role == "worker" and dock.entity and dock.entity:isValid() then
+        local workforce = dock.entity:get(EconomyComponents.Workforce)
+        if workforce then workforce:arrive(npc) end
+    end
     npc.pilot:clearGoal()
     npc.pilot.velocity.x, npc.pilot.velocity.y, npc.pilot.velocity.z = 0, 0, 0
     local render = npc.entity:get(RenderComp)
@@ -229,6 +235,10 @@ end
 function NpcSystem:undock(npc)
     local dock = npc.pilot.docked
     if not dock then return end
+    if npc.role == "worker" and dock.entity and dock.entity:isValid() then
+        local workforce = dock.entity:get(EconomyComponents.Workforce)
+        if workforce then workforce:leave(npc) end
+    end
     npc.pilot.docked = nil
     local p = self:dockingPoint(dock)
     npc.body:setPos(Position(p.x, p.y, p.z))

@@ -11,4 +11,5 @@ return {
     Production = require('Modules.Economy.Components.ProductionComponent'),
     Quantity = require('Modules.Economy.Components.QuantityComponent'),
     Stock = require('Modules.Economy.Components.StockComponent'),
+    Workforce = require('Modules.Economy.Components.WorkforceComponent'),
 }

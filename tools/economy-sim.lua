@@ -32,6 +32,9 @@
       --stations N       stations in the system (default 2)
       --miners N         miners bringing ore in (default: the Secure
                          hostility level's miner count, Config.game.hostility)
+      --workers N        workers docked at each station, on top of its standing
+                         crew (default: the Secure level's worker count shared
+                         over the stations). A line with no hands does not run.
       --trip S           seconds a miner spends flying per run (default 120)
       --trader           run a trader between the stations and report its profit
       --prospector       run a miner-player (fill the hold, sell it) and report
@@ -134,12 +137,14 @@ require("Shared.Definitions.ProductionDefs")
 local Productions = require("Shared.Registries.Productions")
 local StockComponent = require("Modules.Economy.Components.StockComponent")
 local ProductionComponent = require("Modules.Economy.Components.ProductionComponent")
+local WorkforceComponent = require("Modules.Economy.Components.WorkforceComponent")
 
 -- Modules.Economy.Components pulls in components that need the engine's
 -- Entity and TimeStamp; the trade and production systems only use these two.
 package.loaded["Modules.Economy.Components"] = {
     Stock = StockComponent,
     Production = ProductionComponent,
+    Workforce = WorkforceComponent,
 }
 
 local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
@@ -152,17 +157,20 @@ local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 
 -- The miner count a Secure system actually spawns, so the default run is the
 -- game's own supply of ore rather than a number made up here.
-local defaultMiners = (function()
+local function secureLevelNpcs(role)
     local levels = Config.game.hostility and Config.game.hostility.levels
     local level = levels and levels[Config.game.hostility.homeLevel or 1]
-    return level and level.npcs and level.npcs.miner or 2
-end)()
+    return level and level.npcs and level.npcs[role]
+end
+local defaultMiners = secureLevelNpcs("miner") or 2
+local defaultWorkers = secureLevelNpcs("worker") or 2
 
 local args = {
     hours = 48,
     step = 2,
     stations = 2,
     miners = defaultMiners,
+    workers = defaultWorkers,
     trip = 120,
     seed = 1,
     seeds = 1,
@@ -222,6 +230,7 @@ do
         elseif a == "--step" then args.step = tonumber(nextArg())
         elseif a == "--stations" then args.stations = tonumber(nextArg())
         elseif a == "--miners" then args.miners = tonumber(nextArg())
+        elseif a == "--workers" then args.workers = tonumber(nextArg())
         elseif a == "--trip" then args.trip = tonumber(nextArg())
         elseif a == "--seed" then args.seed = tonumber(nextArg())
         elseif a == "--seeds" then args.seeds = tonumber(nextArg())
@@ -340,6 +349,12 @@ local stations = {}
 for index = 1, args.stations do
     local station = FakeEntity("Station " .. index)
     station:add(StockComponent())
+    -- Hands: the standing crew, plus this station's share of the system's
+    -- workers, as if they were docked the whole time
+    local workforce = station:add(WorkforceComponent(Config.game.production.stationCrew))
+    for worker = 1, math.floor(args.workers / args.stations + 0.5) do
+        workforce:arrive({ worker = worker, station = index })
+    end
     ProductionSystem:assign(station, rng, index == 1, oreIds)
     StationTradeSystem:stock(station, rng, oreIds)
     -- Count a line's completed runs: a line only leaves `running` by finishing
@@ -585,8 +600,9 @@ local function recordPrices()
     end
 end
 
-out("economy-sim: %d station(s), %d miner(s)%s, %d hours at %gs steps, seed %d",
-    #stations, #miners, args.trader and ", a trader" or "", args.hours, args.step, args.seed)
+out("economy-sim: %d station(s), %d miner(s), %d worker(s)%s, %d hours at %gs steps, seed %d",
+    #stations, #miners, args.workers, args.trader and ", a trader" or "",
+    args.hours, args.step, args.seed)
 out("")
 for index, station in ipairs(stations) do
     out("%s", station.name)
@@ -705,6 +721,10 @@ for index, station in ipairs(stations) do
         out("    %-34s %5d runs (%.1f/h)%s", recipe.displayName, state.runs,
             state.runs / args.hours, note)
     end
+    local workforce = station:get(WorkforceComponent)
+    out("    crew: %d (standing %d, docked %d), %d needed per line",
+        workforce:getTotal(), workforce:getCrew(), workforce:getDockedCount(),
+        Config.game.production.workersPerLine)
     local stock = station:get(StockComponent)
     local rows = stock:list()
     table.sort(rows, function(a, b) return a.units > b.units end)

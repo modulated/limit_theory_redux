@@ -1382,6 +1382,7 @@ function LimitTheoryRedux:spawnStations()
         -- A shop and a factory floor: what it makes, and what it opens with
         -- (the ores of this system, so there is something to trade on day one)
         station:add(EconomyComponents.Stock())
+        station:add(EconomyComponents.Workforce(Config.game.production.stationCrew))
         local oreIds = self:systemOreIds()
         ProductionSystem:assign(station, self.rng, i == 1, oreIds)
         StationTradeSystem:stock(station, self.rng, oreIds)
