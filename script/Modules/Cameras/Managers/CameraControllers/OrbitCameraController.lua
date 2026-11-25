@@ -1,6 +1,8 @@
 local CameraController  = require("Modules.Cameras.Managers").CameraController
 local PhysicsComponents = require("Modules.Physics.Components")
 local CameraActions     = require("Input.ActionBindings.CameraActions")
+local CursorManager     = require("Input.CursorManager")
+local UserSettings      = require("Shared.UserSettings")
 
 ---@class OrbitCameraController : CameraController
 ---@overload fun(entity: Entity, config?: table): OrbitCameraController
@@ -28,6 +30,10 @@ local OrbitCameraController = Subclass("OrbitCameraController", CameraController
 
     self.smoothing = config.smoothing or 0.1
     self.currentDistance = self.distance
+
+    -- Right mouse held: the cursor is hidden and held in the window, so the
+    -- drag can't wander off it (or out of the window)
+    self.dragging = false
 end)
 
 function OrbitCameraController:setTarget(target)
@@ -65,21 +71,52 @@ function OrbitCameraController:getDistances()
     }
 end
 
+--- Start or end the right-mouse drag: hide and hold the cursor while it
+--- lasts, free it after.
+---@param dragging boolean
+function OrbitCameraController:setDragging(dragging)
+    if dragging == self.dragging then return end
+    self.dragging = dragging
+    if dragging then
+        CursorManager:locked()
+    else
+        CursorManager:free()
+    end
+end
+
+--- Disabled mid-drag (a camera switch, a map): the drag ends without
+--- touching the cursor, which whatever comes next sets.
+function OrbitCameraController:disable()
+    self.dragging = false
+    CameraController.disable(self)
+end
+
 ---@param dt number
 function OrbitCameraController:onInput(dt)
-    if not self.enabled or not Window:isFocused() then return end
+    if not self.enabled or not Window:isFocused() then
+        -- The window lost focus mid-drag: let go of the cursor
+        if self.dragging then self:setDragging(false) end
+        return
+    end
 
     -- Update bindings
     CameraActions.Yaw:update(dt)
     CameraActions.Pitch:update(dt)
     CameraActions.Zoom:update(dt)
+    CameraActions.MouseCapture:update(dt)
 
     -- Hold right mouse to rotate (CameraActions.Yaw/Pitch are Combo with MouseRight)
+    self:setDragging(CameraActions.MouseCapture:isDown())
+
+    -- The Mouse Sensitivity setting scales the mouse; Invert Vertical Look
+    -- flips up and down
+    local sensitivity = self.mouseSensitivity * UserSettings.mouseSensitivityFactor()
+    local invertY = GameState.input.invertPitch and -1 or 1
     local yawInput = CameraActions.Yaw:get()
     local pitchInput = CameraActions.Pitch:get()
     if math.abs(yawInput) > 0.001 or math.abs(pitchInput) > 0.001 then
-        self.yaw   = self.yaw - yawInput * self.mouseSensitivity
-        self.pitch = self.pitch + pitchInput * self.mouseSensitivity
+        self.yaw   = self.yaw - yawInput * sensitivity
+        self.pitch = self.pitch + pitchInput * invertY * sensitivity
         self.pitch = Math.Clamp(self.pitch, self.minPitch, self.maxPitch)
     end
 
