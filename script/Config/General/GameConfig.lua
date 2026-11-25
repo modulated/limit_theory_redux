@@ -322,6 +322,9 @@ Config.game = {
             { name = "Iron Ore",      weight = 4 },
             { name = "Aluminum Ore",  weight = 3 },
             { name = "Copper Ore",    weight = 2 },
+            -- Carbonaceous chondrite: the commonest rock out there, and the
+            -- carbon feedstock the refineries want
+            { name = "Carboniferous Ore", weight = 2.5 },
             { name = "Beryllium Ore", weight = 1 },
             { name = "Thorium Ore",   weight = 0.3 },
         },

@@ -170,28 +170,33 @@ is not implemented.
 
 Two systems describe ore, and they do not talk to each other yet.
 
-**a) What a rock is made of (generator, live).** Each asteroid entity carries an item id and a
-quantity (`AsteroidEntity.lua`), drawn from its belt's or ring's `composition` weights in the
-ruleset. `StandardSolarSystem`:
+**a) What a field is made of (generator; declared, not yet used).** Each belt and ring is given a
+`composition` by its ruleset: a list of item ids with weights, per field type, stored on the entity
+as a `Composition` component. `AsteroidEntity` can carry an item id and a quantity, but **nothing
+reads the composition back yet** to assign one, so these weights are design data until (b) below is
+rewired. `StandardSolarSystem` rings:
 
-| Field type | Composition |
-|------------|-------------|
-| Rocky ring/belt | Silicate Ore 0.5, Iron Ore 0.3, Aluminum Ore 0.15, Beryllium Ore 0.05 |
-| Icy ring/belt | Water Ice 0.6, Silicate Ore 0.2, Hydrogen 0.1, Helium 0.05, Nitrogen 0.03, Oxygen 0.02 |
+| Field type | Composition (weights sum to 1) |
+|------------|--------------------------------|
+| Rocky ring | Silicate Ore 0.45, Iron Ore 0.28, Carboniferous Ore 0.12, Aluminum Ore 0.1, Beryllium Ore 0.05 |
+| Icy ring | Water Ice 0.55, Silicate Ore 0.2, Hydrogen 0.1, Carboniferous Ore 0.05, Helium 0.05, Nitrogen 0.03, Oxygen 0.02 |
 
-(`SinglePlanetWithBelt` and `PlanetShowcase` use Silicate 0.5 / Iron 0.4 / Aluminum 0.1.)
+Its belts: rocky Silicate 0.5 / Iron 0.4 / Carboniferous 0.1; icy Water Ice 0.65 / Hydrogen 0.15 /
+Helium 0.1 / Carboniferous 0.05 / Silicate 0.05. `SinglePlanetWithBelt` and `PlanetShowcase` use
+Silicate 0.45 / Iron 0.35 / Carboniferous 0.1 / Aluminum 0.1.
 
 **b) What a miner actually mines (gameplay, live).** `MiningField` samples rocks out of the belts'
 instance data and assigns an ore by its own weights, ignoring (a):
 
-| Ore | Weight |
-|-----|--------|
-| Silicate Ore | 5 |
-| Iron Ore | 4 |
-| Aluminum Ore | 3 |
-| Copper Ore | 2 |
-| Beryllium Ore | 1 |
-| Thorium Ore | 0.3 |
+| Ore | Weight | Share |
+|-----|--------|-------|
+| Silicate Ore | 5 | 28.1% |
+| Iron Ore | 4 | 22.5% |
+| Aluminum Ore | 3 | 16.9% |
+| Carboniferous Ore | 2.5 | 14.0% |
+| Copper Ore | 2 | 11.2% |
+| Beryllium Ore | 1 | 5.6% |
+| Thorium Ore | 0.3 | 1.7% |
 
 Other `Config.game.mining` knobs: `rocksPerBelt = 24`, `unitsPerScale = 0.004` (a rock's size sets
 its unit count), `regrowPerSecond = 0.02`, `timePerUnit = 3.0` s to mine one unit, `sellTime = 8.0`
@@ -277,8 +282,8 @@ groups mostly mirror.
 ## 6. Gaps and implementation order
 
 - [x] **Add the missing items** so the production chains close (ids 52–58).
-- [ ] **Give Carboniferous Ore a source**: add it to `Config.game.mining.ores` and to the rocky
-      belt/ring `composition` weights, or nothing will ever mine it.
+- [x] **Give Carboniferous Ore a source**: weighted into `Config.game.mining.ores` (14%) and into
+      every ruleset's rocky and icy `composition` lists.
 - [ ] **One source of truth for ore.** `MiningField` should take a rock's item from the belt's
       generated composition (`AsteroidEntity`'s `Item`/`Quantity` components) instead of rolling its
       own weights. `Config.game.mining.ores` can keep its display spellings now that

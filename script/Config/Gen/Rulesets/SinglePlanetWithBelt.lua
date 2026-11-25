@@ -70,9 +70,10 @@ local Ruleset = {
                 type = Enums.Gen.Rule.ByType,
                 types = {
                     [Enums.Gen.AsteroidRingTypes.Rocky] = {
-                        { id = Items.RawMaterials.SilicateOre.id, weight = 0.5 },
-                        { id = Items.RawMaterials.IronOre.id,     weight = 0.4 },
-                        { id = Items.RawMaterials.AluminumOre.id, weight = 0.1 }
+                        { id = Items.RawMaterials.SilicateOre.id,      weight = 0.45 },
+                        { id = Items.RawMaterials.IronOre.id,          weight = 0.35 },
+                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.1 },
+                        { id = Items.RawMaterials.AluminumOre.id,      weight = 0.1 }
                     }
                 }
             }
@@ -90,9 +91,10 @@ local Ruleset = {
                 type = Enums.Gen.Rule.ByType,
                 types = {
                     [Enums.Gen.AsteroidRingTypes.Rocky] = {
-                        { id = Items.RawMaterials.SilicateOre.id, weight = 0.5 },
-                        { id = Items.RawMaterials.IronOre.id,     weight = 0.4 },
-                        { id = Items.RawMaterials.AluminumOre.id, weight = 0.1 }
+                        { id = Items.RawMaterials.SilicateOre.id,      weight = 0.45 },
+                        { id = Items.RawMaterials.IronOre.id,          weight = 0.35 },
+                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.1 },
+                        { id = Items.RawMaterials.AluminumOre.id,      weight = 0.1 }
                     }
                 }
             }
