@@ -61,6 +61,11 @@ local NpcSystem = require('Modules.NPC.Systems.NpcSystem')
 local Reputation = require('Modules.NPC.Reputation')
 local CombatLog = require('Modules.Constructs.Systems.CombatLog')
 local PlayerWallet = require('Modules.Economy.Managers.PlayerWallet')
+local PlayerCargo = require('Modules.Economy.Managers.PlayerCargo')
+local StationTradeSystem = require('Modules.Economy.Systems.StationTradeSystem')
+local ProductionSystem = require('Modules.Economy.Systems.ProductionSystem')
+local EconomyComponents = require('Modules.Economy.Components')
+local AsteroidOre = require('Shared.Helpers.AsteroidOre')
 local SpaceDust = require('Modules.Rendering.Systems.SpaceDust')
 local CoreComponentsAll = require('Modules.Core.Components')
 local RenderComponent = require('Modules.Rendering.Components').Render
@@ -323,8 +328,13 @@ end
 function LimitTheoryRedux:closePauseMenu()
     self.pauseMenuOpen = false
     self.controlsOpen = false
-    UIPageGameplay:setView("In_Game")
     GameState:Unpause()
+    if self.docked then
+        -- Back to the station screen, which is where the game was
+        self:openStationScreen()
+        return
+    end
+    UIPageGameplay:setView("In_Game")
     -- Re-apply the gameplay cursor state for the current camera mode
     -- (Locked/Confined/Free), same pattern as the map-mode close path.
     if self.player then
@@ -608,6 +618,78 @@ function LimitTheoryRedux:repairHull()
         math.floor(health:getMaxHealth()), PlayerWallet.format(cost)), { 0.6, 0.9, 1.0 })
 end
 
+--- The rock the player's ship could mine now: the nearest spawned asteroid
+--- within range of the ship, with something left in it.
+---@return table|nil info { entity, field, asteroid, pos, scale, rock }
+function LimitTheoryRedux:mineableRock()
+    if self.docked or not self.playerShip or not self.npcs or not self.npcs.mining then return nil end
+    local rbCmp = self.playerShip:get(PhysicsComponents.RigidBody)
+    local body = rbCmp and rbCmp:getRigidBody()
+    if not body then return nil end
+    local pos = body:getPos()
+    local cfg = Config.game.mining
+    local best, bestDist
+    for _, info in ipairs(AsteroidFieldSystem:getSpawnedEntities()) do
+        if info.field and info.asteroid then
+            local reach = info.scale + cfg.playerRange
+            local d = pos:distance(info.pos)
+            if d <= reach and (not bestDist or d < bestDist) then
+                best, bestDist = info, d
+            end
+        end
+    end
+    if not best then return nil end
+    local rock = self.npcs.mining:trackAsteroid(best.field, best.asteroid,
+        { x = best.pos.x, y = best.pos.y, z = best.pos.z })
+    if rock.yield < 1 then return nil end
+    return {
+        entity = best.entity, field = best.field, asteroid = best.asteroid,
+        pos = best.pos, scale = best.scale, rock = rock,
+    }
+end
+
+--- Mining (E held): a unit of ore a second or so out of the nearest rock and
+--- into the hold, while the key is down and the rock is in reach. The same
+--- yield the NPC miners take from (`MiningField`), so a stripped rock is
+--- stripped for everyone.
+---@param dt number
+function LimitTheoryRedux:updateMining(dt)
+    if not self:isTravelGame() then return end
+    local mining = GeneralActions.Mine:isDown() and not self.docked and self.mapMode == 0
+    if not mining then
+        self.miningProgress = nil
+        self.miningTarget = nil
+        return
+    end
+    local info = self:mineableRock()
+    self.miningTarget = info
+    if not info then
+        self.miningProgress = nil
+        return
+    end
+    local cfg = Config.game.mining
+    local hold = PlayerCargo:get()
+    if hold:getRoomFor(info.rock.itemId) < 1 then
+        self.miningProgress = nil
+        self:notify("The hold is full.", { 1.0, 0.4, 0.3 })
+        return
+    end
+    self.miningProgress = (self.miningProgress or 0) + dt
+    while self.miningProgress >= cfg.playerTimePerUnit do
+        self.miningProgress = self.miningProgress - cfg.playerTimePerUnit
+        if not self.npcs.mining:take(info.rock) then
+            self:notify(info.rock.item .. ": nothing left in this rock.", { 1.0, 0.7, 0.3 })
+            break
+        end
+        if PlayerCargo:add(info.rock.itemId, 1) < 1 then
+            -- No room after all: put it back
+            info.rock.yield = info.rock.yield + 1
+            self:notify("The hold is full.", { 1.0, 0.4, 0.3 })
+            break
+        end
+    end
+end
+
 --- What the pilots can see of the player's ship: nothing while it is docked,
 --- a fraction of their range while it is cloaked.
 function LimitTheoryRedux:updatePlayerVisibility()
@@ -664,13 +746,24 @@ function LimitTheoryRedux:dockPlayer(dock)
     self.docked = dock
     self:updatePlayerVisibility()
     self:setOrbitFocus(dock.entity, self:orbitDistances(dock.radius))
-    local missing, cost = self:hullRepairQuote()
-    if missing > 0 then
-        self:notify(string.format("Docked. Shields recharged. R: repair the hull for %s", PlayerWallet.format(cost)),
-            { 0.6, 0.9, 1.0 })
-    else
-        self:notify("Docked. Shields recharged.", { 0.6, 0.9, 1.0 })
-    end
+    self:notify("Docked. Shields recharged.", { 0.6, 0.9, 1.0 })
+    -- The station's own screen: its market, its production and the way out
+    self:openStationScreen()
+end
+
+--- Open the docked station's screen (the market). The cursor is freed: the
+--- screen is clicked, not flown.
+function LimitTheoryRedux:openStationScreen()
+    if not self.docked then return end
+    self:closeMap()
+    CursorManager:free()
+    UIPageGameplay:setView("Station")
+end
+
+--- Whether the station screen is the view that should be up.
+---@return boolean
+function LimitTheoryRedux:stationScreenOpen()
+    return self.docked ~= nil and not self.pauseMenuOpen
 end
 
 --- Undock (Legacy Undock): the ship (a new one of the same kind, at rest)
@@ -681,6 +774,7 @@ function LimitTheoryRedux:undockPlayer()
     local p = dock.position
     local position = Position(p.x, p.y + dock.radius * 1.5 + 0.05, p.z + dock.radius * 0.5)
     self.docked = nil
+    UIPageGameplay:setView("In_Game")
     self:respawnPlayerShip(position, Vec3f(0, 0, -1))
     self.player:setShip(self.playerShip)
     self.player:setOrbitTarget(nil)
@@ -745,12 +839,13 @@ function LimitTheoryRedux:populateSystem()
     end
     -- Stations are docks (Legacy Dockable), owned by Config.game.docking.owner
     places.docks = {}
-    for _, station in ipairs(self.stations or {}) do
+    for index, station in ipairs(self.stations or {}) do
         local rbCmp = station:get(PhysicsComponents.RigidBody)
         local body = rbCmp and rbCmp:getRigidBody()
         if body then
             table.insert(places.docks, {
                 entity = station,
+                label = "Station " .. index,
                 position = body:getPos(),
                 radius = body:getBoundingRadius(),
                 faction = Config.game.docking.owner,
@@ -786,6 +881,7 @@ function LimitTheoryRedux:resetGalaxy()
     self.jump = nil
     Reputation:reset()
     PlayerWallet:reset()
+    PlayerCargo:reset()
     self.simTime = 0
     self.messages = {}
     self.docked = nil
@@ -1268,9 +1364,31 @@ function LimitTheoryRedux:spawnStations()
             self.world:addRigidBody(stationRbCmp:getRigidBody())
         end
 
+        -- A shop and a factory floor: what it makes, and what it opens with
+        -- (the ores of this system, so there is something to trade on day one)
+        station:add(EconomyComponents.Stock())
+        ProductionSystem:assign(station, self.rng, i == 1)
+        StationTradeSystem:stock(station, self.rng, self:systemOreIds())
+
         table.insert(self.stations, station)
         table.insert(self.labeledEntities, { entity = station, label = "Station " .. i })
     end
+end
+
+--- The ores of this system's belts and rings, by item id: what its stations
+--- deal in besides what they make.
+---@return integer[]
+function LimitTheoryRedux:systemOreIds()
+    local seen, ids = {}, {}
+    for _, belt in ipairs(self.beltEntities or {}) do
+        for _, ore in ipairs(AsteroidOre.forField(belt)) do
+            if not seen[ore.def.id] then
+                seen[ore.def.id] = true
+                ids[#ids + 1] = ore.def.id
+            end
+        end
+    end
+    return ids
 end
 
 --- The galaxy around the first star system (made once per game: jumps keep
@@ -1615,6 +1733,18 @@ function LimitTheoryRedux:drawNavigation()
         if dock then
             table.insert(lines, { text = "F: dock", color = { 0.6, 0.9, 1.0 } })
         end
+        -- Mining: what the rock in reach holds, and how the hold is doing
+        local rock = self.miningTarget or self:mineableRock()
+        if rock then
+            local mining = GeneralActions.Mine:isDown()
+            table.insert(lines, {
+                text = mining
+                    and string.format("Mining %s  ·  %d left in the rock  ·  hold %s",
+                        rock.rock.item, math.floor(rock.rock.yield), PlayerCargo:describeLoad())
+                    or string.format("E: mine %s (%d left)", rock.rock.item, math.floor(rock.rock.yield)),
+                color = mining and { 0.5, 1.0, 0.7 } or { 0.6, 0.9, 1.0 },
+            })
+        end
     end
     if self.cloak and self:isTravelGame() then
         local cfg = Config.game.cloak
@@ -1652,7 +1782,14 @@ function LimitTheoryRedux:drawNavigation()
     if self:isTravelGame() then
         DrawEx.TextAlpha(font, PlayerWallet.format(PlayerWallet:get()), 15,
             w - 290, 48, 270, 18, 1.0, 0.85, 0.35, 0.95, 1.0, 0.5)
-        local y = 70
+        local hold = PlayerCargo:describeLoad()
+        if not PlayerCargo:isEmpty() then
+            local rows = PlayerCargo:list()
+            hold = string.format("%s  ·  %s", hold, rows[1].item.displayName)
+            if #rows > 1 then hold = hold .. string.format(" +%d", #rows - 1) end
+        end
+        DrawEx.TextAlpha(font, hold, 12, w - 290, 66, 270, 16, 0.75, 0.85, 0.9, 0.85, 1.0, 0.5)
+        local y = 88
         for _, faction in ipairs({ Factions.Security, Factions.Trader, Factions.Pirate }) do
             local r, g, b = Factions.color(faction)
             DrawEx.TextAlpha(font, string.format("%s  %+.2f  %s", Factions.name(faction),
@@ -1819,6 +1956,7 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.Jump:update(dt)
     GeneralActions.Dock:update(dt)
     GeneralActions.Cloak:update(dt)
+    GeneralActions.Mine:update(dt)
     GeneralActions.Repair:update(dt)
 
     if GeneralActions.CycleMapMode:isPressed() then
@@ -1988,6 +2126,7 @@ function LimitTheoryRedux:onStateSim(data)
     Profiler.Begin('Sim.Player')
     self.player:update(dt)
     self:updateCloak(dt)
+    self:updateMining(dt)
     self.simTime = (self.simTime or 0) + dt
     -- The player's shields recharge (DefenseComponent:update had no caller)
     local playerDefense = self.playerShip:get(ConstructComponents.Defense)
@@ -1996,6 +2135,11 @@ function LimitTheoryRedux:onStateSim(data)
     -- NPC ships fly (kinematic) before the physics step, like scenario things
     Profiler.Begin('Sim.NPCs')
     self.npcs:update(dt)
+    Profiler.End()
+    -- The stations' factory floors, and the goods they cannot make arriving
+    Profiler.Begin('Sim.Economy')
+    ProductionSystem:update(self.stations or {}, dt)
+    StationTradeSystem:update(self.stations or {}, dt)
     Profiler.End()
     if self.scenario.update then
         Profiler.Begin('Sim.Scenario')

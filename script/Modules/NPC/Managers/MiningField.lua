@@ -117,6 +117,37 @@ function MiningField:rockFor(field, asteroid)
     return bySeed and asteroid and bySeed[asteroid.rotSeed] or nil
 end
 
+--- The rock of one asteroid, tracked from now on if it was not already: what
+--- the player mines. The NPC miners work a sample of each field, but a player
+--- can fly up to any rock, and once its yield is being taken from it, it has
+--- to be remembered like the others.
+---@param field Entity a belt or ring
+---@param asteroid table a record of the field's asteroid data
+---@param position table|nil {x, y, z} in the world, for findRock
+---@return MiningRock
+function MiningField:trackAsteroid(field, asteroid, position)
+    local rock = self:rockFor(field, asteroid)
+    if rock then return rock end
+    local ore, units = AsteroidOre.forAsteroid(field, asteroid)
+    rock = {
+        position = position or { x = 0, y = 0, z = 0 },
+        radius = asteroid.scale,
+        item = ore.displayName,
+        itemId = ore.id,
+        field = field,
+        yield = units,
+        yieldMax = AsteroidOre.units(asteroid),
+    }
+    table.insert(self.rocks, rock)
+    local bySeed = self.rocksByField[field]
+    if not bySeed then
+        bySeed = {}
+        self.rocksByField[field] = bySeed
+    end
+    bySeed[asteroid.rotSeed] = rock
+    return rock
+end
+
 --- Take one unit from a rock (Legacy decreaseYield); false when it is spent.
 ---@param rock MiningRock
 ---@return boolean

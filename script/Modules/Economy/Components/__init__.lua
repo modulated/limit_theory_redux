@@ -8,5 +8,7 @@ return {
     PlayerBankAccount = require('Modules.Economy.Components.PlayerBankAccountComponent'),
     PlayerList = require('Modules.Economy.Components.PlayerBankAccountComponent'),
     Price = require('Modules.Economy.Components.PriceComponent'),
+    Production = require('Modules.Economy.Components.ProductionComponent'),
     Quantity = require('Modules.Economy.Components.QuantityComponent'),
+    Stock = require('Modules.Economy.Components.StockComponent'),
 }

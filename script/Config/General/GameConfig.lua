@@ -317,6 +317,8 @@ Config.game = {
         regrowPerSecond = 0.02,  -- units a rock grows back per second
         timePerUnit     = 3.0,   -- seconds a miner takes per unit
         sellTime        = 8.0,   -- seconds docked to sell the hold
+        playerRange     = 0.45,  -- how close the player's ship mines a rock from (plus its radius)
+        playerTimePerUnit = 1.2, -- seconds the player's laser takes per unit
         ores = {
             { name = "Silicate Ore",  weight = 5 },
             { name = "Iron Ore",      weight = 4 },
@@ -339,6 +341,42 @@ Config.game = {
         bountyIssuer    = "security",
         bounties        = { pirate = 600, pirateMerchant = 300 },
         defaultBounty   = 250,   -- an outlaw of a role not listed
+    },
+
+    -- Station shops (Modules/Economy/Systems/StationTradeSystem.lua). A
+    -- station's price for a thing is its equilibrium price (ItemDefs) scaled
+    -- by how far its shelves are from the target it likes to keep, so what
+    -- its factories make gets cheaper and what they eat gets dearer.
+    trade = {
+        targetValue     = 20000, -- credits' worth of each thing a station likes to keep
+        minTargetUnits  = 4,     -- ...but at least this many units of it
+        priceSoftness   = 25,    -- units added to both sides of the scarcity ratio
+        minScarcity     = 0.35,  -- a glut never takes the price below this much of equilibrium
+        maxScarcity     = 3.0,   -- ...nor a shortage above this much
+        spread          = 0.12,  -- the house's cut either side of the price
+        unwantedFactor  = 0.5,   -- what a station pays for something it has no use for
+        defaultPrice    = 100,   -- for an item with no equilibrium price
+        startStockMin   = 0.4,   -- a new station opens with this fraction of target...
+        startStockMax   = 1.4,   -- ...to this much
+        importPerSecond = 0.5,   -- units a station imports per second of what it cannot make
+        importFloor     = 0.35,  -- ...up to this fraction of its target, and no further
+    },
+
+    -- Stations making things (Modules/Economy/Systems/ProductionSystem.lua).
+    -- The recipes are Shared/Definitions/ProductionDefs.lua; `timeScale`
+    -- compresses Legacy's durations (4 s to 4 hours) into a session.
+    production = {
+        timeScale      = 20.0, -- game seconds of production per real second
+        linesMin       = 1,    -- recipes besides the powerplant
+        linesMax       = 2,
+        refineryChance = 0.6,  -- a line is a refinery this often, else a factory
+        solarChance    = 0.75, -- the powerplant is a solar array this often (it needs no fuel)
+        drydockChance  = 0.25, -- the chance the one allowed station also builds hulls
+    },
+
+    -- What the player's ship can carry (mass, Modules/Economy/Components/StockComponent).
+    cargo = {
+        holdCapacity = 2400, -- the gunship's hold: ~400 units of ore
     },
 
     -- Docking (F): stations belong to `owner` and take ships whose faction

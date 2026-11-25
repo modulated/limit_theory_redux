@@ -40,6 +40,13 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardR) },
     }),
 
+    --- Mining: held down, not tapped (the laser runs while the key is down)
+    ---@type ActionBinding
+    Mine = ActionBinding({
+        label = "Mine the nearest asteroid (hold)", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardE) },
+    }),
+
     ---@type ActionBinding
     Cloak = ActionBinding({
         label = "Cloak on / off", group = "Flight",

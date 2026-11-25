@@ -370,6 +370,11 @@ function AsteroidFieldSystem:getSpawnedEntities()
                         label = "Asteroid " .. idx,
                         pos = Position(bx + a.px, by + a.py, bz + a.pz),
                         scale = a.scale,
+                        -- Which rock of which field it is: what it holds and
+                        -- what is left of it are asked of these (AsteroidOre,
+                        -- MiningField:trackAsteroid)
+                        field = beltEntity,
+                        asteroid = a,
                     })
                 end
             end

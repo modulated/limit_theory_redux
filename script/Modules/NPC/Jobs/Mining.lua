@@ -1,16 +1,27 @@
 local Action = require("Modules.NPC.Actions.Action")
 local Actions = require("Modules.NPC.Actions")
 local Factions = require("Modules.NPC.Factions")
+local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
 
---- Selling the hold at a station (instant; the Wait before it is the time
---- it takes). Legacy sold to the station's trader at its bid price; with no
---- economy yet the ore just goes, and is logged.
+--- Selling the hold at the station it is docked at (instant; the Wait before
+--- it is the time it takes), the port of Legacy's sale to the station's
+--- trader. The ore goes into the station's own store, which is where the ore
+--- on a market comes from: mine it out of the belt, and the shelves of the
+--- station fill and its prices fall.
 ---@class NpcSellCargo: NpcAction
 local SellCargo = Subclass("NpcSellCargo", Action, function(self) end)
 function SellCargo:getName() return "Selling" end
 function SellCargo:onUpdate(npc, ctx, dt)
-    if npc.cargo.count > 0 then
-        Log.Debug("NPC: %s sold %d %s", npc.label, npc.cargo.count, npc.cargo.item or "ore")
+    local units = npc.cargo.count or 0
+    if units > 0 then
+        local dock = npc.pilot.docked
+        local station = dock and dock.entity
+        local delivered = 0
+        if station and station:isValid() and npc.cargo.itemId then
+            delivered = StationTradeSystem:deliver(station, npc.cargo.itemId, units)
+        end
+        Log.Debug("NPC: %s sold %d %s (%d into the station's store)",
+            npc.label, units, npc.cargo.item or "ore", delivered)
     end
     npc.cargo.count = 0
     self:finish(npc)
