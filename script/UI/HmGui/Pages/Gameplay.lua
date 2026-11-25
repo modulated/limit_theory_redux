@@ -10,8 +10,6 @@ local ResponsiveSize = require("Types.ResponsiveSize")
 local CoreComponents = require("Modules.Core.Components")
 local CursorManager = require("Input.CursorManager")
 
-local ShipCreationView = require("UI.HmGui.Views.Gameplay.ShipCreation")
-Gameplay:addViewToPage(ShipCreationView)
 local InGameView = require("UI.HmGui.Views.Gameplay.InGame")
 Gameplay:addViewToPage(InGameView)
 local PausedView = require("UI.HmGui.Views.Gameplay.Paused")
