@@ -66,12 +66,11 @@ You may want to install a GUI for Git, such as GitHub for Desktop: https://deskt
 Optionally, if you would like to made changes to the libphx engine, you will also need:
 
 - Visual Studio Community: https://visualstudio.microsoft.com/vs/
-- LLVM: https://releases.llvm.org/download.html (download the latest Windows installer by going to the GitHub releases page, and downloading LLVM-xx.x.x-win64.exe)
 - Rust: https://www.rust-lang.org/tools/install (use rustup-init.exe, then type 1 and press Enter in the terminal window)
 
-Everything other than Visual Studio can be installed using [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) if you're on Windows 10 1709 or later:
+Rust can also be installed using [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) if you're on Windows 10 1709 or later:
 
-- `winget install LLVM.LLVM Rustlang.Rustup`
+- `winget install Rustlang.Rustup`
 
 ### macOS
 

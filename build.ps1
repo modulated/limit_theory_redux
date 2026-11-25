@@ -53,17 +53,6 @@ if ($onWindows) {
     $libPrefix = ''
     $libSuffix = '.dll'
     $binSuffix = '.exe'
-    if (-not $env:LIBCLANG_PATH) {
-        $candidates = @("C:\Program Files\LLVM\bin", "C:\Program Files (x86)\LLVM\bin")
-        $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if ($found) {
-            $env:LIBCLANG_PATH = $found
-        } else {
-            Write-Error ("Set the environment variable LIBCLANG_PATH to the path containing clang.exe " +
-                "in your LLVM installation directory, i.e. C:\Program Files\LLVM\bin")
-            exit 1
-        }
-    }
 } elseif ($onMacOS) {
     # Oldest macOS the binaries run on (see build.sh)
     if (-not $env:MACOSX_DEPLOYMENT_TARGET) { $env:MACOSX_DEPLOYMENT_TARGET = '11.0' }
