@@ -36,7 +36,10 @@ function MineAt:onUpdate(npc, ctx, dt)
         self.timer = 0
         if ctx.mining:take(self.rock) then
             cargo.count = cargo.count + 1
+            -- The hold keeps both: the id for whoever buys it later, the
+            -- display name for the HUD and the logs.
             cargo.item = self.rock.item
+            cargo.itemId = self.rock.itemId
         end
     end
 end

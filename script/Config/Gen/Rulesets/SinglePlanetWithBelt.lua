@@ -68,6 +68,7 @@ local Ruleset = {
             width = { type = Enums.Gen.Rule.Fixed, value = 0.1 },
             composition = {
                 type = Enums.Gen.Rule.ByType,
+                parentKey = "ringType",
                 types = {
                     [Enums.Gen.AsteroidRingTypes.Rocky] = {
                         { id = Items.RawMaterials.SilicateOre.id,      weight = 0.45 },
@@ -89,6 +90,7 @@ local Ruleset = {
             inclination = { type = Enums.Gen.Rule.Fixed, value = 5.0 },
             composition = {
                 type = Enums.Gen.Rule.ByType,
+                parentKey = "beltType",
                 types = {
                     [Enums.Gen.AsteroidRingTypes.Rocky] = {
                         { id = Items.RawMaterials.SilicateOre.id,      weight = 0.45 },

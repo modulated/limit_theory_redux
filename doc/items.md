@@ -5,8 +5,8 @@ item that is defined, which of them can be mined, which can be traded, and the p
 that turn one into another. It is meant to be edited: the tables are the design surface, and the
 Status sections say how much of each is actually wired up.
 
-Status summary (2026-11): the item **registry** is live (58 items, hand-written permanent ids) and
-the galaxy generator uses it for asteroid composition. The **market**, **inventory** and **production** code exists but nothing
+Status summary (2026-11): the item **registry** is live (58 items, hand-written permanent ids), the
+galaxy generator gives every belt and ring a composition from it, and mining reads that composition. The **market**, **inventory** and **production** code exists but nothing
 trades or crafts in a running game: the only credits that move are bounties and hull repair, and a
 miner that fills its hold sells it to a log line.
 
@@ -168,13 +168,13 @@ is not implemented.
 
 ## 3. Mined ore
 
-Two systems describe ore, and they do not talk to each other yet.
+Two halves, and they now agree: the generator says what a field is made of, and mining reads it.
 
-**a) What a field is made of (generator; declared, not yet used).** Each belt and ring is given a
-`composition` by its ruleset: a list of item ids with weights, per field type, stored on the entity
-as a `Composition` component. `AsteroidEntity` can carry an item id and a quantity, but **nothing
-reads the composition back yet** to assign one, so these weights are design data until (b) below is
-rewired. `StandardSolarSystem` rings:
+**a) What a field is made of (generator, live).** Each belt and ring is given a `composition` by its
+ruleset: a list of item ids with weights, per field type (rocky or icy), stored on the entity as a
+`Composition` component. The field's type comes from its own `type` rule and is in the generation
+context as `beltType`/`ringType`, which is what the composition's `ByType` rule looks up
+(`parentKey`). `StandardSolarSystem` rings:
 
 | Field type | Composition (weights sum to 1) |
 |------------|--------------------------------|
@@ -185,8 +185,14 @@ Its belts: rocky Silicate 0.5 / Iron 0.4 / Carboniferous 0.1; icy Water Ice 0.65
 Helium 0.1 / Carboniferous 0.05 / Silicate 0.05. `SinglePlanetWithBelt` and `PlanetShowcase` use
 Silicate 0.45 / Iron 0.35 / Carboniferous 0.1 / Aluminum 0.1.
 
-**b) What a miner actually mines (gameplay, live).** `MiningField` samples rocks out of the belts'
-instance data and assigns an ore by its own weights, ignoring (a):
+**b) What a miner mines (gameplay, live).** `MiningField:build` samples rocks out of each field's
+instance data and gives each one an ore **from that field's own composition**, resolved through the
+registry: an icy ring yields ice and gases, a rocky belt yields ore. A rock keeps both the item id
+and its display name (`rock.itemId`, `rock.item`), and a planet's ring is materialized as a child
+belt entity, so the lookup walks up to the parent that carries the `Composition`.
+
+`Config.game.mining.ores` is the fallback for a field the generator gave no composition (it is
+logged at debug level when that happens):
 
 | Ore | Weight | Share |
 |-----|--------|-------|
@@ -202,8 +208,9 @@ Other `Config.game.mining` knobs: `rocksPerBelt = 24`, `unitsPerScale = 0.004` (
 its unit count), `regrowPerSecond = 0.02`, `timePerUnit = 3.0` s to mine one unit, `sellTime = 8.0`
 s docked to sell the hold.
 
-The ore a miner holds is a plain string on the NPC (`npc.cargo.item`), not an item id, and selling
-it only logs a line (`Jobs/Mining.lua`, `SellCargo`). The player cannot mine at all.
+A miner's hold carries the ore's id and display name (`npc.cargo.itemId`, `npc.cargo.item`), but
+selling still only logs a line (`Jobs/Mining.lua`, `SellCargo`) because stations hold no stock. The
+player cannot mine at all.
 
 ## 4. Trade
 
@@ -284,10 +291,12 @@ groups mostly mirror.
 - [x] **Add the missing items** so the production chains close (ids 52–58).
 - [x] **Give Carboniferous Ore a source**: weighted into `Config.game.mining.ores` (14%) and into
       every ruleset's rocky and icy `composition` lists.
-- [ ] **One source of truth for ore.** `MiningField` should take a rock's item from the belt's
-      generated composition (`AsteroidEntity`'s `Item`/`Quantity` components) instead of rolling its
-      own weights. `Config.game.mining.ores` can keep its display spellings now that
-      `Items:getByName` resolves either form, but the rock should carry the item **id**.
+- [x] **One source of truth for ore.** `MiningField` takes each rock's ore from its field's
+      generated composition and keeps the item id on the rock; `Config.game.mining.ores` is only
+      the fallback.
+- [ ] **Asteroid entities should agree.** The close-up rocks `AsteroidFieldSystem` spawns carry no
+      `Item`/`Quantity` components, though `AsteroidEntity` takes them, so a rock you fly up to does
+      not know the ore the mining field says it holds.
 - [ ] **Player cargo hold**: an `InventoryComponent` on the player's ship, a HUD readout, and a
       capacity by hull size.
 - [ ] **Player mining**: a mining laser mount that calls into `MiningField:take`, reusing the NPC
