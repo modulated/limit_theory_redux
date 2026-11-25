@@ -18,6 +18,38 @@ local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
 ---@class ProductionSystem
 local ProductionSystem = {}
 
+--- The item group whose outputs never block a line (`ItemDefs.lua`).
+local WASTE_GROUP = "Waste"
+
+--- What a recipe's inputs are worth, at equilibrium prices: how much has to
+--- reach the station for one run.
+---@param recipe ProductionDefinition
+---@return number
+local function inputValue(recipe)
+    local value = 0
+    for _, entry in ipairs(recipe.inputs) do
+        local price = entry.item.startEquilibriumPrice or Config.game.trade.defaultPrice
+        value = value + price * entry.count
+    end
+    return value
+end
+
+--- The recipes of a class a lone station could actually keep running: ones
+--- whose inputs are cheap enough to mine, make or import. The ship-part
+--- factories and the drydocks need a supply chain (freighters hauling
+--- glassiron and steel in), so they are left out until there is one -- a
+--- line that can never complete a run is worse than no line at all.
+---@param class string
+---@return ProductionDefinition[]
+local function affordableRecipes(class)
+    local limit = Config.game.production.maxLineInputValue
+    local list = {}
+    for _, recipe in ipairs(Productions:ofClass(class)) do
+        if inputValue(recipe) <= limit then list[#list + 1] = recipe end
+    end
+    return list
+end
+
 --- The recipes a station runs, picked from its seed: a powerplant always (it
 --- needs energy, and so does everything else), plus a refinery or a factory
 --- or two. Drydocks are rare: one station in a system at most, and only if
@@ -25,13 +57,36 @@ local ProductionSystem = {}
 ---@param station Entity
 ---@param rng RNG
 ---@param allowDrydock boolean|nil
+---@param oreIds integer[]|nil the ores of this system: a refinery that eats one of them is preferred
 ---@return ProductionComponent
-function ProductionSystem:assign(station, rng, allowDrydock)
+function ProductionSystem:assign(station, rng, allowDrydock, oreIds)
     local cfg = Config.game.production
     local function pick(class)
-        local list = Productions:ofClass(class)
+        local list = affordableRecipes(class)
         if #list == 0 then return nil end
         return list[rng:getInt(1, #list)]
+    end
+
+    -- A refinery that runs on what the local belts hold, so the miners'
+    -- ore has somewhere to go and the station is not living on imports
+    local localRefineries = {}
+    if oreIds and #oreIds > 0 then
+        local isLocal = {}
+        for _, id in ipairs(oreIds) do isLocal[id] = true end
+        for _, recipe in ipairs(affordableRecipes(ProductionDefinition.Class.Refinery)) do
+            for _, entry in ipairs(recipe.inputs) do
+                if isLocal[entry.item.id] then
+                    localRefineries[#localRefineries + 1] = recipe
+                    break
+                end
+            end
+        end
+    end
+    local function pickRefinery()
+        if #localRefineries > 0 and rng:getUniform() < cfg.localRefineryChance then
+            return localRefineries[rng:getInt(1, #localRefineries)]
+        end
+        return pick(ProductionDefinition.Class.Refinery)
     end
 
     local recipes = {}
@@ -44,8 +99,9 @@ function ProductionSystem:assign(station, rng, allowDrydock)
         or pick(Class.Powerplant)
     if power then recipes[#recipes + 1] = power end
     for _ = 1, rng:getInt(cfg.linesMin, cfg.linesMax) do
-        local class = rng:getUniform() < cfg.refineryChance and Class.Refinery or Class.Factory
-        local recipe = pick(class)
+        local recipe = rng:getUniform() < cfg.refineryChance
+            and pickRefinery()
+            or pick(Class.Factory)
         if recipe then recipes[#recipes + 1] = recipe end
     end
     if allowDrydock and rng:getUniform() < cfg.drydockChance then
@@ -63,6 +119,45 @@ function ProductionSystem:assign(station, rng, allowDrydock)
     end
     StationTradeSystem:invalidate(station)
     return cmp
+end
+
+--- Whether there is any room left for what a recipe makes. A station is a
+--- warehouse, not a bottomless pit: once every output of a line is piled up
+--- past `Config.game.production.stockCeiling` times what the station likes
+--- to keep, the line stops until the goods move. Without this a line with no
+--- inputs (a solar array) runs for ever and buries the system in its output.
+---@param station Entity
+---@param stock StockComponent
+---@param recipe ProductionDefinition
+---@return boolean
+local function hasRoomForOutputs(station, stock, recipe)
+    local ceiling = Config.game.production.stockCeiling
+    for _, entry in ipairs(recipe.outputs) do
+        -- Waste is vented when there is nowhere to put it (see storeOutputs),
+        -- so a full waste bin never stops a line
+        if entry.item.group ~= WASTE_GROUP then
+            local target = StationTradeSystem:targetStock(station, entry.item.id)
+            if stock:count(entry.item.id) >= target * ceiling then return false end
+        end
+    end
+    return true
+end
+
+--- Put a finished run's outputs in the store. Waste past the ceiling is
+--- vented rather than kept: a station is not a rubbish tip, and without this
+--- the waste of every recipe would eventually block the whole floor.
+---@param station Entity
+---@param stock StockComponent
+---@param recipe ProductionDefinition
+local function storeOutputs(station, stock, recipe)
+    local ceiling = Config.game.production.stockCeiling
+    for _, entry in ipairs(recipe.outputs) do
+        local full = entry.item.group == WASTE_GROUP
+            and stock:count(entry.item.id) >= StationTradeSystem:targetStock(station, entry.item.id) * ceiling
+        if not full then
+            stock:add(entry.item.id, entry.count)
+        end
+    end
 end
 
 --- Whether the store holds everything a recipe needs.
@@ -100,17 +195,16 @@ local function updateStation(station, dt)
         local recipe = Productions:getDefinition(line.id)
         if recipe then
             if not line.running then
-                -- Idle: start when the store has what the recipe needs
-                if takeInputs(stock, recipe) then
+                -- Idle: start when the store has what the recipe needs, and
+                -- somewhere to put what it makes
+                if hasRoomForOutputs(station, stock, recipe) and takeInputs(stock, recipe) then
                     line.running = true
                     line.progress = 0
                 end
             else
                 line.progress = line.progress + dt
                 if line.progress >= recipe.duration then
-                    for _, entry in ipairs(recipe.outputs) do
-                        stock:add(entry.item.id, entry.count)
-                    end
+                    storeOutputs(station, stock, recipe)
                     line.running = false
                     line.progress = 0
                 end
@@ -141,10 +235,14 @@ function ProductionSystem:status(station)
     for _, line in ipairs(productionCmp:getLines()) do
         local recipe = Productions:getDefinition(line.id)
         if recipe then
+            local stock = station:get(Economy.Stock)
             rows[#rows + 1] = {
                 recipe = recipe,
                 running = line.running,
                 progress = recipe.duration > 0 and math.min(1, line.progress / recipe.duration) or 0,
+                -- Why an idle line is idle, for the docked screen
+                full = not line.running and stock ~= nil
+                    and not hasRoomForOutputs(station, stock, recipe),
             }
         end
     end

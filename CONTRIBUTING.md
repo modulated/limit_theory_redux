@@ -207,6 +207,16 @@ Release builds target a baseline x86-64 CPU so they run everywhere. You can buil
 
 Changing `RUSTFLAGS` rebuilds every crate, so set it the same way each time (for example, in your shell profile) or builds will keep starting from scratch.
 
+## Tuning the economy
+
+`luajit tools/economy-sim.lua` runs the game's economy headless — the real
+config, item and production registries and trade and production systems, with
+stations, miners and an optional trader and prospector — and reports prices,
+production, where the goods came from and what an hour of mining or hauling
+pays. `--seeds 8` shows the spread across systems. Use it rather than the game
+to set anything in `Config.game.{trade,production,mining,cargo}`; see
+[doc/items.md](doc/items.md).
+
 ## Lints
 
 `./build.sh --run-tests` runs `cargo clippy -- -D warnings`, so a clippy warning fails CI. Beyond clippy's default groups, the workspace enables a set of correctness lints (pointer casts that can change type or alignment, hash-map iteration order, leftover `todo!`/`dbg!`, lock and resource misuse, and more): see `[workspace.lints]` in the root `Cargo.toml`, which also lists the lints left out and why. Every crate inherits them with `[lints] workspace = true`, except `ltr`, which keeps a copy (its `Cargo.toml` explains why): change both together.

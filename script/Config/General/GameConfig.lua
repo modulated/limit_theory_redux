@@ -318,7 +318,7 @@ Config.game = {
         timePerUnit     = 3.0,   -- seconds a miner takes per unit
         sellTime        = 8.0,   -- seconds docked to sell the hold
         playerRange     = 0.45,  -- how close the player's ship mines a rock from (plus its radius)
-        playerTimePerUnit = 1.2, -- seconds the player's laser takes per unit
+        playerTimePerUnit = 3.0, -- seconds the player's laser takes per unit (as the NPC miners)
         playerScanInterval = 0.3, -- seconds between looks for a rock in reach
         ores = {
             { name = "Silicate Ore",  weight = 5 },
@@ -348,18 +348,25 @@ Config.game = {
     -- station's price for a thing is its equilibrium price (ItemDefs) scaled
     -- by how far its shelves are from the target it likes to keep, so what
     -- its factories make gets cheaper and what they eat gets dearer.
+    --
+    -- These were set with `luajit tools/economy-sim.lua --seeds 8 --prospector
+    -- --trader`, which runs this economy headless. At these values a day of
+    -- mining pays about 1,600 credits an hour in a median system and a day of
+    -- hauling about 900, with a long tail upward in systems whose refineries
+    -- happen to want what the belts hold. Retune with the tool, not by eye.
     trade = {
-        targetValue     = 20000, -- credits' worth of each thing a station likes to keep
+        targetValue     = 12000, -- credits' worth of each thing a station likes to keep
         minTargetUnits  = 4,     -- ...but at least this many units of it
         priceSoftness   = 25,    -- units added to both sides of the scarcity ratio
         minScarcity     = 0.35,  -- a glut never takes the price below this much of equilibrium
-        maxScarcity     = 3.0,   -- ...nor a shortage above this much
-        spread          = 0.12,  -- the house's cut either side of the price
+        maxScarcity     = 2.5,   -- ...nor a shortage above this much
+        spread          = 0.09,  -- the house's cut either side of the price
         unwantedFactor  = 0.5,   -- what a station pays for something it has no use for
+        buyCeiling      = 4.0,   -- a station stops buying a thing at this many targets
         defaultPrice    = 100,   -- for an item with no equilibrium price
         startStockMin   = 0.4,   -- a new station opens with this fraction of target...
         startStockMax   = 1.4,   -- ...to this much
-        importPerSecond = 0.5,   -- units a station imports per second of what it cannot make
+        importPerSecond = 0.02,  -- units a station imports per second of what it cannot make
         importFloor     = 0.35,  -- ...up to this fraction of its target, and no further
     },
 
@@ -368,10 +375,13 @@ Config.game = {
     -- compresses Legacy's durations (4 s to 4 hours) into a session.
     production = {
         timeScale      = 20.0, -- game seconds of production per real second
+        stockCeiling   = 3.0,  -- a line stops once its outputs pile past this many targets
+        maxLineInputValue = 6000, -- credits' worth of input per run a station can keep up with
         linesMin       = 1,    -- recipes besides the powerplant
         linesMax       = 2,
         refineryChance = 0.6,  -- a line is a refinery this often, else a factory
         solarChance    = 0.75, -- the powerplant is a solar array this often (it needs no fuel)
+        localRefineryChance = 0.85, -- a refinery line runs on a locally mined ore this often
         drydockChance  = 0.25, -- the chance the one allowed station also builds hulls
     },
 

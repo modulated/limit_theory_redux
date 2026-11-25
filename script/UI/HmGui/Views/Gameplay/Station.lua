@@ -109,7 +109,9 @@ local function sell(station, itemId, units)
         LimitTheoryRedux:notify(string.format("Sold %d %s for %s", sold, def.displayName,
             PlayerWallet.format(earned)), { 0.6, 0.9, 1.0 })
     else
-        LimitTheoryRedux:notify("Nothing of that in the hold.", { 1.0, 0.4, 0.3 })
+        LimitTheoryRedux:notify(PlayerCargo:count(itemId) > 0
+            and "This station will take no more of that."
+            or "Nothing of that in the hold.", { 1.0, 0.4, 0.3 })
     end
 end
 
@@ -123,6 +125,7 @@ local function marketRow(station, row, s)
     local held = PlayerCargo:count(row.item.id)
     local hold = PlayerCargo:get()
     local canBuy = StationTradeSystem:maxBuyable(station, hold, row.item.id)
+    local canSell = StationTradeSystem:maxSellable(station, hold, row.item.id)
     local size = math.floor(15 * s)
 
     return Grid {
@@ -142,8 +145,8 @@ local function marketRow(station, row, s)
                 held > 0 and WHITE or DIM, AlignHorizontal.Right),
             smallButton("Buy", s, canBuy >= 1, function() buy(station, row.item.id, 1) end),
             smallButton("Buy 10", s, canBuy >= 1, function() buy(station, row.item.id, 10) end),
-            smallButton("Sell", s, held >= 1, function() sell(station, row.item.id, 1) end),
-            smallButton("Sell all", s, held >= 1, function() sell(station, row.item.id, held) end),
+            smallButton("Sell", s, canSell >= 1, function() sell(station, row.item.id, 1) end),
+            smallButton("Sell all", s, canSell >= 1, function() sell(station, row.item.id, held) end),
         }
     }
 end
@@ -201,7 +204,7 @@ local function production(station, s)
     for _, line in ipairs(status) do
         local state = line.running
             and string.format("%d%%", math.floor(line.progress * 100))
-            or "waiting for stock"
+            or (line.full and "store full" or "waiting for stock")
         rows[#rows + 1] = Grid {
             fixedHeight = math.floor(22 * s),
             cells = { Grid.Fixed(640 * s), Grid.Fixed(160 * s) },

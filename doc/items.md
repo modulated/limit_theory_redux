@@ -326,7 +326,57 @@ Legacy tiered its items T0–T8 (energy, information, raw inanimate, raw animate
 elemental, processed constructed, ship component, ship hull, station), which the registry's groups
 mostly mirror. Those Legacy files are gone now; the recipes above are the port.
 
-## 6. Gaps and implementation order
+## 6. Tuning it without running the game
+
+`tools/economy-sim.lua` runs this economy headless: it loads the real
+`Config.game`, the real item and production registries and the real
+`StationTradeSystem` and `ProductionSystem`, then steps a model of a system —
+stations making and trading, miners bringing ore in, optionally a trader
+hauling between stations and a prospector mining and selling. A simulated day
+takes about a second, so the numbers in `Config.game.{trade,production,mining,cargo}`
+can be tuned by running it rather than by flying around.
+
+```sh
+luajit tools/economy-sim.lua                                   # a two-day run
+luajit tools/economy-sim.lua --seeds 8 --prospector --trader    # the spread over eight systems
+luajit tools/economy-sim.lua --set trade.spread=0.2 --hours 12  # try a setting
+luajit tools/economy-sim.lua --csv /tmp/economy.csv             # the hourly series
+luajit tools/economy-sim.lua --help
+```
+
+What it reports: runs per production line (and which lines **starved**, never
+completing a run), each station's stock, each watched item's price range with
+a note when it is **pinned** at a scarcity bound, where every unit came from
+(produced, imported, mined, hauled), and the income of the trader and the
+prospector in credits an hour. `--seeds N` runs several systems and prints the
+spread, which matters: income swings by more than ten times depending on
+whether a system's refineries happen to want what its belts hold.
+
+Four things it already caught, all fixed:
+
+- a solar array completed a run every 0.4 s and buried a station in 43,000
+  energy cells, so a line now stops when its outputs are piled past
+  `production.stockCeiling` times the target (waste is vented instead, or a
+  full bin would stop the floor);
+- imports were supplying 21,000 units of ore against the miners' nothing, so
+  `trade.importPerSecond` came down from 0.5 to 0.02 — a trickle, not a
+  supplier;
+- stations were handed ship-part factories whose inputs no one in the system
+  makes, so recipes above `production.maxLineInputValue` are not assigned, and
+  refineries now prefer an ore the local belts hold
+  (`production.localRefineryChance`);
+- a prospector could dump the same ore on one station for ever at 20,000
+  credits an hour, so a station stops buying a thing at `trade.buyCeiling`
+  times its target, and mining slowed to the NPC rate (3 s a unit).
+
+The model's shortcuts: a miner is a delivery every so often (its hold, its
+mining rate and its time docked are the real config values, plus `--trip`
+seconds of flying), the trader buys while the margin lasts and sells at the
+next station, and the prospector mines a full hold and sells it where it pays
+best. Nothing about prices, stock, production or imports is modelled: that is
+the game's own code.
+
+## 7. Gaps and implementation order
 
 Done: the item registry with permanent ids, the feedstock items, ore from each field's own
 composition, rocks that know what they hold, station stock and prices, production, the player's

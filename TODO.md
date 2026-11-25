@@ -43,7 +43,10 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    - [ ] Biomass has no source, so the hydrocarbon chain runs on imports.
    - [ ] One market model: the order-book `MarketplaceSystem` and the station shop both price goods.
    - [ ] Saving the hold, the wallet, station stock and production progress.
-   - [ ] Balance: `Config.game.trade` and `Config.game.production` were set by eye.
+   - [ ] Balance: tune with `luajit tools/economy-sim.lua --seeds 8 --prospector --trader`
+         (it runs the economy headless). Income swings more than tenfold between systems
+         depending on whether the local refineries want the local ore; mining and hauling pay
+         about 1,600 and 900 credits an hour in a median system.
 7. **NPCs and combat** (started: `script/Modules/NPC/`). Security, trader and pirate ships
    by each system's hostility, flying jobs ported from Legacy (Patrolling, Marauding,
    Transport, Think; actions MoveTo, Wait, Attack, Flee, LeaveSystem); the player flies an

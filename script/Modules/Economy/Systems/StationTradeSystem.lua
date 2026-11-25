@@ -68,6 +68,21 @@ function StationTradeSystem:invalidate(station)
     end
 end
 
+--- How much of an item this station likes to keep on the shelves: the
+--- target its prices are measured against, and what its production lines
+--- treat as a full store.
+---@param station Entity
+---@param itemId integer
+---@return number
+function StationTradeSystem:targetStock(station, itemId)
+    local cfg = Config.game.trade
+    local target = book(station).target[itemId]
+    if target then return target end
+    local def = Items:getDefinition(itemId)
+    local price = def and def.startEquilibriumPrice or cfg.defaultPrice
+    return math.max(cfg.minTargetUnits, math.floor(cfg.targetValue / math.max(1, price)))
+end
+
 --- Does this station deal in the item at all?
 ---@param station Entity
 ---@param itemId integer
@@ -185,6 +200,20 @@ function StationTradeSystem:buy(station, hold, itemId, units)
     return bought, spent
 end
 
+--- How many units the station will still take: it stops buying a thing once
+--- it is sitting on `Config.game.trade.buyCeiling` times what it likes to
+--- keep, so a hold full of one ore cannot be dumped on one station for ever.
+---@param station Entity
+---@param hold StockComponent
+---@param itemId integer
+---@return integer
+function StationTradeSystem:maxSellable(station, hold, itemId)
+    local stockCmp = station:get(Economy.Stock)
+    if not stockCmp then return 0 end
+    local ceiling = math.floor(self:targetStock(station, itemId) * Config.game.trade.buyCeiling)
+    return math.max(0, math.min(hold:count(itemId), ceiling - stockCmp:count(itemId)))
+end
+
 --- Sell out of `hold` to the station.
 ---@param station Entity
 ---@param hold StockComponent
@@ -194,7 +223,7 @@ end
 function StationTradeSystem:sell(station, hold, itemId, units)
     local stockCmp = station:get(Economy.Stock)
     if not stockCmp then return 0, 0 end
-    units = math.min(math.floor(units or 0), hold:count(itemId))
+    units = math.min(math.floor(units or 0), self:maxSellable(station, hold, itemId))
     if units <= 0 then return 0, 0 end
     local def = Items:getDefinition(itemId)
     -- A station buys anything that can be mined or made, whether it deals in
