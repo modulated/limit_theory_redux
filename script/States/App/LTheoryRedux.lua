@@ -1119,6 +1119,9 @@ function LimitTheoryRedux:placeShipAtArrival(fromId)
     self.constructManager:destroy(self.playerShipHandle)
     self:createPlayerShip(position, spec.shipType, spec.hullIdx, spec.seed)
 
+    -- Where and by which gate the ship arrived (for JumpTest)
+    self.lastArrival = { position = position, gate = gate }
+
     if facing then
         local up = math.abs(facing.y) > 0.99 and Vec3f(1, 0, 0) or Vec3f(0, 1, 0)
         self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody():setRot(Quat.FromLookUp(facing, up))

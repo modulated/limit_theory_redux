@@ -49,13 +49,19 @@ local function systemName(id)
     return Game.galaxy.systems[id].name
 end
 
---- After a jump from `fromId`: the ship sits by the gate back to `fromId`.
+--- Right after a jump from `fromId`: the ship was placed by the gate back to
+--- `fromId`, and is still near it. Checked on the first frame after the jump:
+--- on a course the autopilot sets off for the next gate at once.
 local function checkArrival(fromId)
     local back = JumpGateSystem:gateTo(Game.gateWatch, fromId)
     check(back, "%s has no gate back to %s", systemName(Game.currentSystemId), systemName(fromId))
-    local d = shipPos():distance(back.position)
+    local arrival = Game.lastArrival
+    check(arrival and arrival.gate == back, "the ship did not arrive at the gate back")
+    local placed = arrival.position:distance(back.position)
     local expected = back.radius * Config.game.jumpGates.arrivalDistance
-    check(math.abs(d - expected) < back.radius, "ship arrived %.3f from the gate (expected %.3f)", d, expected)
+    check(math.abs(placed - expected) < 1e-3, "ship placed %.3f from the gate (expected %.3f)", placed, expected)
+    local now = shipPos():distance(back.position)
+    check(now < Config.game.jumpGates.activationRange, "ship already %.3f from the gate", now)
     check(#Game.jumpGates == #Game.galaxy.systems[Game.currentSystemId].links,
         "%s has %d gates for %d links", systemName(Game.currentSystemId), #Game.jumpGates,
         #Game.galaxy.systems[Game.currentSystemId].links)
@@ -125,14 +131,18 @@ end)
 step("course", function()
     if Game.jump then return "wait" end
     if state.arrivedFrom then
+        if not state.arrivalChecked then
+            checkArrival(state.arrivedFrom)
+            Log.Info("JumpTest: arrived in %s", systemName(Game.currentSystemId))
+            state.arrivalChecked = true
+        end
+        -- The screenshot once the screen has faded back in
         if (state.settle or 0) < SETTLE_FRAMES then
             state.settle = (state.settle or 0) + 1
             return "wait"
         end
-        checkArrival(state.arrivedFrom)
-        Log.Info("JumpTest: arrived in %s", systemName(Game.currentSystemId))
         Screenshot()
-        state.arrivedFrom, state.settle = nil, 0
+        state.arrivedFrom, state.settle, state.arrivalChecked = nil, 0, nil
     end
 
     if not Game.course then
@@ -177,7 +187,8 @@ step("fly through", function()
         state.flyMoved = true
         return "wait"
     end
-    if Game.jump or (state.flyWait or 0) < SETTLE_FRAMES then
+    if Game.jump then return "wait" end
+    if Game.currentSystemId ~= state.flyTo and (state.flyWait or 0) < SETTLE_FRAMES then
         state.flyWait = (state.flyWait or 0) + 1
         return "wait"
     end
