@@ -1,7 +1,11 @@
 name: CI
 
+# Only commits on main: pushes to other branches and pull requests don't run
+# it. To check another branch, start it by hand (Actions > CI > Run workflow).
 on:
-  pull_request:
+  push:
+    branches:
+      - main
     paths-ignore:
       - "**/README.md"
       - "**/CONTRIBUTING.md"
@@ -12,11 +16,12 @@ on:
       - "**/.gitignore"
       - "**/.gitattributes"
       - "**/.editorconfig"
+  workflow_dispatch:
 
-# A new push to a pull request cancels the run still going for its previous
-# commit; only the latest commit's result matters.
+# A newer run for the same branch cancels the one still going; only the
+# latest commit's result matters.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
