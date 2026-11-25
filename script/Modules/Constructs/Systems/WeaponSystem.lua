@@ -18,7 +18,6 @@ local PointLightEffectEntity = require("Modules.Constructs.Entities.PointLightEf
 local PhysicsComponents = require("Modules.Physics.Components")
 local RaycastHelper = require("Shared.Helpers.RaycastHelper")
 local BeamAimHelper = require("Shared.Helpers.BeamAimHelper")
-local MeshIndexData = require("Shared.Helpers.MeshIndexData")
 local WeaponMountSizing = require("Shared.Helpers.WeaponMountSizing")
 local NULL_RIGID_BODY = ffi.cast("RigidBody*", nil)
 local ROOT_EPSILON = 0.000001
@@ -74,139 +73,52 @@ local function getRayHitPosition(hit, hitBody)
     return nil
 end
 
-local function triangleData(p0, p1, p2)
-    local e1x = p1.x - p0.x
-    local e1y = p1.y - p0.y
-    local e1z = p1.z - p0.z
-    local e2x = p2.x - p0.x
-    local e2y = p2.y - p0.y
-    local e2z = p2.z - p0.z
-    local nx = e1y * e2z - e1z * e2y
-    local ny = e1z * e2x - e1x * e2z
-    local nz = e1x * e2y - e1y * e2x
-    local doubleArea = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if doubleArea <= ROOT_EPSILON then
-        return nil
-    end
-
-    return {
-        p0 = Vec3f(p0.x, p0.y, p0.z),
-        p1 = Vec3f(p1.x, p1.y, p1.z),
-        p2 = Vec3f(p2.x, p2.y, p2.z),
-        normal = Vec3f(nx / doubleArea, ny / doubleArea, nz / doubleArea),
-        area = doubleArea * 0.5,
-    }
-end
-
+---The sampleable triangles of a target's hull: aim points for the weapons
+---(Rust `TargetSurface`, which holds the triangles and their cumulative
+---areas so a sample costs a facing pass and a binary search; it used to be
+---a Lua loop over every triangle on every call).
 ---@param mesh Mesh
----@return table[] surface triangles
+---@return TargetSurface
 function WeaponSystem:buildTargetSurface(mesh)
     assert(mesh and mesh.getVertexCount and mesh.getIndexCount,
         "target surface sampling requires a generated mesh")
-
-    local vertices = {}
-    for index = 0, mesh:getVertexCount() - 1 do
-        local vertex = mesh:getVertex(index)
-        vertices[index] = Vec3f(vertex.px, vertex.py, vertex.pz)
-    end
-
-    local surface = {}
-    local totalArea = 0
-    local indexCount = mesh:getIndexCount()
-    MeshIndexData.read(mesh, function(indices)
-        for index = 0, indexCount - 3, 3 do
-            local p0 = vertices[tonumber(indices[index])]
-            local p1 = vertices[tonumber(indices[index + 1])]
-            local p2 = vertices[tonumber(indices[index + 2])]
-            if p0 and p1 and p2 then
-                local triangle = triangleData(p0, p1, p2)
-                if triangle then
-                    triangle.index = #surface + 1
-                    table.insert(surface, triangle)
-                    totalArea = totalArea + triangle.area
-                end
-            end
-        end
-    end)
-
-    assert(#surface > 0 and totalArea > ROOT_EPSILON,
+    local surface = TargetSurface.Create(mesh)
+    assert(surface:getTriangleCount() > 0,
         "target surface sampling requires non-degenerate mesh triangles")
-    surface.totalArea = totalArea
     return surface
 end
 
----@param surface table[] target surface triangles
+-- One buffer for every sample: local position (0..2), the triangle's normal
+-- (3..5) and its 1-based index (6). Nothing holds onto it (the sample table
+-- gets its own vectors), so one is enough.
+local SAMPLE_POINT_FLOATS = 7
+local samplePointOut = ffi.new("float[?]", SAMPLE_POINT_FLOATS)
+local DEFAULT_MOTION_AMPLITUDE = 0.05
+local DEFAULT_MOTION_FREQUENCY = 0.5
+
+---@param surface TargetSurface
 ---@param seed integer deterministic mount seed
 ---@param time number smooth sample time
----@param options table|nil {motionAmplitude, motionFrequency}
----@return table {position, normal, triangleIndex, barycentric}
+---@param options table|nil {motionAmplitude, motionFrequency, viewDirection, minFacingDot}
+---@return table {position, normal, triangleIndex}
 function WeaponSystem:sampleTargetPoint(surface, seed, time, options)
-    assert(type(surface) == "table" and #surface > 0, "target surface needs triangles")
+    assert(surface and surface.sample, "target surface needs triangles")
     options = options or {}
-    time = time or 0
-    local candidates = surface
-    local sampleRng = RNG.Create(seed or 0)
-    assert(sampleRng, "target surface sampling could not create an RNG")
-    local viewDirection = options.viewDirection
-    if viewDirection then
-        local minFacingDot = options.minFacingDot or 0
-        local facingCandidates = {}
-        for _, triangle in ipairs(surface) do
-            local dot = triangle.normal.x * viewDirection.x
-                + triangle.normal.y * viewDirection.y
-                + triangle.normal.z * viewDirection.z
-            if dot >= minFacingDot then
-                table.insert(facingCandidates, triangle)
-            end
-        end
-        if #facingCandidates > 0 then
-            candidates = facingCandidates
-        end
-    end
-
-    local totalArea = 0
-    for _, triangle in ipairs(candidates) do
-        totalArea = totalArea + (triangle.area or 1)
-    end
-    assert(totalArea > 0, "target surface triangles must have positive area")
-    local pick = sampleRng:getUniform() * totalArea
-    local selected = candidates[#candidates]
-    local selectedIndex = #candidates
-    local accumulated = 0
-    for index, triangle in ipairs(candidates) do
-        accumulated = accumulated + (triangle.area or 1)
-        if pick <= accumulated then
-            selected = triangle
-            selectedIndex = index
-            break
-        end
-    end
-    local first = sampleRng:getUniform()
-    local second = sampleRng:getUniform()
-    local root = math.sqrt(first)
-    local w0 = 1 - root
-    local w1 = root * (1 - second)
-    local w2 = root * second
-    local amplitude = clamp(options.motionAmplitude or 0.05, 0, 0.25)
-    local frequency = options.motionFrequency or 0.5
-    local phase = sampleRng:getUniform() * math.pi * 2
-    w1 = clamp(w1 + amplitude * math.sin(time * frequency * math.pi * 2 + phase), 0.02, 0.94)
-    w2 = clamp(w2 + amplitude * math.cos(time * frequency * math.pi * 1.82 + phase * 1.37), 0.02, 0.94)
-    if w1 + w2 > 0.96 then
-        local scale = 0.96 / (w1 + w2)
-        w1 = w1 * scale
-        w2 = w2 * scale
-    end
-    w0 = 1 - w1 - w2
-    local position = Vec3f(
-        selected.p0.x * w0 + selected.p1.x * w1 + selected.p2.x * w2,
-        selected.p0.y * w0 + selected.p1.y * w1 + selected.p2.y * w2,
-        selected.p0.z * w0 + selected.p1.z * w1 + selected.p2.z * w2)
+    local view = options.viewDirection
+    surface:sample(
+        seed or 0,
+        time or 0,
+        view and view.x or 0,
+        view and view.y or 0,
+        view and view.z or 0,
+        options.minFacingDot or 0,
+        options.motionAmplitude or DEFAULT_MOTION_AMPLITUDE,
+        options.motionFrequency or DEFAULT_MOTION_FREQUENCY,
+        samplePointOut, SAMPLE_POINT_FLOATS)
     return {
-        position = position,
-        normal = selected.normal,
-        triangleIndex = selected.index or selectedIndex,
-        barycentric = { w0 = w0, w1 = w1, w2 = w2 },
+        position = Vec3f(samplePointOut[0], samplePointOut[1], samplePointOut[2]),
+        normal = Vec3f(samplePointOut[3], samplePointOut[4], samplePointOut[5]),
+        triangleIndex = math.floor(samplePointOut[6]),
     }
 end
 

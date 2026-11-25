@@ -1,6 +1,7 @@
 # Lua Workers (TaskQueue): What They Can Do and Where They Fit
 
-Status: analysis; of its plans only the worker plumbing fixes (step plan B, step 2) are implemented.
+Status: analysis; step plan A is implemented (profiler scopes, the Rust `TargetSurface`, the cached
+tracking config, the JIT back on), as are the worker plumbing fixes (step plan B, step 2).
 The question was whether the TaskQueue's Lua workers make sense anywhere in the active code. The
 answer: **in one place (procedural ship/station mesh generation)**. Everything else that costs time is either GPU work,
 needs live game state, runs every frame, or is better done in Rust (with rayon where it is
@@ -127,18 +128,23 @@ starfield generation are small loops that belong in Rust.
 
 ### Step plan A: WeaponSystem hot path (biggest win, no threads)
 
-1. **(S)** Confirm the suspects. Run the `PROF_EVSPLIT` subscriber split from `parallel-recording.md`
-   §6.1, plus scopes around `WeaponTrackingSystem:update`, `sampleTargetPoint`, `getTrackingConfig`
-   and `hasLineOfSight`.
-2. **(S)** In `buildTargetSurface`, precompute per surface: FFI float arrays for the normals and a
-   cumulative-area CDF. Sample by binary search on the CDF; reject back-facing triangles with a
-   bounded number of retries, then fall back to the full scan. That makes each sample O(log T) instead
-   of 3×O(T), with no per-call tables. Results stay deterministic per seed but differ from today's.
-3. **(S)** Cache `getTrackingConfig` per mount (invalidate it on a weapon or module change). Create
-   the per-call `RNG` once per frame instead of once per sample.
-4. **(M)** If the testbed's Lua is still above ~5 ms: a Rust `TargetSurface:sample(seed, viewDir,
-   minDot, time, amp, freq)` and a batched per-battery tracking or line-of-sight call. Then re-profile
-   and record the numbers in `parallel-recording.md`.
+1. **(S, done)** Confirm the suspects. Every Lua event handler is now its own profiler scope
+   (`Lua.<Subscriber>.<Event>`, in `ffi_ext/EventBus.lua`: the subscriber's class name and the event),
+   and each step of the sim loop has one (`Sim.*` in `LTheoryRedux:onStateSim`), so the frame's Lua
+   cost is split per system in `/profile.json` without a build flag.
+2. **(S, done)** `buildTargetSurface` no longer walks the mesh in Lua: it builds a Rust
+   `TargetSurface` (`engine/lib/phx/src/render/target_surface.rs`), which holds the triangles, their
+   normals and a cumulative-area CDF. A sample is one facing pass plus a binary search, with no Lua
+   tables, no candidate list and no `RNG` object (the seed drives a SplitMix64 stream in Rust).
+   Deterministic per seed, but not the same points as the old Lua sampler.
+3. **(S, done)** `getTrackingConfig` is cached per turret (weak-keyed, invalidated when the weapon or
+   a fitted module table changes), instead of six table walks and a fresh table per mount per frame.
+4. **(M, done)** The sampling itself is the Rust call in step 2 (`TargetSurface:sample(seed, time,
+   view, minFacingDot, amp, freq, out)`), which writes its result into one reused FFI buffer. Still
+   open: a batched per-battery line-of-sight call, and re-profiling the Lawless combat scene to
+   record the new numbers in `parallel-recording.md`.
+5. **(S, done)** The JIT is on everywhere again, macOS ARM64 included (`script/Init.lua`), with
+   `LTHEORY_JIT=0` to turn it off.
 
 ### Step plan B: worker-based ship generation (only if the measurement justifies it)
 

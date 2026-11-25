@@ -75,13 +75,14 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
 
 ## 3. Performance
 
-- [ ] **WeaponSystem Lua hot path** (`doc/engine/lua-workers.md`, step plan A; L1 in
-      `doc/engine/parallel-recording.md`). Profile `WeaponTrackingSystem:update`,
-      `sampleTargetPoint`, `getTrackingConfig` and `hasLineOfSight`. In `buildTargetSurface`,
-      sample from a precomputed area CDF (O(log T) per sample instead of 3×O(T)). Cache
-      `getTrackingConfig` per mount. Move it to Rust if it is still above ~5 ms.
-- [ ] **Permanent per-handler profiler scopes** in `EventBus:subscribe`, so gameplay Lua shows
-      up by system (`doc/engine/parallel-recording.md` §4.2).
+- [x] **WeaponSystem Lua hot path** (`doc/engine/lua-workers.md`, step plan A; L1 in
+      `doc/engine/parallel-recording.md`). Aim-point sampling is a Rust `TargetSurface`
+      (triangles, normals and a cumulative-area CDF built once), the tracking config is cached
+      per turret, and the JIT is on again on macOS ARM64. Left: a batched per-battery
+      line-of-sight call, and re-profiling a Lawless combat scene to record the new numbers.
+- [x] **Permanent per-handler profiler scopes** in `EventBus:subscribe`
+      (`Lua.<Subscriber>.<Event>`) plus `Sim.*` scopes per system in `LTheoryRedux:onStateSim`,
+      so gameplay Lua shows up by system (`doc/engine/parallel-recording.md` §4.2).
 - [ ] **Worker-based ship generation**, only if a spawn measures over ~20 ms
       (`doc/engine/lua-workers.md`, step plan B, steps 1 and 3-6).
 - [ ] **Earlier wgpu submit (P1):** submit after the last scene pass, not only at

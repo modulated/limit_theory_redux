@@ -380,7 +380,10 @@ each worker that records `PassCmd`s a `StagingRing` that owns whole chunks.
   A full copy is needed because `requireAll('ffi_ext')` enumerates the first matching directory.
   - `SceneList.lua` adds the `SL.*` scopes.
   - `EventBus.lua` wraps each subscriber in a scope `Ev<event>:<file>:<line>` with `PROF_EVSPLIT=1`.
-    This is the tool for L1; it was not run before the stop.
+    This is the tool for L1; it was not run before the stop. **No longer needed:** `ffi_ext/EventBus.lua`
+    now wraps every subscriber itself, as `Lua.<Subscriber>.<Event>` (the subscriber's class name), and
+    the sim loop has a `Sim.*` scope per system, so the split shows up in `/profile.json` with no
+    override copy and no flag.
 - `rtprof.rs` plus hooks in `render_thread.rs`, `renderer_threaded.rs`, `renderer_immediate.rs` and the
   wgpu `frame.rs`: per-command render-thread timing and main-thread send/end-frame timing, gated by
   `LTHEORY_RT_PROF`.

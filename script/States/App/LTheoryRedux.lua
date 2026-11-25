@@ -1962,43 +1962,80 @@ function LimitTheoryRedux:onStateSim(data)
     -- Static star system: skip orbital motion so bodies stay at their
     -- generated positions (deterministic scene while orbital mechanics
     -- are still being developed). Asteroid fields still follow parents.
+    -- Every step of the sim is its own profiler scope (F10, or the stats
+    -- server's /profile.json): the gameplay scripts are the main thread's
+    -- largest cost, and without these the whole frame reads as one block.
     if not self.staticStarSystem then
+        Profiler.Begin('Sim.Orbits')
         OrbitalSystem:update(self.orbiters, dt, self.followers)
+        Profiler.End()
     end
+    Profiler.Begin('Sim.AsteroidFields')
     AsteroidFieldSystem:updatePositions()
+    Profiler.End()
+    Profiler.Begin('Sim.GravityWells')
     GravityWellSystem:update(dt, self.playerShip)
+    Profiler.End()
+    Profiler.Begin('Sim.AsteroidSpawns')
     AsteroidFieldSystem:update(dt, self.beltEntities, self.world, self.playerShip)
+    Profiler.End()
+    Profiler.Begin('Sim.MapTrails')
     SystemMap3D:updateTrails(self.map3DState, dt)
+    Profiler.End()
 
     MemoryReporter:update(dt)
 
+    Profiler.Begin('Sim.Player')
     self.player:update(dt)
     self:updateCloak(dt)
     self.simTime = (self.simTime or 0) + dt
     -- The player's shields recharge (DefenseComponent:update had no caller)
     local playerDefense = self.playerShip:get(ConstructComponents.Defense)
     if playerDefense and not self.docked then playerDefense:update(dt) end
+    Profiler.End()
     -- NPC ships fly (kinematic) before the physics step, like scenario things
+    Profiler.Begin('Sim.NPCs')
     self.npcs:update(dt)
-    if self.scenario.update then self.scenario.update(self, dt) end
+    Profiler.End()
+    if self.scenario.update then
+        Profiler.Begin('Sim.Scenario')
+        self.scenario.update(self, dt)
+        Profiler.End()
+    end
     -- Weapons: targets and turrets before the physics step, AI, aim and
     -- firing right after it (shots in flight: onStatePostSim)
+    Profiler.Begin('Sim.Weapons.PreUpdate')
     self.weaponCombat:preUpdate(dt)
+    Profiler.End()
+    Profiler.Begin('Sim.Physics')
     self.world:update(dt)
+    Profiler.End()
     self:updateJumps()
     if self.jump then return end -- the scene (and the scenario) just went
+    Profiler.Begin('Sim.Weapons.Turrets')
     self.weaponCombat:syncTurrets()
+    Profiler.End()
+    Profiler.Begin('Sim.Weapons.Update')
     self.weaponCombat:update(dt)
-    if self.scenario.postUpdate then self.scenario.postUpdate(self, dt) end
+    Profiler.End()
+    if self.scenario.postUpdate then
+        Profiler.Begin('Sim.Scenario.Post')
+        self.scenario.postUpdate(self, dt)
+        Profiler.End()
+    end
 end
 
 ---@param data EventData
 function LimitTheoryRedux:onStatePostSim(data)
     if not self.playerShip then return end
     -- Projectiles, beams, expired effect lights
+    Profiler.Begin('Sim.Weapons.PostUpdate')
     self.weaponCombat:postUpdate(data:deltaTime())
+    Profiler.End()
     -- Explosions age, and go when they are done
+    Profiler.Begin('Sim.Explosions')
     ExplosionEffectSystem:update(data:deltaTime())
+    Profiler.End()
 end
 
 --- Regenerate (B): what the scenario does for it, or by default a new seed
