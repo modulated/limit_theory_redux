@@ -185,11 +185,22 @@ Its belts: rocky Silicate 0.5 / Iron 0.4 / Carboniferous 0.1; icy Water Ice 0.65
 Helium 0.1 / Carboniferous 0.05 / Silicate 0.05. `SinglePlanetWithBelt` and `PlanetShowcase` use
 Silicate 0.45 / Iron 0.35 / Carboniferous 0.1 / Aluminum 0.1.
 
-**b) What a miner mines (gameplay, live).** `MiningField:build` samples rocks out of each field's
-instance data and gives each one an ore **from that field's own composition**, resolved through the
-registry: an icy ring yields ice and gases, a rocky belt yields ore. A rock keeps both the item id
-and its display name (`rock.itemId`, `rock.item`), and a planet's ring is materialized as a child
-belt entity, so the lookup walks up to the parent that carries the `Composition`.
+**b) What a rock holds (gameplay, live).** `Shared/Helpers/AsteroidOre.lua` is the one place that
+decides it, so every part of the game agrees:
+
+- the ore follows from the field's composition and the asteroid's **own seed**, so asking twice
+  gives the same answer and nothing has to be stored;
+- `MiningField:build` uses it for the rocks the NPC miners work (`rock.item`, `rock.itemId`), and
+  registers itself as the live yield source, so a rock being stripped reports what is **left**;
+- `AsteroidFieldSystem` gives every rock it spawns near the player `Item` and `Quantity`
+  components from it, refreshed as the miners work, so **the rock itself can be asked what it
+  holds** — `AsteroidOre.ofEntity(entity)` returns the item and the units, and
+  `AsteroidOre.describeEntity(entity)` says it in words ("Iron Ore x1240", "Iron Ore, spent").
+  This is the hook a prospecting scanner reads;
+- a planet's ring is materialized as a child belt entity, so the composition lookup walks up to
+  the parent that holds it.
+
+Nothing shows the ore in the HUD yet: the rocks carry it, and reading it is the scanner's job.
 
 `Config.game.mining.ores` is the fallback for a field the generator gave no composition (it is
 logged at debug level when that happens):
@@ -294,9 +305,11 @@ groups mostly mirror.
 - [x] **One source of truth for ore.** `MiningField` takes each rock's ore from its field's
       generated composition and keeps the item id on the rock; `Config.game.mining.ores` is only
       the fallback.
-- [ ] **Asteroid entities should agree.** The close-up rocks `AsteroidFieldSystem` spawns carry no
-      `Item`/`Quantity` components, though `AsteroidEntity` takes them, so a rock you fly up to does
-      not know the ore the mining field says it holds.
+- [x] **Asteroid entities agree.** Spawned rocks carry `Item`/`Quantity` from the same
+      `AsteroidOre` answer the mining field uses, kept up to date as they are mined.
+- [ ] **Prospecting scanner**: a ship module that sweeps for rocks and reads
+      `AsteroidOre.ofEntity`, with a range and a sweep time, so the ore is something you find
+      rather than something you are told. Needs a HUD readout and a target-info panel.
 - [ ] **Player cargo hold**: an `InventoryComponent` on the player's ship, a HUD readout, and a
       capacity by hull size.
 - [ ] **Player mining**: a mining laser mount that calls into `MiningField:take`, reusing the NPC

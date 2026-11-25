@@ -47,6 +47,9 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    - [ ] Manual fire and target lock for the player (turrets only fire automatically).
    - [ ] CriminalThink's black-market jobs (needs the economy).
    - [ ] Player mining (NPC miners work: MiningField, Jobs/Mining).
+   - [ ] Prospecting scanner: rocks already carry their ore and remaining yield
+         (`Shared/Helpers/AsteroidOre.lua`, `AsteroidOre.ofEntity`); nothing reads it yet.
+         See [doc/items.md](doc/items.md).
    - [ ] Legacy's dust clouds (only the flecks are ported; the clouds need their texture
          pass and shader converted).
    - [ ] Reputation from more than kills and hits (escorting, trading) once there is more

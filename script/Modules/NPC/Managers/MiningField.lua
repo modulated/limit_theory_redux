@@ -1,7 +1,7 @@
 local PhysicsComponents = require("Modules.Physics.Components")
 local CoreComponents = require("Modules.Core.Components")
 local CelestialComponents = require("Modules.CelestialObjects.Components")
-local Items = require("Shared.Registries.Items")
+local AsteroidOre = require("Shared.Helpers.AsteroidOre")
 
 --- The rocks of the system's asteroid belts and rings that can be mined: the
 --- port of Legacy's Minable and Yield (Elements/Other/Minable.lua,
@@ -11,14 +11,16 @@ local Items = require("Shared.Registries.Items")
 ---
 --- The rocks are picked from the belts' rock data (a sample: belts have
 --- thousands), at their positions when the system is built. What a rock is
---- made of comes from its own belt or ring: the generator gives each field a
---- `Composition` (item ids with weights, by field type, from the ruleset), so
---- an icy ring yields ice and gases and a rocky belt yields ore.
---- `Config.game.mining.ores` is the fallback for a field without one.
+--- made of is `AsteroidOre`'s answer for that asteroid of that field, which
+--- the rocks `AsteroidFieldSystem` spawns near the player carry as their
+--- `Item`/`Quantity` components: the same rock holds the same ore whichever
+--- way you look at it.
 ---@class MiningField
 ---@overload fun(): MiningField
 local MiningField = Class("MiningField", function(self)
     self.rocks = {}
+    -- field entity -> asteroid seed -> rock, for AsteroidOre's yield provider
+    self.rocksByField = setmetatable({}, { __mode = "k" })
 end)
 
 ---@class MiningRock
@@ -26,6 +28,7 @@ end)
 ---@field radius number
 ---@field item string the ore's display name ("Iron Ore")
 ---@field itemId integer the ore's item id
+---@field field Entity the belt or ring the rock belongs to
 ---@field yield number units left
 ---@field yieldMax number
 ---@field claimed table|nil the miner working it
@@ -43,106 +46,49 @@ local function beltOrigin(belt)
     return t and t:getPos() or nil
 end
 
---- The weighted ore list of one field: its generated `Composition` (a list of
---- `{ id, weight }` from the ruleset), resolved against the item registry.
---- Returns nil when the field has none, or none of its items are known.
----@param field Entity a belt or ring
----@return table|nil list { def = ItemDefinition, weight = number }, with `total`
-local function fieldOres(field)
-    -- A system belt carries its own Composition; a planet's ring is
-    -- materialized as a child belt entity whose Composition is on the ring
-    -- above it, so walk up to find one.
-    local composition
-    local entity = field
-    for _ = 1, 4 do
-        if not entity then break end
-        local cmp = entity:get(CelestialComponents.Composition)
-        composition = cmp and cmp:getComposition()
-        if type(composition) == "table" and #composition > 0 then break end
-        composition = nil
-        local parentCmp = entity:get(CoreComponents.Parent)
-        entity = parentCmp and parentCmp:getParent() or nil
-    end
-    if type(composition) ~= "table" then return nil end
-    local ores, total = {}, 0
-    for _, entry in ipairs(composition) do
-        local def = entry.id and Items:getDefinition(entry.id)
-        local weight = entry.weight or 1
-        if def and weight > 0 then
-            ores[#ores + 1] = { def = def, weight = weight }
-            total = total + weight
-        elseif entry.id then
-            Log.Warn("Mining: field composition names unknown item id %s", tostring(entry.id))
-        end
-    end
-    if total <= 0 then return nil end
-    ores.total = total
-    return ores
-end
-
---- `Config.game.mining.ores` as the same weighted list, for fields the
---- generator gave no composition.
----@return table list { def = ItemDefinition, weight = number }, with `total`
-local function configOres()
-    local ores, total = {}, 0
-    for _, ore in ipairs(Config.game.mining.ores) do
-        local def = Items:getByName(ore.name)
-        if def then
-            ores[#ores + 1] = { def = def, weight = ore.weight }
-            total = total + ore.weight
-        else
-            Log.Warn("Mining: Config.game.mining.ores names unknown item '%s'", tostring(ore.name))
-        end
-    end
-    assert(total > 0, "mining has no ores: Config.game.mining.ores names no item in the registry")
-    ores.total = total
-    return ores
-end
-
----@param ores table from fieldOres/configOres
----@param rng RNG
----@return ItemDefinition
-local function pickOre(ores, rng)
-    local pick = rng:getUniformRange(0, ores.total)
-    for _, ore in ipairs(ores) do
-        pick = pick - ore.weight
-        if pick <= 0 then return ore.def end
-    end
-    return ores[#ores].def
-end
-
 --- Pick the mineable rocks from the belts.
----@param belts Entity[] AsteroidBelt entities (belts and rings)
+---@param belts Entity[] AsteroidBelt entities (belts and the belt bands of rings)
 ---@param seed integer
 function MiningField:build(belts, seed)
     local cfg = Config.game.mining
     local rng = RNG.Create(seed)
     self.rocks = {}
-    local fallback = configOres()
+    self.rocksByField = setmetatable({}, { __mode = "k" })
     local fallbackFields = 0
+    -- The rocks of the system that just went are nobody's answer any more:
+    -- the ones below are to be built from their untouched maximum
+    AsteroidOre.setYieldProvider(nil)
 
     for _, belt in ipairs(belts) do
         local beltCmp = belt:get(CelestialComponents.AsteroidBelt)
         local data = beltCmp and beltCmp:getAsteroidData() or {}
         local origin = beltOrigin(belt)
-        local ores = fieldOres(belt)
-        if not ores then
-            ores = fallback
-            fallbackFields = fallbackFields + 1
-        end
+        local _, fromComposition = AsteroidOre.forField(belt)
+        if not fromComposition then fallbackFields = fallbackFields + 1 end
         if origin and #data > 0 then
+            local bySeed = {}
+            self.rocksByField[belt] = bySeed
             for _ = 1, math.min(cfg.rocksPerBelt, #data) do
                 local a = data[rng:getInt(1, #data)]
-                local ore = pickOre(ores, rng)
-                local size = math.max(1, math.floor(a.scale / cfg.unitsPerScale + 0.5))
-                table.insert(self.rocks, {
-                    position = { x = origin.x + a.px, y = origin.y + a.py, z = origin.z + a.pz },
-                    radius = a.scale,
-                    item = ore.displayName,
-                    itemId = ore.id,
-                    yield = size,
-                    yieldMax = size,
-                })
+                -- The same asteroid can come up twice: one rock each, or the
+                -- two would hold the same ore with two separate yields
+                if not bySeed[a.rotSeed] then
+                    -- The ore and the size are the asteroid's own, so the
+                    -- entity AsteroidFieldSystem spawns for this rock, and a
+                    -- scanner reading it, say the same
+                    local ore, units = AsteroidOre.forAsteroid(belt, a)
+                    local rock = {
+                        position = { x = origin.x + a.px, y = origin.y + a.py, z = origin.z + a.pz },
+                        radius = a.scale,
+                        item = ore.displayName,
+                        itemId = ore.id,
+                        field = belt,
+                        yield = units,
+                        yieldMax = units,
+                    }
+                    table.insert(self.rocks, rock)
+                    bySeed[a.rotSeed] = rock
+                end
             end
         end
     end
@@ -151,6 +97,24 @@ function MiningField:build(belts, seed)
             fallbackFields, #belts)
     end
     Log.Info("Mining: %d mineable rocks", #self.rocks)
+
+    -- A rock the miners have been stripping should say what is left of it,
+    -- wherever it is asked (the entity AsteroidFieldSystem spawns for it, a
+    -- scanner reading that entity), so this field is now the live answer.
+    AsteroidOre.setYieldProvider(function(field, asteroid)
+        local rock = self:rockFor(field, asteroid)
+        return rock and rock.yield or nil
+    end)
+end
+
+--- The tracked rock of one asteroid of one field, or nil: the sample is small
+--- (`rocksPerBelt`), so most asteroids have none.
+---@param field Entity a belt or ring
+---@param asteroid table a record of the field's asteroid data
+---@return MiningRock|nil
+function MiningField:rockFor(field, asteroid)
+    local bySeed = self.rocksByField[field]
+    return bySeed and asteroid and bySeed[asteroid.rotSeed] or nil
 end
 
 --- Take one unit from a rock (Legacy decreaseYield); false when it is spent.
