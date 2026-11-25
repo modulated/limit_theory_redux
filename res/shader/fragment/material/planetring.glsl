@@ -99,9 +99,16 @@ void main() {
     float streak = 0.0;
     int streakLayers = 50;
     for(int i = 0; i < streakLayers; i++){
-        float pos = fSmoothNoise(vec2(float(i), rNorm*60.0 + seed*float(i)), 1, 2.0) + rNorm*2.0;
+        // Per-layer offsets are whole numbers from the integer hash, like
+        // densityVar below: `seed * float(i)` and `seed * 3.0` were the same
+        // uniform-only expressions as the gaps' (see ringRandom). With a
+        // 64-bit seed they are ~1e18, where rNorm vanishes from the sum and
+        // noise()'s sin() is the driver's guess; the streaks flickered.
+        float layerOffset = floor(ringRandom(8 + i, 2) * 4096.0);
+        float pos = fSmoothNoise(vec2(float(i), rNorm*60.0 + layerOffset), 1, 2.0) + rNorm*2.0;
         float width = mix(0.015 + rNorm*0.04, 0.05 + rNorm*0.07, ringRandom(8 + i, 0));
-        float intensity = mix(0.15, 0.65, fSmoothNoise(vec2(float(i), rNorm*3.0 + seed*3.0),1,2.0));
+        float intensityOffset = floor(ringRandom(8 + i, 3) * 4096.0);
+        float intensity = mix(0.15, 0.65, fSmoothNoise(vec2(float(i), rNorm*3.0 + intensityOffset),1,2.0));
         
         // Variable vertical offset
         float yOffset = 0.25 * ringRandom(8 + i, 1);
