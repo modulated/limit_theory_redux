@@ -96,11 +96,6 @@ local function hostilityOf(system)
     return system.hostility and Config.game.hostility.levels[system.hostility] or nil
 end
 
-local function lightYears(gameUnits)
-    local meters = gameUnits / UniverseScaleConfig.globalScale
-    return meters / UniverseScaleConfig.units.LIGHT_YEAR_TO_METERS
-end
-
 ---@param state table
 ---@param dt number
 function GalaxyMap:updateInput(state, dt)
@@ -275,7 +270,7 @@ function GalaxyMap:drawInfo(state, x, y, w)
     else
         local dx, dy, dz = system.position.x - here.position.x, system.position.y - here.position.y,
             system.position.z - here.position.z
-        line(string.format("Distance: %.0f ly", lightYears(math.sqrt(dx * dx + dy * dy + dz * dz))))
+        line("Distance: " .. UniverseScaleConfig:formatDistance(math.sqrt(dx * dx + dy * dy + dz * dz)))
         line(string.format("Jumps: %d", #route))
         local names, worst = {}, nil
         for _, rid in ipairs(route) do
