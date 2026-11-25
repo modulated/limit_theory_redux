@@ -4,6 +4,7 @@ local Station = UICore.View {
 }
 
 local Grid = UILayout.Grid
+local Items = require("Shared.Registries.Items")
 local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local PlayerCargo = require("Modules.Economy.Managers.PlayerCargo")
 local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
@@ -88,7 +89,7 @@ end
 ---@param units integer
 local function buy(station, itemId, units)
     local bought, spent = StationTradeSystem:buy(station, PlayerCargo:get(), itemId, units)
-    local def = require("Shared.Registries.Items"):getDefinition(itemId)
+    local def = Items:getDefinition(itemId)
     if bought > 0 then
         LimitTheoryRedux:notify(string.format("Bought %d %s for %s", bought, def.displayName,
             PlayerWallet.format(spent)), { 0.6, 0.9, 1.0 })
@@ -103,7 +104,7 @@ end
 ---@param units integer
 local function sell(station, itemId, units)
     local sold, earned = StationTradeSystem:sell(station, PlayerCargo:get(), itemId, units)
-    local def = require("Shared.Registries.Items"):getDefinition(itemId)
+    local def = Items:getDefinition(itemId)
     if sold > 0 then
         LimitTheoryRedux:notify(string.format("Sold %d %s for %s", sold, def.displayName,
             PlayerWallet.format(earned)), { 0.6, 0.9, 1.0 })

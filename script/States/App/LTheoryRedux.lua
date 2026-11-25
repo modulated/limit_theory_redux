@@ -655,36 +655,51 @@ end
 ---@param dt number
 function LimitTheoryRedux:updateMining(dt)
     if not self:isTravelGame() then return end
-    local mining = GeneralActions.Mine:isDown() and not self.docked and self.mapMode == 0
-    if not mining then
-        self.miningProgress = nil
-        self.miningTarget = nil
+    if self.docked or self.mapMode ~= 0 then
+        self.miningProgress, self.miningTarget, self.miningScan = nil, nil, nil
+        self.miningFullWarned = false
         return
     end
-    local info = self:mineableRock()
-    self.miningTarget = info
-    if not info then
+    -- Looking for a rock in reach walks the spawned asteroids, so it is done
+    -- a few times a second, not once a frame: the HUD reads what it found.
+    self.miningScan = (self.miningScan or 0) - dt
+    if self.miningScan <= 0 or (self.miningTarget and self.miningTarget.rock.yield < 1) then
+        self.miningScan = Config.game.mining.playerScanInterval
+        self.miningTarget = self:mineableRock()
+    end
+    local mining = GeneralActions.Mine:isDown()
+    local info = self.miningTarget
+    if not mining or not info then
         self.miningProgress = nil
         return
     end
     local cfg = Config.game.mining
     local hold = PlayerCargo:get()
-    if hold:getRoomFor(info.rock.itemId) < 1 then
+    -- Said once, not once a tick, while the key is held against a full hold
+    local function holdFull()
         self.miningProgress = nil
-        self:notify("The hold is full.", { 1.0, 0.4, 0.3 })
+        if not self.miningFullWarned then
+            self.miningFullWarned = true
+            self:notify("The hold is full.", { 1.0, 0.4, 0.3 })
+        end
+    end
+    if hold:getRoomFor(info.rock.itemId) < 1 then
+        holdFull()
         return
     end
+    self.miningFullWarned = false
     self.miningProgress = (self.miningProgress or 0) + dt
     while self.miningProgress >= cfg.playerTimePerUnit do
         self.miningProgress = self.miningProgress - cfg.playerTimePerUnit
         if not self.npcs.mining:take(info.rock) then
             self:notify(info.rock.item .. ": nothing left in this rock.", { 1.0, 0.7, 0.3 })
+            self.miningTarget = nil
             break
         end
         if PlayerCargo:add(info.rock.itemId, 1) < 1 then
             -- No room after all: put it back
             info.rock.yield = info.rock.yield + 1
-            self:notify("The hold is full.", { 1.0, 0.4, 0.3 })
+            holdFull()
             break
         end
     end
@@ -1734,7 +1749,7 @@ function LimitTheoryRedux:drawNavigation()
             table.insert(lines, { text = "F: dock", color = { 0.6, 0.9, 1.0 } })
         end
         -- Mining: what the rock in reach holds, and how the hold is doing
-        local rock = self.miningTarget or self:mineableRock()
+        local rock = self.miningTarget
         if rock then
             local mining = GeneralActions.Mine:isDown()
             table.insert(lines, {

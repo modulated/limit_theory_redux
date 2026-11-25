@@ -319,6 +319,7 @@ Config.game = {
         sellTime        = 8.0,   -- seconds docked to sell the hold
         playerRange     = 0.45,  -- how close the player's ship mines a rock from (plus its radius)
         playerTimePerUnit = 1.2, -- seconds the player's laser takes per unit
+        playerScanInterval = 0.3, -- seconds between looks for a rock in reach
         ores = {
             { name = "Silicate Ore",  weight = 5 },
             { name = "Iron Ore",      weight = 4 },
