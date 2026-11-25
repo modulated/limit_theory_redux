@@ -58,6 +58,7 @@ local JumpGateGenerator = require('Modules.Navigation.Managers.JumpGateGenerator
 local JumpGateSystem = require('Modules.Navigation.Systems.JumpGateSystem')
 local GalaxyMap = require('Modules.Navigation.Systems.GalaxyMap')
 local DrawEx = require('UI.DrawEx')
+local MapFrame = require('UI.MapFrame')
 local UniverseScaleConfig = require('Config.Gen.UniverseScaleConfig')
 local WeaponCombatSystem = require('Modules.Constructs.Systems.WeaponCombatSystem')
 local ExplosionEffectSystem = require('Modules.Constructs.Systems.ExplosionEffectSystem')
@@ -1042,14 +1043,7 @@ function LimitTheoryRedux:startJump(gate)
     AutoPilotSystem:disengage(self.playerShip)
 
     -- Close any map (a course can jump while one is open)
-    if self.mapMode ~= 0 then
-        SystemMap3D:deactivate(self.map3DState)
-        self.mapState.enabled = false
-        self.map3DState.enabled = false
-        self.galaxyMapState.enabled = false
-        self.mapMode = 0
-        self.mapClosedFrame = true
-    end
+    self:closeMap()
 
     -- Leaving the scenario's own system ends the scenario: its things go
     -- with the scene (destroyScene runs its teardown), and from the next
@@ -1130,6 +1124,23 @@ function LimitTheoryRedux:placeShipAtArrival(fromId)
     JumpGateSystem:reset(self.gateWatch)
 end
 
+--- The frame over an open map: which map, its controls, how to leave.
+function LimitTheoryRedux:drawMapFrame()
+    if self.mapMode == 0 or self.pauseMenuOpen then return end
+    MapFrame.draw(self.mapMode, self.galaxy and 3 or 2, 0, 0, Window:width(), Window:height())
+end
+
+--- Close whichever map is open; the ship's controls come back next frame.
+function LimitTheoryRedux:closeMap()
+    if self.mapMode == 0 then return end
+    SystemMap3D:deactivate(self.map3DState)
+    self.mapState.enabled = false
+    self.map3DState.enabled = false
+    self.galaxyMapState.enabled = false
+    self.mapMode = 0
+    self.mapClosedFrame = true
+end
+
 --- The navigation line under the HUD (gate in range, course) and the jump's
 --- fade.
 function LimitTheoryRedux:drawNavigation()
@@ -1195,6 +1206,7 @@ function LimitTheoryRedux:onRender(data)
             LensFlareSystem:draw(self.starEntity, self.labeledEntities)
             Gui:draw()
             SystemMap3D:renderOverlay(self.map3DState, 0, 0, Window:width(), Window:height())
+            self:drawMapFrame()
         end)
     else
         RenderCoreSystem:render(data)
@@ -1256,6 +1268,7 @@ function LimitTheoryRedux:onRender(data)
                 SystemMap:collectEntities(self.mapState, self.universe, self.playerShip)
                 SystemMap:draw(self.mapState, 0, 0, Window:width(), Window:height())
             end
+            self:drawMapFrame()
         end)
     end
 end
@@ -1289,6 +1302,8 @@ function LimitTheoryRedux:onInput(data)
     if Input:isPressed(ApplicationBindings.Escape) then
         if self.controlsOpen then
             self:closeControls()
+        elseif self.mapMode ~= 0 and not self.pauseMenuOpen then
+            self:closeMap()
         elseif self.pauseMenuOpen then
             self:closePauseMenu()
         else

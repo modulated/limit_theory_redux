@@ -1,4 +1,6 @@
 local DrawEx = require("UI.DrawEx")
+local MapLabels = require("UI.MapLabels")
+local MapFrame = require("UI.MapFrame")
 local UniverseScaleConfig = require("Config.Gen.UniverseScaleConfig")
 local GalaxyGenerator = require("Modules.Navigation.Managers.GalaxyGenerator")
 
@@ -159,9 +161,7 @@ function GalaxyMap:draw(state, x, y, sx, sy)
     local cx, cy = x + sx / 2, y + sy / 2
 
     DrawEx.SimpleRect(x, y, sx, sy, COLORS.background)
-    DrawEx.TextAlpha(FONT,
-        "Galaxy Map [M to close] | Scroll=Zoom | RMB=Pan | LMB=Select system | N=Set course", 12,
-        x + 10, y + 10, 700, 16, 1.0, 1.0, 1.0, 0.8, 0.0, 0.5)
+    -- (Title, controls: MapFrame, drawn over the map by the game state)
 
     -- Which systems and links are on the shown route
     local route = shownRoute(state)
@@ -183,7 +183,8 @@ function GalaxyMap:draw(state, x, y, sx, sy)
         DrawEx.Line(ax, ay, bx, by, routeLinks[link.id] and COLORS.routeLink or COLORS.link)
     end
 
-    -- Systems
+    -- Systems; their names are placed after the loop, clear of each other
+    local labels = MapLabels.begin()
     for _, system in ipairs(galaxy.systems) do
         local px, py = toScreen(state, system, cx, cy)
         if px > x - 50 and px < x + sx + 50 and py > y - 50 and py < y + sy + 50 then
@@ -201,10 +202,16 @@ function GalaxyMap:draw(state, x, y, sx, sy)
             end
             local label = system.name
             if system.id == state.currentId then label = label .. "  (you are here)" end
-            DrawEx.TextAlpha(FONT, label, 11, px + size + 4, py - 7, 220, 14,
-                c[1], c[2], c[3], 0.95, 0.0, 0.5)
+            MapLabels.add(labels, {
+                text = label, x = px, y = py, anchor = size / 2 + 2, size = 11,
+                -- The selection and where you are always; then the route
+                always = system.id == state.selectedId or system.id == state.currentId,
+                priority = onRoute[system.id] and 50 or (state.visited[system.id] and 20 or 10),
+                color = { c[1], c[2], c[3], 0.95 },
+            })
         end
     end
+    MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 
     self:drawInfo(state, x + 10, y + sy - 150, 360)
 end

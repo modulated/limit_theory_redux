@@ -1,4 +1,6 @@
 local CoreComponents      = require("Modules.Core.Components")
+local MapLabels           = require("UI.MapLabels")
+local MapFrame            = require("UI.MapFrame")
 local PhysicsComponents   = require("Modules.Physics.Components")
 local SpatialComponents   = require("Modules.Spatial.Components")
 local UniverseScaleConfig = require("Config.Gen.UniverseScaleConfig")
@@ -465,7 +467,8 @@ function SystemMap3D:renderOverlay(state, x, y, sx, sy)
     end
     state.trailDirty = false
 
-    -- Labels
+    -- Labels: placed after the loop, clear of each other
+    local labels = MapLabels.begin()
     for _, entry in ipairs(state.entities) do
         if entry.isMoon and state.radius > 0.02 then goto next_lbl end
 
@@ -485,21 +488,23 @@ function SystemMap3D:renderOverlay(state, x, y, sx, sy)
 
         if screenX > x and screenX < x + sx and screenY > y and screenY < y + sy then
             local c = entry.color
-            local isSelected = state.selected and state.selected.entity == entry.entity
-            DrawEx.TextAdditive('Unageo-Medium', entry.label, 11,
-                screenX + 10, screenY - 6, 160, 14,
-                c.r, c.g, c.b, isSelected and 1.0 or 0.8, 0.0, 0.5)
+            local isSelected = state.selected ~= nil and state.selected.entity == entry.entity
+            MapLabels.add(labels, {
+                text = entry.label, x = screenX, y = screenY, anchor = 6, size = 11,
+                priority = entry.entity == state.shipEntity and 90 or MapLabels.priorityOf(entry.entity),
+                always = isSelected,
+                color = { c.r, c.g, c.b, isSelected and 1.0 or 0.8 },
+            })
         end
         ::next_lbl::
     end
+    MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 
-    DrawEx.TextAdditive('Unageo-Medium',
-        "3D System Map [M to cycle] | RMB=Rotate | Scroll=Zoom", 12,
-        x + 10, y + 10, 600, 16, 0.6, 0.7, 1.0, 0.9, 0.0, 0.5)
+    -- (Title, controls: MapFrame, drawn over the map by the game state)
 
     -- Selected info
     if state.selected then
-        self:drawSelectedInfo(state, x + sx - 250, y + 40, 240)
+        self:drawSelectedInfo(state, x + sx - 250, y + MapFrame.barHeight + 12, 240)
     end
 end
 

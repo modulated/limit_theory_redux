@@ -4,6 +4,8 @@ local SpatialComponents     = require("Modules.Spatial.Components")
 local CelestialComponents   = require("Modules.CelestialObjects.Components")
 local UniverseScaleConfig   = require("Config.Gen.UniverseScaleConfig")
 local DrawEx                = require("UI.DrawEx")
+local MapLabels             = require("UI.MapLabels")
+local MapFrame              = require("UI.MapFrame")
 local Pipelines             = require("Render.Pipelines")
 
 -- Scratch color for the shapes below (the batcher copies it at the call).
@@ -415,9 +417,8 @@ function SystemMap:draw(state, x, y, sx, sy)
     -- Background (use SimpleRect — DrawEx.Rect uses additive blend which can't darken)
     DrawEx.SimpleRect(x, y, sx, sy, Color(0.02, 0.02, 0.03, 0.97))
 
-    -- Title
-    DrawEx.TextAlpha('Unageo-Medium', "System Map [M to close] | Scroll=Zoom | RMB=Pan | LMB=Select", 12,
-        x + 10, y + 10, 600, 16, 1.0, 1.0, 1.0, 0.8, 0.0, 0.5)
+    -- (Title, controls: MapFrame, drawn over the map by the game state)
+    local labels = MapLabels.begin()
 
     -- Draw orbit rings using the ring shader with correctly sized quad
     for _, entry in ipairs(state.entities) do
@@ -582,12 +583,13 @@ function SystemMap:draw(state, x, y, sx, sy)
                     ocx = cx + state.panX * state.zoom
                     ocy = cy + state.panY * state.zoom
                 end
-                local labelX = ocx
-                local labelY = ocy - beltScreenR - 8
                 local c = entry.color
-                DrawEx.TextAlpha('Unageo-Medium', entry.label, 10,
-                    labelX - 40, labelY - 6, 120, 14,
-                    c[1], c[2], c[3], 0.7, 0.5, 0.5)
+                MapLabels.add(labels, {
+                    text = entry.label, x = ocx, y = ocy - beltScreenR, anchor = 2,
+                    priority = MapLabels.priorityOf(entry.entity),
+                    always = state.selected ~= nil and state.selected.entity == entry.entity,
+                    color = { c[1], c[2], c[3], 0.7 },
+                })
             end
             goto next_map_entity
         end
@@ -612,13 +614,18 @@ function SystemMap:draw(state, x, y, sx, sy)
                     { r = 1.0, g = 0.3, b = 0.3, a = 1.0 }, true)
             end
 
-            -- Draw label
-            DrawEx.TextAlpha('Unageo-Medium', entry.label, 10,
-                screenX + ps + 4, screenY - 6, 120, 14,
-                c[1], c[2], c[3], 0.9, 0.0, 0.5)
+            -- Label: placed with the others after the loop, clear of them
+            local isSelected = state.selected ~= nil and state.selected.entity == entry.entity
+            MapLabels.add(labels, {
+                text = entry.label, x = screenX, y = screenY, anchor = ps / 2 + (isSelected and 6 or 0),
+                priority = entry.entity == state.shipEntity and 90 or MapLabels.priorityOf(entry.entity),
+                always = isSelected,
+                color = { c[1], c[2], c[3], 0.9 },
+            })
         end
         ::next_map_entity::
     end
+    MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 
     -- Draw autopilot nav: target marker + intercept marker + lines
     -- Target marker (yellow crosshair on actual target)
@@ -717,7 +724,7 @@ function SystemMap:draw(state, x, y, sx, sy)
 
     -- Draw selected entity info panel
     if state.selected then
-        self:drawSelectedInfo(state, x + sx - 250, y + 40, 240)
+        self:drawSelectedInfo(state, x + sx - 250, y + MapFrame.barHeight + 12, 240)
     end
 
     -- Draw zoom level
