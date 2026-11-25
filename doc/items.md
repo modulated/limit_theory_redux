@@ -5,8 +5,8 @@ item that is defined, which of them can be mined, which can be traded, and the p
 that turn one into another. It is meant to be edited: the tables are the design surface, and the
 Status sections say how much of each is actually wired up.
 
-Status summary (2026-11): the item **registry** is live and the galaxy generator uses it for
-asteroid composition. The **market**, **inventory** and **production** code exists but nothing
+Status summary (2026-11): the item **registry** is live (58 items, hand-written permanent ids) and
+the galaxy generator uses it for asteroid composition. The **market**, **inventory** and **production** code exists but nothing
 trades or crafts in a running game: the only credits that move are bounties and hull repair, and a
 miner that fills its hold sells it to a log line.
 
@@ -35,13 +35,17 @@ ItemDefinition { name = "Iron Ore", mass = 6, energyDensity = 1.68, startEquilib
 ```
 
 - `energy` is stored as `round(mass * energyDensity)`; `energyDensity` itself is not kept.
-- `id` is assigned in registration order across all groups (1, 2, 3, …). **Ids are therefore not
-  stable**: inserting an item in the middle of `ItemDefs.lua` renumbers everything after it. Saved
-  games and the generator rules reference ids (`Items.RawMaterials.IronOre.id`), so add new items at
-  the end of their group, or give items explicit ids before there are saves.
-- Spaces are stripped from names for lookup: `"Iron Ore"` is reached as `Items.RawMaterials.IronOre`
-  but `def.name` is `"IronOre"`. `Config.game.mining.ores` uses the *display* spelling
-  (`"Iron Ore"`), so the two do not compare equal — see the gaps below.
+- **`id` is written by hand and is permanent.** It is the only part of an item that may end up in
+  saved data, so it is never changed and never reused: a new item takes the next free number (the
+  last line of `ItemDefs.lua` says which), and a removed item leaves its number unused. The registry
+  asserts that every item has an id and that no two share one, so a mistake fails at load instead of
+  quietly turning someone's cargo into something else. Ids 1–51 are the numbers the old
+  registration-order scheme had given out, so nothing shifted when they were written down.
+- **Two names.** `name` is the lookup key with the spaces taken out (`Items.RawMaterials.IronOre`,
+  `def.name == "IronOre"`); `displayName` is the name as written (`"Iron Ore"`) and is what the UI
+  and the logs show. Rewording an item is therefore free — only the id matters.
+- `Items:getByName(name)` finds an item by either spelling (`"Iron Ore"` or `"IronOre"`), which is
+  how config and save data should name one.
 - `startEquilibriumPrice` is the market's starting equilibrium price. Items without one
   (only `Credit`) are not priced.
 
@@ -73,6 +77,7 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 | Aluminum Ore | 4 | 1.6 | 6 | 25 |
 | Beryllium Ore | 4 | 1.45 | 6 | 40 |
 | Thorium Ore | 7 | 7.5 | 52 | 100 |
+| Carboniferous Ore | 6 | 1.4 | 8 | 28 |
 
 ### Refined Materials
 
@@ -89,6 +94,12 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 | Glassiron | 11 | 1 | 11 | 90 |
 | Plastic | 3 | 1.9 | 6 | 45 |
 | Thorium | 9 | 27 | 243 | 300 |
+| Silicon | 2 | 1.7 | 3 | 40 |
+| Carbon | 2 | 1.3 | 3 | 35 |
+| Beryllium | 2 | 1.3 | 3 | 65 |
+| Lithium | 1 | 1.2 | 1 | 70 |
+| Boron | 2 | 1.2 | 2 | 50 |
+| Hydrocarbons | 6 | 3.5 | 21 | 55 |
 
 ### Gases
 
@@ -221,26 +232,26 @@ factory, **P3** drydock, **P4** misc. "Energy" in the inputs is the **Energy Cel
 | P0 | Fusion Reactor | Liquid Water ×320 | Energy Cell ×1000, Radioactive Waste ×1 | 40 |
 | P0 | Waste Recycler | Waste ×20 | Energy Cell ×5 | 4 |
 | P1 | Water Melter | Energy ×2, Water Ice ×10 | Liquid Water ×20 | 6 |
-| P1 | Silicon Refinery | Energy ×3, Silicate Ore ×12 | **Silicon** ×1, Waste ×6 | 12 |
-| P1 | Carbon Refinery | Energy ×3, **Carboniferous Ore** ×4 | **Carbon** ×1, Waste ×3 | 13 |
-| P1 | Beryllium Refinery | Energy ×8, Beryllium Ore ×13 | **Beryllium** ×1, Waste ×7 | 22 |
+| P1 | Silicon Refinery | Energy ×3, Silicate Ore ×12 | Silicon ×1, Waste ×6 | 12 |
+| P1 | Carbon Refinery | Energy ×3, Carboniferous Ore ×4 | Carbon ×1, Waste ×3 | 13 |
+| P1 | Beryllium Refinery | Energy ×8, Beryllium Ore ×13 | Beryllium ×1, Waste ×7 | 22 |
 | P1 | Aluminum Refinery | Energy ×6, Aluminum Ore ×8 | Aluminum ×1, Waste ×5 | 15 |
 | P1 | Iron Refinery | Energy ×5, Iron Ore ×7 | Iron ×1, Waste ×4 | 14 |
 | P1 | Copper Refinery | Energy ×7, Copper Ore ×11 | Copper ×2, Anode Sludge ×1, Waste ×7 | 16 |
 | P1 | Thorium Refinery | Energy ×13, Thorium Ore ×12 | Thorium ×1, Radioactive Waste ×2, Waste ×5 | 20 |
-| P1 | Petroleum Refinery | Energy ×6, Biomass ×22 | **Petroleum** ×1, Waste ×15 | 14 |
+| P1 | Hydrocarbon Refinery | Energy ×6, Biomass ×22 | Hydrocarbons ×1, Waste ×15 | 14 |
 | P2 | Water Electrolyser | Energy ×3, Liquid Water ×1 | Hydrogen ×2, Oxygen ×1 | 5 |
-| P2 | Steel Foundry | Energy ×8, Iron ×8, **Carbon** ×2 | Steel ×1, Waste ×4 | 13 |
+| P2 | Steel Foundry | Energy ×8, Iron ×8, Carbon ×2 | Steel ×1, Waste ×4 | 13 |
 | P2 | Silver Recovery Plant | Energy ×12, Anode Sludge ×8 | Silver ×1, Waste ×6 | 18 |
 | P2 | Gold Recovery Plant | Energy ×14, Anode Sludge ×11 | Gold ×1, Waste ×7 | 21 |
 | P2 | Platinum Recovery Plant | Energy ×20, Anode Sludge ×16 | Platinum ×1, Waste ×9 | 25 |
 | P2 | Isotope Factory | Energy ×5, Thorium ×12 | Radioactive Isotopes ×1, Radioactive Waste ×7, Waste ×3 | 11 |
-| P2 | Plastics Factory | Energy ×11, **Petroleum** ×7 | Plastic ×1, Waste ×8 | 9 |
-| P2 | Infolytic Chip Factory | Energy ×10, Plastic ×8, Gold ×1, **Silicon** ×1 | Infolytic Chip ×1, Waste ×2 | 11 |
-| P2 | Transparent Aluminum Factory | Energy ×5, **Silicon** ×5, Aluminum ×3 | Transparent Aluminum ×1, Waste ×3 | 13 |
-| P2 | Glassiron Factory | Energy ×18, **Silicon** ×5, Iron ×3, **Beryllium** ×3 | Glassiron ×1, Waste ×3 | 17 |
+| P2 | Plastics Factory | Energy ×11, Hydrocarbons ×7 | Plastic ×1, Waste ×8 | 9 |
+| P2 | Infolytic Chip Factory | Energy ×10, Plastic ×8, Gold ×1, Silicon ×1 | Infolytic Chip ×1, Waste ×2 | 11 |
+| P2 | Transparent Aluminum Factory | Energy ×5, Silicon ×5, Aluminum ×3 | Transparent Aluminum ×1, Waste ×3 | 13 |
+| P2 | Glassiron Factory | Energy ×18, Silicon ×5, Iron ×3, Beryllium ×3 | Glassiron ×1, Waste ×3 | 17 |
 | P2 | Ship Sensor Factory | Energy ×210, Glassiron ×500, Transp. Alum ×30, Steel ×75, Infolytic ×35 | Ship Sensor ×1, Waste ×55 | 450 |
-| P2 | Ship Computer Factory | Energy ×240, Glassiron ×420, Transp. Alum ×28, Steel ×65, **Silicon** ×25, Infolytic ×150 | Ship Computer ×1, Waste ×70 | 360 |
+| P2 | Ship Computer Factory | Energy ×240, Glassiron ×420, Transp. Alum ×28, Steel ×65, Silicon ×25, Infolytic ×150 | Ship Computer ×1, Waste ×70 | 360 |
 | P2 | Thruster Engine Factory | Energy ×120, Glassiron ×1000, Transp. Alum ×20, Steel ×170, Infolytic ×12, Thorium ×2 | Ship Engine, Thruster ×1, Waste ×55 | 900 |
 | P2 | Pulse Turret Weapon Factory | Energy ×180, Glassiron ×800, Transp. Alum ×32, Steel ×210, Infolytic ×12 | Ship Weapon, Pulse Turret ×1, Waste ×40 | 790 |
 | P3 | Solo Ship Hull Drydock | Energy ×1500, Glassiron ×10000, Transp. Alum ×900, Steel ×1850, Gold ×285, Platinum ×95, Infolytic ×165, Thorium ×35, Ship Sensor ×1, Ship Computer ×1, Thruster ×1 | Ship Hull, Solo ×1, Waste ×725 | 1800 |
@@ -250,20 +261,14 @@ factory, **P3** drydock, **P4** misc. "Energy" in the inputs is the **Energy Cel
 Only one weapon (Pulse Turret), one engine (Thruster) and one hull (Solo) have a recipe; the rest of
 the Equipment and Constructs items are sold but not buildable.
 
-### Items the recipes need that the registry does not have
+### Feedstock items
 
-Bold entries above. These exist in Legacy's own item list but were not carried into
-`ItemDefs.lua`, so the chains are broken as written:
-
-| Missing item | Legacy mass / energyDensity | Needed by |
-|--------------|-----------------------------|-----------|
-| Silicon | 2 / 1.70 | Silicon Refinery (out); Infolytic, Transp. Alum, Glassiron, Ship Computer (in) |
-| Carbon | 2 / 1.30 | Carbon Refinery (out); Steel Foundry (in) |
-| Carboniferous Ore (chondrites) | 6 / 1.40 | Carbon Refinery (in) — also a mineable ore |
-| Beryllium | 2 / 1.30 | Beryllium Refinery (out); Glassiron (in) |
-| Petroleum | 6 / 3.50 | Petroleum Refinery (out); Plastics (in) |
-| Lithium | 1 / 1.20 | — (Legacy T4 filler) |
-| Boron | 2 / 1.20 | — (Legacy T4 filler) |
+The chain needs five items between the ores and the built goods that the registry did not have at
+first: **Silicon**, **Carbon**, **Carboniferous Ore** (carbonaceous chondrite), **Beryllium** and
+**Hydrocarbons**; **Lithium** and **Boron** came along with them as Legacy fillers. All seven are in
+the tables above now (ids 52–58), with Legacy's masses and energy densities. Legacy's "Petroleum"
+is this registry's **Hydrocarbons**: it is biomass cracked into fuel and plastics feedstock, and the
+name says so.
 
 Legacy also tiers its items T0–T8 (energy, information, raw inanimate, raw animate, processed
 elemental, processed constructed, ship component, ship hull, station), which the new registry's
@@ -271,12 +276,13 @@ groups mostly mirror.
 
 ## 6. Gaps and implementation order
 
-- [ ] **Add the missing items** (table above) to `ItemDefs.lua`, at the end of their groups, so the
-      production chains close. Carboniferous Ore also belongs in the mining and composition weights.
+- [x] **Add the missing items** so the production chains close (ids 52–58).
+- [ ] **Give Carboniferous Ore a source**: add it to `Config.game.mining.ores` and to the rocky
+      belt/ring `composition` weights, or nothing will ever mine it.
 - [ ] **One source of truth for ore.** `MiningField` should take a rock's item from the belt's
       generated composition (`AsteroidEntity`'s `Item`/`Quantity` components) instead of rolling its
-      own weights, and `Config.game.mining.ores` should hold item **ids** (or the registry's
-      space-stripped names), not display names.
+      own weights. `Config.game.mining.ores` can keep its display spellings now that
+      `Items:getByName` resolves either form, but the rock should carry the item **id**.
 - [ ] **Player cargo hold**: an `InventoryComponent` on the player's ship, a HUD readout, and a
       capacity by hull size.
 - [ ] **Player mining**: a mining laser mount that calls into `MiningField:take`, reusing the NPC
@@ -291,5 +297,5 @@ groups mostly mirror.
       `script/Shared/Definitions/ProductionDefs.lua` + a registry, like the other definition files.
 - [ ] **Fit Equipment items to ships**: link the Equipment group to `WeaponRegistry` and the
       procedural module catalog so a bought turret can be mounted.
-- [ ] **Stable item ids** before saves exist (explicit ids in `ItemDefs.lua`, or a name → id map
-      saved with the game).
+- [x] **Stable item ids**: written by hand in `ItemDefs.lua`, never reused, asserted unique by the
+      registry.

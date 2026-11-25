@@ -281,7 +281,7 @@ end
 function MarketplaceTest:onTransaction(event)
     self.stats.tradesExecuted = self.stats.tradesExecuted + 1
     self.stats.totalVolume = self.stats.totalVolume + (event.quantity * event.price)
-    local itemName = Items:getDefinition(event.itemType).name
+    local itemName = Items:getDefinition(event.itemType).displayName
     if not self.stats.pricesByItem[itemName] then
         self.stats.pricesByItem[itemName] = {}
     end
@@ -435,7 +435,7 @@ end
 
 function MarketplaceTest:takeMarketSnapshot(timestamp)
     for _, item in ipairs(self.tradableItems) do
-        local itemName = item.name
+        local itemName = item.displayName
         local conditions = self:analyzeItemMarket(item.id)
         if not self.stats.supplyDemandHistory[itemName] then
             self.stats.supplyDemandHistory[itemName] = {}
@@ -471,7 +471,7 @@ function MarketplaceTest:printInterimReport(elapsed)
     Log.Info("Current Order Book: %d bids, %d asks", bidCount, askCount)
     Log.Info("--- Market State by Item ---")
     for _, item in ipairs(self.tradableItems) do
-        local itemName = item.name
+        local itemName = item.displayName
         local conditions = self:analyzeItemMarket(item.id)
         local priceStats = self:getPriceStats(itemName, elapsed)
         Log.Info("  %s:", itemName)
@@ -638,12 +638,12 @@ function MarketplaceTest:printFinalReport()
     end
     Log.Info("--- PRICE DEVELOPMENT OVER TIME ---")
     for _, item in ipairs(self.tradableItems) do
-        local itemName = item.name
+        local itemName = item.displayName
         self:printPriceDevelopment(itemName)
     end
     Log.Info("--- PRICE ANALYSIS ---")
     for _, item in ipairs(self.tradableItems) do
-        local itemName = item.name
+        local itemName = item.displayName
         local history = self.stats.priceHistory[itemName]
         if history and #history > 0 then
             Log.Info("%s: %d trades", itemName, #history)
@@ -705,7 +705,7 @@ function MarketplaceTest:printFinalReport()
     end
     Log.Info("--- SUPPLY/DEMAND EVOLUTION ---")
     for _, item in ipairs(self.tradableItems) do
-        local itemName = item.name
+        local itemName = item.displayName
         local sdHistory = self.stats.supplyDemandHistory[itemName]
         if sdHistory and #sdHistory > 0 then
             Log.Info("%s:", itemName)
@@ -723,7 +723,7 @@ function MarketplaceTest:printFinalReport()
     end
     Log.Info("--- MARKET CONDITION TAGS OVER TIME ---")
     for _, item in ipairs(self.tradableItems) do
-        local itemName = item.name
+        local itemName = item.displayName
         local tagHist = self.stats.tagHistory[itemName]
         if tagHist and #tagHist > 0 then
             Log.Info("%s:", itemName)
