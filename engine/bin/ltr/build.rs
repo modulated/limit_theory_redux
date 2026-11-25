@@ -4,10 +4,13 @@ use std::path::{Path, PathBuf};
 use winres::WindowsResource;
 
 fn main() {
-    if env::var("TARGET")
-        .expect("target is not set")
-        .ends_with("windows-msvc")
-    {
+    // The target platform, not the host: `cfg!(target_os = ...)` in a build
+    // script describes the machine running the script, which is wrong when
+    // cross-compiling.
+    let target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS is not set");
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+
+    if target_os == "windows" && target_env == "msvc" {
         // App Icon
         WindowsResource::new()
             .set_icon("../../../res/images/LTR-Icon.ico")
@@ -27,10 +30,10 @@ fn main() {
         println!("cargo::rustc-link-arg=/EXPORT:AmdPowerXpressRequestHighPerformance");
     }
 
-    if cfg!(target_os = "linux") {
+    if target_os == "linux" {
         println!("cargo::rustc-link-arg=-Wl,-rpath,$ORIGIN");
         println!("cargo::rustc-link-arg=-Wl,-rpath,$ORIGIN/deps");
-    } else if cfg!(target_os = "macos") {
+    } else if target_os == "macos" {
         println!("cargo::rustc-link-arg=-Wl,-rpath,@executable_path");
         println!("cargo::rustc-link-arg=-Wl,-rpath,@executable_path/deps");
     }

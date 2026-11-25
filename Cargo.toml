@@ -26,6 +26,37 @@ quote = "1.0"
 syn = { version = "2.0", features = ["full"] }
 
 # Ensure that all non-workspace members are compiled with full optimizations
-# enabled when using the default dev profile.
+# enabled when using the default dev profile. Their debug info is cut to line
+# tables (enough for backtraces), which shrinks target/ and speeds up linking.
 [profile.dev.package."*"]
 opt-level = 3
+debug = "line-tables-only"
+
+# Shipping build: slowest to compile, fastest to run.
+[profile.release]
+lto = true        # remove dead code, reduce size
+strip = true      # remove debug symbols from the binary
+opt-level = 3     # all optimizations
+codegen-units = 1 # increase optimization
+panic = "abort"   # abort on panic - removes panic unwinding code
+
+# Quick optimized build for local play-testing: `cargo build --profile release-fast`
+# (or `./build.sh --fast`). Close to release speed at a fraction of the
+# compile time; never ship it.
+[profile.release-fast]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+incremental = true
+
+# Tests and clippy (`./build.sh --run-tests`). Test binaries always unwind, so
+# testing under `release` (panic = "abort") compiled every dependency a second
+# time, and with fat LTO and a single codegen unit. This profile keeps the
+# optimizations but drops LTO and builds in parallel codegen units.
+[profile.ci-test]
+inherits = "release"
+lto = false
+codegen-units = 16
+panic = "unwind"
+strip = false
+debug = "line-tables-only"

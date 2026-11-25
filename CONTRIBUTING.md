@@ -133,7 +133,12 @@ From a terminal in the directory of the checked-out repository, run:
 
 - `./build.sh`
 
-This will build the engine code and place it in the `bin` directory. `build.sh` is a helper script that does two things: runs `cargo build` then copies the binaries out of the `target` directory into `bin`. You can also run `./build.sh` with the `--debug` flag to disable optimizations and incorporate debug symbols, and `--run-tests` to run unit tests.
+This will build the engine code and place it in the `bin` directory. `build.sh` is a helper script that does two things: runs `cargo build` then copies the binaries out of the `target` directory into `bin`. It takes these flags:
+
+- `--debug`: disable optimizations for the engine and incorporate debug symbols (dependencies stay optimized).
+- `--fast`: an optimized build that compiles much faster than the default, by using thin LTO and parallel code generation. It runs nearly as fast as the default build; use it for play-testing, and the default for anything you ship.
+- `--run-tests`: also run clippy and the unit tests. Optimized builds test in the `ci-test` profile (optimized, without LTO), so tests don't repeat the slow shipping build.
+- `--bundle`: on macOS, also assemble `bin/Limit Theory Redux.app`, signed ad hoc.
 
 ## Running a Lua App
 
@@ -172,9 +177,32 @@ As we use the `cargo` ecosystem, if you're iterating on engine code, it might be
 
 - `cargo run`
 
-This will essentially run `cargo build && ./target/debug/ltr` in one step. You can pass `--release` to `cargo run` to enable optimizations. If you'd like to launch with a specific script, you can pass it as an argument to `cargo run`:
+This will essentially run `cargo build && ./target/debug/ltr` in one step. You can pass `--profile release-fast` to `cargo run` for an optimized build that compiles quickly, or `--release` for the full shipping optimizations (much slower to compile). If you'd like to launch with a specific script, you can pass it as an argument to `cargo run`:
 
 - `cargo run -- <script name without extension>`
+
+### Build profiles
+
+| Profile | Command | Use |
+|---|---|---|
+| `dev` | `cargo build` | Engine code unoptimized with full debug info; dependencies optimized. |
+| `release-fast` | `cargo build --profile release-fast` | Optimized, thin LTO, incremental. Local play-testing and profiling. |
+| `release` | `cargo build --release` | Fat LTO, one codegen unit, stripped. What CI ships. |
+| `ci-test` | `cargo test --profile ci-test` | Optimized tests and clippy without LTO (`./build.sh --run-tests`). |
+
+### Faster builds
+
+- **Windows:** builds link with `rust-lld` (set in `.cargo/config.toml`), which ships with the Rust toolchain and is much faster than MSVC's `link.exe`. Visual Studio's C++ build tools are still needed. Windows Defender scanning slows builds a lot: put the repository on a [Dev Drive](https://learn.microsoft.com/en-us/windows/dev-drive/), or exclude its `target` folder from real-time protection.
+- **Linux:** `rust-lld` is already the default linker on x86_64. [mold](https://github.com/rui314/mold) is a little faster again if you want it locally (`mold -run cargo build`).
+- **macOS:** Apple's linker is already fast. Builds target macOS 11 or later (`MACOSX_DEPLOYMENT_TARGET` in `build.sh`).
+
+### CPU-specific builds
+
+Release builds target a baseline x86-64 CPU so they run everywhere. You can build for your own CPU, which can make the game itself a little faster (the physics engine uses SIMD); it does not make compiling faster. Only use such a build on your own machine:
+
+- `RUSTFLAGS="-C target-cpu=native" cargo build --profile release-fast`
+
+Changing `RUSTFLAGS` rebuilds every crate, so set it the same way each time (for example, in your shell profile) or builds will keep starting from scratch.
 
 ## Formatting
 

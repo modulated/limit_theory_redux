@@ -10,7 +10,7 @@ on:
       - "**/LICENSE-MIT"
       - "**/LICENSE-APACHE-2.0"
       - "**/.vscode/**"
-      - "**/docs/**"
+      - "**/doc/**"
       - "**/.gitignore"
       - "**/.gitattributes"
       - "**/.editorconfig"
@@ -79,7 +79,7 @@ jobs:
           path: |
             ${{github.workspace}}/bin/*
             !${{github.workspace}}/bin/*.pdb
-            ${{github.workspace}}/docs/*
+            ${{github.workspace}}/doc/*
             ${{github.workspace}}/engine/lib/phx/script/*
             ${{github.workspace}}/res/*
             ${{github.workspace}}/script/*
@@ -143,7 +143,7 @@ jobs:
           name: ltheory-linux
           path: |
             ${{github.workspace}}/bin/*
-            ${{github.workspace}}/docs/*
+            ${{github.workspace}}/doc/*
             ${{github.workspace}}/engine/lib/phx/script/*
             ${{github.workspace}}/res/*
             ${{github.workspace}}/script/*

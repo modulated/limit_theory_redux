@@ -8,10 +8,16 @@ on:
       - "**/LICENSE-MIT"
       - "**/LICENSE-APACHE-2.0"
       - "**/.vscode/**"
-      - "**/docs/**"
+      - "**/doc/**"
       - "**/.gitignore"
       - "**/.gitattributes"
       - "**/.editorconfig"
+
+# A new push to a pull request cancels the run still going for its previous
+# commit; only the latest commit's result matters.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -93,7 +99,7 @@ jobs:
           path: |
             ${{github.workspace}}/bin/*
             !${{github.workspace}}/bin/*.pdb
-            ${{github.workspace}}/docs/*
+            ${{github.workspace}}/doc/*
             ${{github.workspace}}/engine/lib/phx/script/*
             ${{github.workspace}}/res/*
             ${{github.workspace}}/script/*
@@ -157,7 +163,7 @@ jobs:
           name: ltheory-linux
           path: |
             ${{github.workspace}}/bin/*
-            ${{github.workspace}}/docs/*
+            ${{github.workspace}}/doc/*
             ${{github.workspace}}/engine/lib/phx/script/*
             ${{github.workspace}}/res/*
             ${{github.workspace}}/script/*

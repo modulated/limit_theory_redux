@@ -5,8 +5,8 @@ source ./utils.sh
 
 run_tests=false
 debug=false
+fast=false
 bundle=false
-universal=false
 
 while test $# -gt 0; do
   case "$1" in
@@ -17,6 +17,7 @@ while test $# -gt 0; do
       echo "-h, --help          show brief help"
       echo "    --run-tests     run tests"
       echo "    --debug         build and run tests in debug mode"
+      echo "    --fast          optimized build with thin LTO, for local play-testing (not for shipping)"
       echo "    --bundle        assemble an app bundle (only has an effect on macOS)"
       exit 0
       ;;
@@ -26,6 +27,10 @@ while test $# -gt 0; do
       ;;
     --debug)
       debug=true
+      shift
+      ;;
+    --fast)
+      fast=true
       shift
       ;;
     --bundle)
@@ -40,6 +45,9 @@ while test $# -gt 0; do
 done
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
+    # Oldest macOS the binaries run on. Keep in sync with LSMinimumSystemVersion
+    # in utils.sh (create_app_bundle reads this variable).
+    export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
     libprefix="lib"
     libsuffix=".dylib"
     binsuffix=""
@@ -72,22 +80,26 @@ fi
 
 if [[ $debug == true ]]; then
     target_dir="target/debug"
-
     cargo build --color auto
-
-    if [[ $run_tests == true ]]; then
-        cargo clippy -- -D warnings
-        cargo test --no-fail-fast --color auto
-    fi
+elif [[ $fast == true ]]; then
+    target_dir="target/release-fast"
+    cargo build --profile release-fast --color auto
 else
     target_dir="target/release"
-
     cargo build --release --color auto
+fi
 
-    if [[ $run_tests == true ]]; then
-        cargo clippy --release -- -D warnings
-        cargo test --release --no-fail-fast --color auto
+if [[ $run_tests == true ]]; then
+    # Debug builds test in the dev profile. Optimized builds test in the
+    # ci-test profile rather than release: test binaries must unwind, and
+    # release's fat LTO would make every test build as slow as a shipping one.
+    if [[ $debug == true ]]; then
+        test_profile="dev"
+    else
+        test_profile="ci-test"
     fi
+    cargo clippy --profile "$test_profile" -- -D warnings
+    cargo test --profile "$test_profile" --no-fail-fast --color auto
 fi
 
 # Re-populate the 'bin' directory.
