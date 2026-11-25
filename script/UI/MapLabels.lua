@@ -18,7 +18,8 @@ local GAP = 4      -- pixels between a marker and its label
 local PADDING = 2  -- pixels kept clear around each placed label
 
 -- How much a label matters, by the entity's kind (its name, e.g.
--- "PlanetEntity(12)"). First match wins.
+-- "PlanetEntity(12)"). First match wins; the selection comes before all of
+-- them. The player's ship has no label: `playerMarker`.
 local PRIORITIES = {
     { "StarEntity", 100 },
     { "SpaceshipEntity", 90 },
@@ -44,7 +45,34 @@ end
 
 ---@return table layout
 function MapLabels.begin()
-    return { items = {} }
+    return { items = {}, reserved = {} }
+end
+
+local PLAYER_COLOR = Color(0.3, 1.0, 0.45, 1.0)
+local PLAYER_RADIUS = 7
+
+--- The player's ship: a green ring with a dot, no text. Always drawn: off
+--- the screen area it sits at the area's edge, toward the ship. Labels keep
+--- clear of it. Call before `draw`.
+---@param layout table
+---@param px number the ship's screen position
+---@param py number
+---@param x number the screen area
+---@param y number
+---@param w number
+---@param h number
+function MapLabels.playerMarker(layout, px, py, x, y, w, h)
+    local m = PLAYER_RADIUS + 4
+    local cx = math.max(x + m, math.min(x + w - m, px))
+    local cy = math.max(y + m, math.min(y + h - m, py))
+    local offScreen = cx ~= px or cy ~= py
+    DrawEx.Ring(cx, cy, PLAYER_RADIUS, PLAYER_COLOR, true)
+    DrawEx.SimpleRect(cx - 1.5, cy - 1.5, 3, 3, PLAYER_COLOR)
+    if offScreen then
+        -- A second ring: the ship is beyond the edge in this direction
+        DrawEx.Ring(cx, cy, PLAYER_RADIUS + 4, Color(0.3, 1.0, 0.45, 0.5), false)
+    end
+    table.insert(layout.reserved, { x = cx - m, y = cy - m, w = 2 * m, h = 2 * m })
 end
 
 ---@class MapLabel
@@ -90,6 +118,7 @@ function MapLabels.draw(layout, x, y, w, h)
     end)
 
     local placed = {}
+    for _, rect in ipairs(layout.reserved) do table.insert(placed, rect) end
     for _, label in ipairs(items) do
         local size = label.size or 10
         local bound = Cache.Font(FONT, size):getSize(label.text)

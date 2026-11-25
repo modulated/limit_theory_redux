@@ -564,7 +564,15 @@ function SystemMap:draw(state, x, y, sx, sy)
     end
 
     -- Draw entities
+    local shipX, shipY
     for _, entry in ipairs(state.entities) do
+        -- The player's ship: a marker over everything, after the loop
+        if entry.entity == state.shipEntity then
+            shipX = cx + (entry.pos.x + state.panX) * state.zoom
+            shipY = cy + (entry.pos.z + state.panY) * state.zoom
+            goto next_map_entity
+        end
+
         -- Hide moons unless zoomed in close to their parent planet
         if entry.isMoon and entry.parentPos then
             local parentScreenDist = entry.orbitRadius * state.zoom
@@ -618,12 +626,15 @@ function SystemMap:draw(state, x, y, sx, sy)
             local isSelected = state.selected ~= nil and state.selected.entity == entry.entity
             MapLabels.add(labels, {
                 text = entry.label, x = screenX, y = screenY, anchor = ps / 2 + (isSelected and 6 or 0),
-                priority = entry.entity == state.shipEntity and 90 or MapLabels.priorityOf(entry.entity),
+                priority = MapLabels.priorityOf(entry.entity),
                 always = isSelected,
                 color = { c[1], c[2], c[3], 0.9 },
             })
         end
         ::next_map_entity::
+    end
+    if shipX then
+        MapLabels.playerMarker(labels, shipX, shipY, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
     end
     MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 

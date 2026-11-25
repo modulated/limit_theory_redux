@@ -467,8 +467,10 @@ function SystemMap3D:renderOverlay(state, x, y, sx, sy)
     end
     state.trailDirty = false
 
-    -- Labels: placed after the loop, clear of each other
+    -- Labels: placed after the loop, clear of each other. The player's
+    -- ship gets a marker instead (always shown, clamped to the screen).
     local labels = MapLabels.begin()
+    local shipX, shipY
     for _, entry in ipairs(state.entities) do
         if entry.isMoon and state.radius > 0.02 then goto next_lbl end
 
@@ -486,17 +488,25 @@ function SystemMap3D:renderOverlay(state, x, y, sx, sy)
         local screenX = x + (cp.x / cp.w + 1) * 0.5 * sx
         local screenY = y + (1 - cp.y / cp.w) * 0.5 * sy
 
+        if entry.entity == state.shipEntity then
+            shipX, shipY = screenX, screenY
+            goto next_lbl
+        end
+
         if screenX > x and screenX < x + sx and screenY > y and screenY < y + sy then
             local c = entry.color
             local isSelected = state.selected ~= nil and state.selected.entity == entry.entity
             MapLabels.add(labels, {
                 text = entry.label, x = screenX, y = screenY, anchor = 6, size = 11,
-                priority = entry.entity == state.shipEntity and 90 or MapLabels.priorityOf(entry.entity),
+                priority = MapLabels.priorityOf(entry.entity),
                 always = isSelected,
                 color = { c.r, c.g, c.b, isSelected and 1.0 or 0.8 },
             })
         end
         ::next_lbl::
+    end
+    if shipX then
+        MapLabels.playerMarker(labels, shipX, shipY, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
     end
     MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 
