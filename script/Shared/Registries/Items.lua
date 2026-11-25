@@ -13,15 +13,24 @@ local Items = {}
 Items.itemCount = 0
 ---@private
 Items.__index = Items
----@private Items by their space-stripped name, for `getByName`
+---@private Items by their key (the plain letters of the name), for `getByName`
 Items.byName = {}
 
 ---@class ItemId
 
+--- The key an item or a group is filed under: its name with the spaces and
+--- the punctuation taken out, so "Ship Engine, Thruster" is reached as
+--- `Items.Equipment.ShipEngineThruster`.
+---@param name string
+---@return string
+local function keyOf(name)
+    return (name:gsub("[^%w]", ""))
+end
+
 ---@param name string
 ---@param itemGroup ItemGroup
 function Items:new(name, itemGroup)
-    name = name:gsub(" ", "")
+    name = keyOf(name)
     self[name] = {}
 
     for _, def in ipairs(itemGroup.items) do
@@ -30,9 +39,10 @@ function Items:new(name, itemGroup)
         assert(self[def.id] == nil,
             "item id " .. def.id .. " is used twice ('" .. tostring(def.name)
             .. "' and '" .. tostring(self[def.id] and self[def.id].name) .. "')")
-        -- The key and `name` have no spaces (Items.RawMaterials.IronOre);
-        -- `displayName` keeps them, and is what the UI and the logs show.
-        def.name = def.name:gsub(" ", "")
+        -- The key and `name` are the plain letters of the name
+        -- (Items.RawMaterials.IronOre); `displayName` keeps the spaces and
+        -- the punctuation, and is what the UI and the logs show.
+        def.name = keyOf(def.name)
         def.group = itemGroup.name
         self[name][def.name] = def -- for string/hash api e.g. Items.Virtual.Credit
         self[def.id] = def         -- for comp (more memory usage vs string comparison computation)
@@ -58,13 +68,14 @@ function Items:getDefinition(id)
     return nil
 end
 
---- An item by name, with or without spaces ("Iron Ore" and "IronOre" both
---- find it). The way config and save data should name an item.
+--- An item by name, as written or as a key ("Ship Engine, Thruster" and
+--- "ShipEngineThruster" both find it). The way config and save data should
+--- name an item.
 ---@param name string
 ---@return ItemDefinition|nil
 function Items:getByName(name)
     if type(name) ~= "string" then return nil end
-    return self.byName[name] or self.byName[(name:gsub(" ", ""))]
+    return self.byName[name] or self.byName[keyOf(name)]
 end
 
 ---@return Items

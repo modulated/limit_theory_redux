@@ -1,6 +1,7 @@
 ---One item of the game's economy. `name` is the key the registry files it
----under, with the spaces taken out (`IronOre`); `displayName` is the name as
----it was written ("Iron Ore") and is what the UI and the logs show. `id` is
+---under: the plain letters of the name (`IronOre`, `ShipEngineThruster`).
+---`displayName` is the name as it was written ("Iron Ore", "Ship Engine,
+---Thruster") and is what the UI and the logs show. `id` is
 ---written by hand in `Shared/Definitions/ItemDefs.lua` and must never change:
 ---see the note in `Shared/Registries/Items.lua`.
 ---@class ItemDefinition
