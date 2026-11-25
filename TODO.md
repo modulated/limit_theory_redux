@@ -147,8 +147,7 @@ Left over from the wgpu port (`doc/engine/wgpu-migration-gaps.md`, "Left after S
 
 ## 6. Build, CI and tooling
 
-- [ ] **Confirm on PR #1's CI:** Windows links with `rust-lld` (including the icon resource and
-      manifest), and the macOS bundle's ad-hoc signature is valid.
+- [ ] **Confirm on PR #1's CI:** the macOS bundle's ad-hoc signature is valid.
 - [ ] **Fast CI gate:** one Linux job running `cargo check`, clippy and the
       `luajit-ffi-gen` tests before the three platform builds.
 - [ ] **Generated-bindings drift check:** fail CI if building `phx` changes

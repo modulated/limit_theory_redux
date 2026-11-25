@@ -196,7 +196,7 @@ This will essentially run `cargo build && ./target/debug/ltr` in one step. You c
 
 ### Faster builds
 
-- **Windows:** builds link with `rust-lld` (set in `.cargo/config.toml`), which ships with the Rust toolchain and is much faster than MSVC's `link.exe`. Visual Studio's C++ build tools are still needed. Windows Defender scanning slows builds a lot: put the repository on a [Dev Drive](https://learn.microsoft.com/en-us/windows/dev-drive/), or exclude its `target` folder from real-time protection.
+- **Windows:** Windows Defender scanning slows builds a lot: put the repository on a [Dev Drive](https://learn.microsoft.com/en-us/windows/dev-drive/), or exclude its `target` folder from real-time protection. (Linking with `rust-lld` breaks LuaJIT's lookup of C runtime functions, so Windows keeps MSVC's linker.)
 - **Linux:** `rust-lld` is already the default linker on x86_64. [mold](https://github.com/rui314/mold) is a little faster again if you want it locally (`mold -run cargo build`).
 - **macOS:** Apple's linker is already fast. Builds target macOS 11 or later (`MACOSX_DEPLOYMENT_TARGET` in `build.sh`).
 
