@@ -37,7 +37,8 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
 6. **Economy.** Data components exist (`script/Modules/Economy/`: inventory, marketplace,
    orders, prices, bank account) but no system runs trading. The old economy and AI jobs
    (mining, trading routes) are only in `script/Legacy/`; `script/Enums/JobEnums.lua` still
-   describes them.
+   describes them. The item list, the mined ores, the trade state and the production chains,
+   with the gaps and an implementation order, are in [doc/items.md](doc/items.md).
 7. **NPCs and combat** (started: `script/Modules/NPC/`). Security, trader and pirate ships
    by each system's hostility, flying jobs ported from Legacy (Patrolling, Marauding,
    Transport, Think; actions MoveTo, Wait, Attack, Flee, LeaveSystem); the player flies an
