@@ -8,7 +8,6 @@ local GunshipRecipe = require("Modules.NPC.Managers.GunshipRecipe")
 local ArmedShipBuilder = require("Modules.Constructs.Managers.ArmedShipBuilder")
 local WeaponBattery = require("Modules.Constructs.Systems.WeaponBattery")
 local MiningField = require("Modules.NPC.Managers.MiningField")
-local Reputation = require("Modules.NPC.Reputation")
 local RenderComp = require("Modules.Rendering.Components").Render
 
 --- The star system's NPC ships: it builds them, gives them jobs (Think),
@@ -261,16 +260,11 @@ function NpcSystem:canSee(npc, entity)
     return self:distance(npc, pos) <= reach
 end
 
---- Whether one of the player's turrets is engaging a ship (who gets the
---- blame for its damage: the weapons don't report their hits).
+--- The NPC record of a ship, or nil (not an NPC, or gone).
 ---@param entity Entity
-function NpcSystem:isPlayerEngaging(entity)
-    local battery = self.game.playerBattery
-    if not battery or not battery.mountIds then return false end
-    for _, mountId in ipairs(battery.mountIds) do
-        if battery:getMountTarget(mountId) == entity then return true end
-    end
-    return false
+---@return table|nil
+function NpcSystem:recordOf(entity)
+    return self.byEntity[entity]
 end
 
 --- After the standings changed: who each armed NPC's weapons engage.
@@ -605,22 +599,9 @@ function NpcSystem:update(dt)
 
     for _, record in ipairs(self.records) do
         if not record.dead then
-            -- The player's doing? Hits and kills while its turrets engage
-            -- the ship move the player's standing with its faction.
-            local health = record.entity:isValid() and record.entity:get(CoreComponents.Health)
-            local hp = health and health:getCurrentHealth() or 0
-            if record.lastHealth and hp < record.lastHealth and self:isPlayerEngaging(record.entity) then
-                if hp <= 0 then
-                    Reputation:playerDestroyed(record.faction)
-                else
-                    record.hitCooldown = (record.hitCooldown or 0) - dt
-                    if record.hitCooldown <= 0 then
-                        record.hitCooldown = 1.0
-                        Reputation:playerDamaged(record.faction)
-                    end
-                end
-            end
-            record.lastHealth = hp
+            -- Shields recharge (DefenseComponent:update had no caller)
+            local defense = record.entity:isValid() and record.entity:get(ConstructComponents.Defense)
+            if defense and not record.dead then defense:update(dt) end
 
             if not self:isAlive(record.entity) then
                 -- Destroyed: the weapon system explodes it; the wreck goes later

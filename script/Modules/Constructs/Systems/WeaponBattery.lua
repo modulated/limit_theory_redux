@@ -21,6 +21,7 @@ local ConstructEntities = require("Modules.Constructs.Entities")
 local WeaponSystem = require("Modules.Constructs.Systems.WeaponSystem")
 local WeaponRegistry = require("Shared.Registries.WeaponRegistry")
 local Pulse = require("Legacy.GameObjects.Entities.Effects.Pulse")
+local CombatLog = require("Modules.Constructs.Systems.CombatLog")
 
 -- Where surface target points wander and how far they may face away from the
 -- shooter (see WeaponSystem:sampleTargetPoint).
@@ -143,6 +144,17 @@ local WeaponBattery = Class("WeaponBattery", function(self, construction, option
         self:setAIActive(options.aiActive)
     end
 end)
+
+---A hit this battery's weapons landed (called by ProjectileSystem and
+---BeamSystem where they apply damage): into the CombatLog, with this
+---battery's ship as the attacker.
+---@param target Entity
+---@param damage number before shields
+---@param hullDamage number after shields
+---@param killed boolean this hit destroyed the target
+function WeaponBattery:reportDamage(target, damage, hullDamage, killed)
+    CombatLog:report(self.ship, self.team, target, damage, hullDamage, killed)
+end
 
 ---False once the ship is gone (its construct was destroyed).
 ---@return boolean

@@ -327,6 +327,17 @@ Config.game = {
         },
     },
 
+    -- Credits (Modules/Economy/Managers/PlayerWallet.lua): bounties and repairs.
+    -- A bounty is paid for the killing blow on a ship whose faction the
+    -- `bountyIssuer` is hostile to (an outlaw), by the ship's role.
+    economy = {
+        startingCredits = 1000,
+        hullRepairCost  = 2.0,   -- credits per point of hull; shields recharge free
+        bountyIssuer    = "security",
+        bounties        = { pirate = 600, pirateMerchant = 300 },
+        defaultBounty   = 250,   -- an outlaw of a role not listed
+    },
+
     -- Docking (F): stations belong to `owner` and take ships whose faction
     -- it isn't hostile to (for the player: standing with the owner).
     docking = {

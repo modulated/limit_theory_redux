@@ -59,6 +59,8 @@ local JumpGateSystem = require('Modules.Navigation.Systems.JumpGateSystem')
 local GalaxyMap = require('Modules.Navigation.Systems.GalaxyMap')
 local NpcSystem = require('Modules.NPC.Systems.NpcSystem')
 local Reputation = require('Modules.NPC.Reputation')
+local CombatLog = require('Modules.Constructs.Systems.CombatLog')
+local PlayerWallet = require('Modules.Economy.Managers.PlayerWallet')
 local SpaceDust = require('Modules.Rendering.Systems.SpaceDust')
 local CoreComponentsAll = require('Modules.Core.Components')
 local RenderComponent = require('Modules.Rendering.Components').Render
@@ -423,6 +425,8 @@ function LimitTheoryRedux:startGame(seed, scenario)
     if not reputationListening then
         reputationListening = true
         Reputation:onChange(function(faction, old, new) self:onReputationChanged(faction, old, new) end)
+        CombatLog:onHit(function(event) self:onCombatHit(event) end)
+        CombatLog:onKill(function(event) self:onCombatKill(event) end)
     end
     RenderCoreSystem:setDebugPhysics(self.world)
 
@@ -537,6 +541,73 @@ function LimitTheoryRedux:onReputationChanged(faction, old, new)
         delta >= 0 and "+" or "", delta, Reputation:describe(faction)), { r, g, b })
 end
 
+--- A hit the weapons landed (CombatLog): the player's hits on an NPC cost
+--- standing with its faction (once a second per ship, not per bolt).
+---@param event table
+function LimitTheoryRedux:onCombatHit(event)
+    if not self.playerShip or event.attacker ~= self.playerShip or not self.npcs then return end
+    local record = self.npcs:recordOf(event.target)
+    if not record then return end
+    local now = self.simTime or 0
+    if not record.blamedAt or now - record.blamedAt >= 1.0 then
+        record.blamedAt = now
+        Reputation:playerDamaged(record.faction)
+    end
+end
+
+--- A killing blow (CombatLog). The player's: standing moves (the faction
+--- likes the player less, its enemies more), and an outlaw's (a ship whose
+--- faction the bounty issuer is hostile to) bounty is paid.
+---@param event table
+function LimitTheoryRedux:onCombatKill(event)
+    if not self.playerShip or event.attacker ~= self.playerShip or not self.npcs then return end
+    local record = self.npcs:recordOf(event.target)
+    if not record then return end
+    local economy = Config.game.economy
+    if Factions.isHostile(economy.bountyIssuer, record.faction) then
+        local bounty = economy.bounties[record.role] or economy.defaultBounty
+        PlayerWallet:add(bounty, "Bounty: " .. record.label)
+        self:notify(string.format("Bounty +%s: %s destroyed", PlayerWallet.format(bounty), record.label),
+            { 1.0, 0.85, 0.35 })
+    else
+        self:notify(record.label .. " destroyed", { 0.9, 0.9, 0.9 })
+    end
+    Reputation:playerDestroyed(record.faction)
+end
+
+--- The hull points missing, and what repairing them all would cost.
+---@return number missing, number cost
+function LimitTheoryRedux:hullRepairQuote()
+    local health = self.playerShip and self.playerShip:get(CoreComponentsAll.Health)
+    if not health then return 0, 0 end
+    local missing = health:getMaxHealth() - health:getCurrentHealth()
+    return missing, math.ceil(missing * Config.game.economy.hullRepairCost)
+end
+
+--- Repair the hull at the station (docked): as much as the credits pay for.
+function LimitTheoryRedux:repairHull()
+    local health = self.playerShip:get(CoreComponentsAll.Health)
+    local missing, cost = self:hullRepairQuote()
+    if missing <= 0 then
+        self:notify("The hull needs no repair.", { 0.6, 0.9, 1.0 })
+        return
+    end
+    local rate = Config.game.economy.hullRepairCost
+    local points = missing
+    if not PlayerWallet:has(cost) then
+        points = math.floor(PlayerWallet:get() / rate)
+        cost = math.ceil(points * rate)
+    end
+    if points <= 0 then
+        self:notify("Not enough credits to repair the hull.", { 1.0, 0.4, 0.3 })
+        return
+    end
+    PlayerWallet:remove(cost, "Hull repair")
+    health:setCurrentHealth(health:getCurrentHealth() + points)
+    self:notify(string.format("Hull repaired %d/%d for %s", math.floor(health:getCurrentHealth()),
+        math.floor(health:getMaxHealth()), PlayerWallet.format(cost)), { 0.6, 0.9, 1.0 })
+end
+
 --- What the pilots can see of the player's ship: nothing while it is docked,
 --- a fraction of their range while it is cloaked.
 function LimitTheoryRedux:updatePlayerVisibility()
@@ -586,18 +657,20 @@ function LimitTheoryRedux:dockPlayer(dock)
     if targetable then targetable:setEnabled(false) end
     if self.playerBattery then self.playerBattery:setAIActive(false) end
 
-    local health = self.playerShip:get(CoreComponentsAll.Health)
-    if health then health:setCurrentHealth(health:getMaxHealth()) end
+    -- Shields recharge free at a station; the hull costs (R, repairHull)
     local defense = self.playerShip:get(ConstructComponents.Defense)
-    if defense then
-        defense:setCurrentHealth(defense:getMaxHealth())
-        defense:setCurrentShield(defense:getMaxShield())
-    end
+    if defense then defense:setCurrentShield(defense:getMaxShield()) end
 
     self.docked = dock
     self:updatePlayerVisibility()
     self:setOrbitFocus(dock.entity, self:orbitDistances(dock.radius))
-    self:notify("Docked. Hull and shields repaired.", { 0.6, 0.9, 1.0 })
+    local missing, cost = self:hullRepairQuote()
+    if missing > 0 then
+        self:notify(string.format("Docked. Shields recharged. R: repair the hull for %s", PlayerWallet.format(cost)),
+            { 0.6, 0.9, 1.0 })
+    else
+        self:notify("Docked. Shields recharged.", { 0.6, 0.9, 1.0 })
+    end
 end
 
 --- Undock (Legacy Undock): the ship (a new one of the same kind, at rest)
@@ -712,6 +785,8 @@ function LimitTheoryRedux:resetGalaxy()
     self.course = nil
     self.jump = nil
     Reputation:reset()
+    PlayerWallet:reset()
+    self.simTime = 0
     self.messages = {}
     self.docked = nil
     self.cloak = { charge = Config.game.cloak.maxCharge, active = false }
@@ -1531,7 +1606,10 @@ function LimitTheoryRedux:drawNavigation()
     local lines = {}
     table.insert(lines, { text = string.format("%s  ·  %s", name, level.name), color = c })
     if self.docked then
-        table.insert(lines, { text = "Docked  ·  F: undock", color = { 0.6, 0.9, 1.0 } })
+        local missing, cost = self:hullRepairQuote()
+        local repair = missing > 0 and string.format("R: repair hull (%s)", PlayerWallet.format(cost))
+            or "Hull intact"
+        table.insert(lines, { text = "Docked  ·  " .. repair .. "  ·  F: undock", color = { 0.6, 0.9, 1.0 } })
     elseif self:isTravelGame() then
         local dock = self:dockInRange()
         if dock then
@@ -1570,8 +1648,10 @@ function LimitTheoryRedux:drawNavigation()
             line.color[1], line.color[2], line.color[3], 0.9 * (line.alpha or 1), 0.5, 0.5)
     end
 
-    -- Standing with each faction, top right
+    -- Credits and standing with each faction, top right
     if self:isTravelGame() then
+        DrawEx.TextAlpha(font, PlayerWallet.format(PlayerWallet:get()), 15,
+            w - 290, 48, 270, 18, 1.0, 0.85, 0.35, 0.95, 1.0, 0.5)
         local y = 70
         for _, faction in ipairs({ Factions.Security, Factions.Trader, Factions.Pirate }) do
             local r, g, b = Factions.color(faction)
@@ -1739,6 +1819,7 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.Jump:update(dt)
     GeneralActions.Dock:update(dt)
     GeneralActions.Cloak:update(dt)
+    GeneralActions.Repair:update(dt)
 
     if GeneralActions.CycleMapMode:isPressed() then
         -- 2D map, 3D map, then the galaxy map when there is a galaxy
@@ -1844,6 +1925,10 @@ function LimitTheoryRedux:onInput(data)
         end
     end
 
+    if GeneralActions.Repair:isPressed() and self.docked then
+        self:repairHull()
+    end
+
     if GeneralActions.Cloak:isPressed() and self:isTravelGame() then
         if self.cloak.active then
             self:setCloak(false)
@@ -1889,6 +1974,10 @@ function LimitTheoryRedux:onStateSim(data)
 
     self.player:update(dt)
     self:updateCloak(dt)
+    self.simTime = (self.simTime or 0) + dt
+    -- The player's shields recharge (DefenseComponent:update had no caller)
+    local playerDefense = self.playerShip:get(ConstructComponents.Defense)
+    if playerDefense and not self.docked then playerDefense:update(dt) end
     -- NPC ships fly (kinematic) before the physics step, like scenario things
     self.npcs:update(dt)
     if self.scenario.update then self.scenario.update(self, dt) end

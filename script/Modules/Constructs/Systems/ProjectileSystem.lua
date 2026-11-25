@@ -332,6 +332,7 @@ function ProjectileSystem:update(state, dt)
                     require("Modules.Constructs.Components").Defense)
                 local totalDamage = component:getDamage()
                 local absorbed = 0
+                local wasAlive = not impactHealth:isDestroyed()
                 if defense then
                     absorbed = math.min(defense:getCurrentShield(), totalDamage)
                     defense:setCurrentShield(defense:getCurrentShield() - absorbed)
@@ -339,6 +340,10 @@ function ProjectileSystem:update(state, dt)
                 local remaining = totalDamage - absorbed
                 if remaining > 0 then
                     self:applyDamage(component, impactHealth, remaining)
+                end
+                -- Who hit what, and whether this was the killing blow (CombatLog)
+                if wasAlive and state.reportDamage then
+                    state:reportDamage(bestHitEntity, totalDamage, remaining, impactHealth:isDestroyed())
                 end
                 -- Impact effect: shield shimmer vs hull strike,
                 -- data-driven from the projectile visual.impact def.
@@ -387,8 +392,13 @@ function ProjectileSystem:applyImpact(state, projectile, hit, deferTargetDestroy
         and component.targetEntity.isValid
         and component.targetEntity:isValid()
         and component.targetEntity:get(require("Modules.Core.Components").Health)
+    local wasAlive = health and not health:isDestroyed()
     if not health or not self:applyDamage(projectile.component, health) then
         return false
+    end
+    if wasAlive and state.reportDamage then
+        local damage = projectile.component:getDamage()
+        state:reportDamage(component.targetEntity, damage, damage, health:isDestroyed())
     end
 
     state.lastImpact = {

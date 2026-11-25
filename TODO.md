@@ -50,6 +50,9 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          pass and shader converted).
    - [ ] Reputation from more than kills and hits (escorting, trading) once there is more
          to do; the player can't attack neutral ships yet, so standing mostly rises.
+   - [ ] Credits only come from bounties and go on hull repairs: trading, mining sales and
+         ship upgrades would give them more uses (the economy).
+   - [ ] Armor: DefenseComponent has an armor value no damage path reads yet.
    - [ ] Jobs chosen by payout and threat, as Legacy's Think did, once there is an economy.
    - [ ] Respawn or a way back after the player's ship is destroyed (now: GAME OVER).
 8. **Scenario list.** The New Game test-seed list is a stopgap

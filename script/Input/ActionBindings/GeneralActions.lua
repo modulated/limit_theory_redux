@@ -35,6 +35,12 @@ local GeneralActions = {
     }),
 
     ---@type ActionBinding
+    Repair = ActionBinding({
+        label = "Repair the hull (docked; costs credits)", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardR) },
+    }),
+
+    ---@type ActionBinding
     Cloak = ActionBinding({
         label = "Cloak on / off", group = "Flight",
         keyboard = { Control.Single(Button.KeyboardX) },
