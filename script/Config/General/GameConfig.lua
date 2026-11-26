@@ -427,8 +427,9 @@ Config.game = {
     -- Refitting is free, but only at a station, out of its hangar.
     fitting = {
         startingHull  = "Small Hull", -- the hull a new game flies (Shared/Definitions/HullDefs.lua)
-        moduleSlots   = 4,    -- fallback when no hull is being flown
-        -- What a new game's ship comes fitted with, by fitting name
+        -- What a new game's first ship comes fitted with, by fitting name.
+        -- Every ship after it starts empty: a fit belongs to the ship it is
+        -- on (Modules/Constructs/Managers/PlayerFleet.lua).
         startingModules = { "Mining Laser", "Shield Capacitor" },
     },
 

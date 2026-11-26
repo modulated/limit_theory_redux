@@ -43,9 +43,12 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    - [ ] Workers are only hands: never paid, never hired, their cargo irrelevant. Wages and a
          labour market would make a station's crew a real cost.
    - [x] Equipment and hulls that can be fitted and flown, not just bought (0.2.0: weapons go in
-         mounts, modules in slots, actives on the number keys, hulls bought and switched into at a
-         station, every part has a recipe, and a Market Datalink module widens how many jumps of
-         order books can be read). Left over: fittings as loot from a kill.
+         mounts, modules in slots, actives on the number keys, every part has a recipe, and a
+         Market Datalink module widens how many jumps of order books can be read). A hull bought
+         is a ship commissioned, and a fit belongs to its ship, so a fleet of ships rigged for
+         different work is the point. Left over: fittings as loot from a kill, ships the player can
+         rename, and a fleet list away from the station screen (you can only see the ships parked
+         where you are standing).
    - [ ] Biomass has no source, so the hydrocarbon chain runs on imports.
    - [ ] Saving the hold, the wallet, station stock and production progress.
    - [ ] Balance: tune with `luajit tools/economy-sim.lua --seeds 8 --prospector --trader`

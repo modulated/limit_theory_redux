@@ -470,7 +470,7 @@ like anything else, and the whole of the above economy is what supplies them.
 | The parts that go in them | `script/Shared/Definitions/FittingDefs.lua` -> `Shared/Registries/Fittings.lua` |
 | Working a fit out and applying it | `script/Modules/Constructs/Systems/ShipFittingSystem.lua` |
 | Modules that fire on a key | `script/Modules/Constructs/Systems/AbilitySystem.lua` |
-| The player's fit and hull, across rebuilds | `Modules/Constructs/Managers/PlayerLoadout.lua`, `PlayerShipyard.lua` |
+| The ships the player owns, and their fits | `Modules/Constructs/Managers/PlayerFleet.lua` |
 | The screen you refit on | `script/UI/HmGui/Views/Gameplay/Station.lua` (the Refit tab) |
 
 **A hull** decides three things: its weapon mounts (how many, and what size class each takes), how
@@ -511,11 +511,27 @@ Two of them change what the player can *know* rather than what the ship can do:
 and slots, and what in the hangar will go in them. A part fitted comes out of the hangar; a part
 removed goes back into it.
 
-**Switching hulls** is a trade: the hull you are flying goes into the hangar and the one you are
-taking comes out, so there is always exactly one in hand. The ship is rebuilt around the new frame
-and the fit comes across by mount id, mount for mount and slot for slot. Anything the new hull has
-no room for — a bay weapon on a frame with no heavy mount, a fifth module on a four-slot hull — is
-handed back to the hangar and said so.
+**A fit belongs to its ship, not to the player.** The player owns a *fleet*
+(`Modules/Constructs/Managers/PlayerFleet.lua`): each ship has an id, a hull, a name, its own guns
+and modules, and the station it is parked at. Taking a different ship out gives you that ship's fit,
+not the one you were flying with — so a Compact rigged for mining and a Compact rigged to fight are
+two ships, and switching between them costs nothing but the walk across the hangar.
+
+- **Commissioning**: a hull is a good until you fit it out. "Fit out and fly" spends the hull item
+  from the hangar and makes a ship with *nothing* in it; the ship you were flying stays at that
+  station, fitted as it is.
+- **Flying another**: the refit screen lists your ships parked here, each with its hull and its fit.
+  One button takes it; the one you arrived in stays behind.
+- **Stripping**: one button per ship empties its mounts and slots into this station's hangar — the
+  ship you are in, or any of yours parked here. A part the hangar has no room for stays on the ship
+  rather than vanishing from both.
+- **Breaking up**: an empty ship can be broken up, which puts the bare hull back as an item to
+  sell. A ship with anything still in it refuses, and so does the one you are flying, so nothing is
+  ever sold out from under its own modules.
+
+Only the mounts with a gun in them shoot: a turret has to name a weapon it can resolve, so an empty
+mount is left out of the ship's weapon battery and neither tracks nor fires. A ship with nothing
+fitted flies unarmed.
 
 ## 9. Gaps and implementation order
 

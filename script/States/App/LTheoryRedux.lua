@@ -74,10 +74,9 @@ local CoreComponentsAll = require('Modules.Core.Components')
 local RenderComponent = require('Modules.Rendering.Components').Render
 local Factions = require('Modules.NPC.Factions')
 local GunshipRecipe = require('Modules.NPC.Managers.GunshipRecipe')
-local PlayerLoadout = require('Modules.Constructs.Managers.PlayerLoadout')
+local PlayerFleet = require('Modules.Constructs.Managers.PlayerFleet')
 local ShipFittingSystem = require('Modules.Constructs.Systems.ShipFittingSystem')
 local AbilitySystem = require('Modules.Constructs.Systems.AbilitySystem')
-local PlayerShipyard = require('Modules.Constructs.Managers.PlayerShipyard')
 local Hulls = require('Shared.Definitions.HullDefs')
 local Fittings = require('Shared.Registries.Fittings')
 local ArmedShipBuilder = require('Modules.Constructs.Managers.ArmedShipBuilder')
@@ -835,43 +834,78 @@ function LimitTheoryRedux:recordMarketIntel()
     end
 end
 
---- Fly a different hull: the one in hand goes into this station's hangar and
---- the new one comes out of it, then the ship is rebuilt around it. The fit
---- comes across as far as the new hull has room for it; the rest goes into
---- the hold (PlayerLoadout:restore says how much).
----@param hull HullDefinition
----@return boolean switched
-function LimitTheoryRedux:switchHull(hull)
-    local dock = self.docked
-    if not dock then
-        self:notify("Hulls are swapped at a station.", { 1.0, 0.7, 0.3 })
+--- Take one of the player's other ships, parked at this station. The ship
+--- being flown is left here with its fittings in it, and the one taken comes
+--- with whatever is in its own mounts and slots: a fit belongs to a ship, so
+--- nothing moves between them (`PlayerFleet`).
+---@param ship PlayerShip
+---@return boolean taken
+function LimitTheoryRedux:flyShip(ship)
+    if not ship then return false end
+    if not self.docked then
+        self:notify("Ships are changed at a station.", { 1.0, 0.7, 0.3 })
         return false
     end
-    if not hull then return false end
-    -- The button that calls this is drawn by the station screen, and the swap
-    -- destroys the ship the screen is reading: it happens on the next
+    -- The button that calls this is drawn by the station screen, and the
+    -- change destroys the ship the screen is reading: it happens on the next
     -- simulation step instead, with the screen between frames.
-    self.pendingHullSwitch = hull
+    self.pendingShipChange = { ship = ship }
     return true
 end
 
---- Carry out a queued hull switch (`switchHull`), between frames.
-function LimitTheoryRedux:processHullSwitch()
-    local hull = self.pendingHullSwitch
-    if not hull then return end
-    self.pendingHullSwitch = nil
-    local dock = self.docked
-    if not dock then
-        self:notify("Hulls are swapped at a station.", { 1.0, 0.7, 0.3 })
+--- Make a ship of a hull in this station's hangar and fly it. The hull item
+--- is spent, the new ship has nothing in it, and the ship being flown stays
+--- here with its fit.
+---@param hull HullDefinition
+---@return boolean commissioned
+function LimitTheoryRedux:commissionHull(hull)
+    if not hull then return false end
+    if not self.docked then
+        self:notify("A hull is fitted out at a station.", { 1.0, 0.7, 0.3 })
         return false
     end
-    -- What is on the ship now is what comes across, whoever fitted it
-    PlayerLoadout:record(self.playerShip)
+    self.pendingShipChange = { hull = hull }
+    return true
+end
+
+--- Carry out a queued change of ship (`flyShip`, `commissionHull`), between
+--- frames.
+function LimitTheoryRedux:processShipChange()
+    local pending = self.pendingShipChange
+    if not pending then return end
+    self.pendingShipChange = nil
+    local dock = self.docked
+    if not dock then
+        self:notify("Ships are changed at a station.", { 1.0, 0.7, 0.3 })
+        return false
+    end
     local hangar = dock.key and PlayerFactories:hangar(dock.key)
-    local previous = PlayerShipyard:current()
-    local ok, reason = PlayerShipyard:switch(hull, hangar)
+    -- What is on the ship now is what it keeps, whoever fitted it
+    PlayerFleet:record(self.playerShip)
+    local previous = PlayerFleet:active()
+
+    local ship = pending.ship
+    if pending.hull then
+        -- A hull out of the hangar becomes a ship of the player's
+        if not hangar or hangar:count(pending.hull.itemId) < 1 then
+            self:notify("That hull is not in this hangar.", { 1.0, 0.4, 0.3 })
+            return false
+        end
+        if hangar:remove(pending.hull.itemId, 1) < 1 then
+            self:notify("That hull is not in this hangar.", { 1.0, 0.4, 0.3 })
+            return false
+        end
+        ship = PlayerFleet:commission(pending.hull, dock.key)
+        if not ship then
+            hangar:add(pending.hull.itemId, 1)
+            self:notify("That hull cannot be made into a ship.", { 1.0, 0.4, 0.3 })
+            return false
+        end
+    end
+
+    local ok, reason = PlayerFleet:setActive(ship, dock.key)
     if not ok then
-        self:notify("Cannot take that hull: " .. (reason or "no"), { 1.0, 0.4, 0.3 })
+        self:notify("Cannot take that ship: " .. (reason or "no"), { 1.0, 0.4, 0.3 })
         return false
     end
 
@@ -882,8 +916,52 @@ function LimitTheoryRedux:processHullSwitch()
     self:respawnPlayerShip(Position(position.x, position.y, position.z), nil)
     -- Docked again: the new ship is inside the station, as the old one was
     self:dockPlayer(dock)
-    self:notify(string.format("Now flying the %s (was the %s)", hull.displayName,
-        previous and previous.displayName or "none"), { 0.6, 0.9, 1.0 })
+    self:notify(string.format("Now flying %s (%s stays here%s)", ship.name,
+        previous and previous.name or "nothing",
+        previous and PlayerFleet.fittingCount(previous) > 0 and ", fitted as it is" or ""),
+        { 0.6, 0.9, 1.0 })
+    return true
+end
+
+--- Take everything out of one of the player's ships and leave it in this
+--- station's hangar.
+---@param ship PlayerShip
+---@return boolean stripped
+function LimitTheoryRedux:stripShip(ship)
+    local dock = self.docked
+    if not ship then return false end
+    if not dock then
+        self:notify("A ship is stripped at a station.", { 1.0, 0.7, 0.3 })
+        return false
+    end
+    local hangar = dock.key and PlayerFactories:hangar(dock.key)
+    if ship.id == (PlayerFleet.activeId or -1) then PlayerFleet:record(self.playerShip) end
+    local taken, reason = PlayerFleet:strip(ship, hangar, self.playerShip)
+    if taken < 1 then
+        self:notify("Nothing came off: " .. (reason or "no"), { 1.0, 0.7, 0.3 })
+        return false
+    end
+    if ship.id == (PlayerFleet.activeId or -1) then self:applyFitToShip() end
+    self:notify(string.format("%s stripped: %d fitting(s) in the hangar.", ship.name, taken),
+        { 0.6, 0.9, 1.0 })
+    return true
+end
+
+--- Give a ship's bare hull back as an item to sell. Only an empty ship, and
+--- not the one being flown.
+---@param ship PlayerShip
+---@return boolean done
+function LimitTheoryRedux:decommissionShip(ship)
+    local dock = self.docked
+    if not ship or not dock then return false end
+    local hangar = dock.key and PlayerFactories:hangar(dock.key)
+    local ok, reason = PlayerFleet:decommission(ship, hangar)
+    if not ok then
+        self:notify("Cannot break that ship up: " .. (reason or "no"), { 1.0, 0.4, 0.3 })
+        return false
+    end
+    self:notify(string.format("%s broken up: the hull is in the hangar.", ship.name),
+        { 0.6, 0.9, 1.0 })
     return true
 end
 
@@ -1127,12 +1205,11 @@ function LimitTheoryRedux:resetGalaxy()
     self.surveyedRocks = {}
     -- The ship a new game starts in: empty slots but for what it comes with
     AbilitySystem:reset()
-    PlayerShipyard:reset(Config.game.fitting.startingHull)
-    PlayerLoadout:reset(PlayerShipyard:moduleSlots())
+    PlayerFleet:reset(Config.game.fitting.startingHull)
     for _, name in ipairs(Config.game.fitting.startingModules) do
         local def = Fittings:getByName(name)
         if def then
-            PlayerLoadout:grantModule(def)
+            PlayerFleet:grantModule(def)
         else
             Log.Warn("Config.game.fitting.startingModules names no fitting: %s", tostring(name))
         end
@@ -1535,14 +1612,13 @@ function LimitTheoryRedux:createPlayerShip(position, shipType, hullIdx, seed)
             turnScale = math.max(1, math.min(400, ratio * ratio))
         end
         flightCtrl.torqueScale = turnScale
-        -- The fit comes back onto the new hull: its guns, its modules and the
-        -- stats they come to (PlayerLoadout outlives the ship entity)
-        -- Anything the new hull has no room for goes into the station's
-        -- hangar when there is one, and into the hold otherwise
+        -- This ship's own fit goes back on: its guns, its modules and the
+        -- stats they come to (PlayerFleet outlives the entity). Anything the
+        -- hull has no room for goes into the station's hangar when there is
+        -- one, and into the hold otherwise.
         local spare = self.docked and self.docked.key and PlayerFactories:hangar(self.docked.key)
             or PlayerCargo:get()
-        local returned, lost = PlayerLoadout:restore(self.playerShip, gunship.turrets,
-            PlayerShipyard:moduleSlots(), spare)
+        local returned, lost = PlayerFleet:restore(self.playerShip, gunship.turrets, spare)
         if returned > lost then
             self:notify(string.format("%d fitting(s) would not fit this hull; they are in %s.",
                 returned - lost, spare == PlayerCargo:get() and "the hold" or "the hangar"),
@@ -1553,15 +1629,56 @@ function LimitTheoryRedux:createPlayerShip(position, shipType, hullIdx, seed)
                 { 1.0, 0.4, 0.3 })
         end
         self:applyFitToShip()
-        self.playerBattery = self.weaponCombat:addBattery(WeaponBattery(gunship, {
-            name = "Your ship",
-            aiActive = true,
-            team = Factions.Player,
-            hostileTeams = Factions.hostileTeams(Factions.Player),
-        }))
+        -- Only the mounts with a gun in them shoot: an empty mount has no
+        -- weapon to resolve, so the battery is built from the armed ones. A
+        -- ship with nothing fitted flies unarmed.
+        local armed = self:armedConstruction(gunship)
+        if armed then
+            self.playerBattery = self.weaponCombat:addBattery(WeaponBattery(armed, {
+                name = "Your ship",
+                aiActive = true,
+                team = Factions.Player,
+                hostileTeams = Factions.hostileTeams(Factions.Player),
+            }))
+        end
     end
 
     Log.Info("Player ship spawned at (%.1f, %.1f, %.1f)", position.x, position.y, position.z)
+end
+
+--- The construction a weapon battery should be built from: the same ship,
+--- with only the mounts that have a gun in them.
+---
+--- A turret has to name a weapon it can resolve, so an empty mount cannot
+--- simply be left blank -- it is left out of the battery instead, and its
+--- turret neither tracks nor fires. Nothing fitted at all means no battery:
+--- the ship is unarmed until something goes in a mount.
+---@param construction table the ArmedShipBuilder construction
+---@return table|nil
+function LimitTheoryRedux:armedConstruction(construction)
+    if not construction then return nil end
+    local loadout = self.playerShip and self.playerShip:get(ConstructComponents.Loadout)
+    if not loadout then return construction end
+    local turrets, turretsById, mountIds = {}, {}, {}
+    for _, turret in ipairs(construction.turrets or {}) do
+        local mountId = turret.component and turret.component:getMountId() or turret.mountId
+        if mountId and loadout:getWeapon(mountId) then
+            turrets[#turrets + 1] = turret
+            turretsById[mountId] = turret
+            mountIds[#mountIds + 1] = mountId
+        end
+    end
+    if #turrets == 0 then
+        Log.Info("The player's ship has nothing in its mounts: flying unarmed")
+        return nil
+    end
+    if #turrets == #(construction.turrets or {}) then return construction end
+    local armed = {}
+    for key, value in pairs(construction) do armed[key] = value end
+    armed.turrets = turrets
+    armed.turretsById = turretsById
+    armed.mountIds = mountIds
+    return armed
 end
 
 --- The player's gunship (an ArmedShipBuilder construction), or nil if it
@@ -1572,15 +1689,15 @@ end
 function LimitTheoryRedux:buildPlayerGunship(position, seed)
     local cfg = Config.game.playerGunship
     -- The hull being flown decides the mounts, the capacitor, the stats and
-    -- the size; the fit decides everything else (PlayerShipyard, HullDefs)
-    local hull = PlayerShipyard:current()
-    local stats = hull and PlayerShipyard:stats() or cfg
+    -- the size; the fit decides everything else (PlayerFleet, HullDefs)
+    local hull = PlayerFleet.hullOf(PlayerFleet:active())
+    local stats = hull and PlayerFleet:stats() or cfg
     local ok, result = pcall(function()
         return ArmedShipBuilder:build(GunshipRecipe.build(seed, Factions.Player, stats, hull), {
             constructManager = self.constructManager,
             shipConfig = {
                 position = position,
-                scale = PlayerShipyard:scale(cfg.scale),
+                scale = PlayerFleet:scale(cfg.scale),
                 isKinematic = false,
             },
         })
@@ -2452,9 +2569,9 @@ function LimitTheoryRedux:onStateSim(data)
     self:updateCloak(dt)
     self:updateMining(dt)
     AbilitySystem:update(self.playerShip, dt)
-    -- A hull the refit screen asked for: the ship is rebuilt here, not inside
+    -- A ship the refit screen asked for: the rebuild happens here, not inside
     -- the screen's own draw
-    self:processHullSwitch()
+    self:processShipChange()
     self.simTime = (self.simTime or 0) + dt
     -- The player's shields recharge (DefenseComponent:update had no caller)
     local playerDefense = self.playerShip:get(ConstructComponents.Defense)

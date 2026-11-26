@@ -12,11 +12,10 @@ local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
 local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
 local EconomyComponents = require("Modules.Economy.Components")
 local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
-local PlayerLoadout = require("Modules.Constructs.Managers.PlayerLoadout")
 local ShipFittingSystem = require("Modules.Constructs.Systems.ShipFittingSystem")
 local AbilitySystem = require("Modules.Constructs.Systems.AbilitySystem")
 local Fittings = require("Shared.Registries.Fittings")
-local PlayerShipyard = require("Modules.Constructs.Managers.PlayerShipyard")
+local PlayerFleet = require("Modules.Constructs.Managers.PlayerFleet")
 local Hulls = require("Shared.Registries.Hulls")
 
 -- The screen the player sees while docked: what the station has and what it
@@ -790,29 +789,78 @@ local function refit(s)
         return list
     end
 
-    -- Which hull this is, and what else could be flown
-    local hull = PlayerShipyard:current()
-    rows[#rows + 1] = text(hull
-            and string.format("HULL                %s   ·   %s", hull.displayName, Hulls.describe(hull))
-            or "HULL                unknown",
-        "Unageo-Medium", math.floor(13 * s), ACCENT)
-    local others = PlayerShipyard:available(hangar)
-    for _, row in ipairs(others) do
-        rows[#rows + 1] = Grid {
-            fixedHeight = math.floor(26 * s),
-            cells = { Grid.Fixed(200 * s), Grid.Fixed(520 * s), Grid.Fixed(170 * s) },
-            contents = {
-                text(string.format("%s (x%d)", row.hull.displayName, row.units),
-                    "Unageo-Regular", size, GREY),
-                text(Hulls.describe(row.hull), "Unageo-Regular", size, DIM),
-                wideButton("Fly this hull", s, 150, true, false, function()
-                    LimitTheoryRedux:switchHull(row.hull)
-                end),
-            }
+    -- This ship, the player's others parked here, and hulls to make ships of
+    local flying = PlayerFleet:active()
+    local hull = PlayerFleet.hullOf(flying)
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(26 * s),
+        cells = { Grid.Fixed(700 * s), Grid.Fixed(190 * s) },
+        contents = {
+            text(hull
+                    and string.format("THIS SHIP           %s   ·   %s", flying.name, Hulls.describe(hull))
+                    or "THIS SHIP           unknown",
+                "Unageo-Medium", math.floor(13 * s), ACCENT),
+            wideButton("Strip everything", s, 170, PlayerFleet.fittingCount(flying) > 0, false,
+                function() LimitTheoryRedux:stripShip(flying) end),
         }
+    }
+
+    local parked = PlayerFleet:parkedAt(key)
+    if #parked > 0 then
+        rows[#rows + 1] = text("YOUR SHIPS HERE     each keeps its own fit",
+            "Unageo-Medium", math.floor(13 * s), DIM)
+        for _, other in ipairs(parked) do
+            local otherHull = PlayerFleet.hullOf(other)
+            local empty = PlayerFleet.fittingCount(other) == 0
+            rows[#rows + 1] = Grid {
+                fixedHeight = math.floor(26 * s),
+                cells = { Grid.Fixed(200 * s), Grid.Fixed(330 * s), Grid.Fixed(150 * s),
+                          Grid.Fixed(120 * s), Grid.Fixed(150 * s) },
+                contents = {
+                    text(other.name, "Unageo-Regular", size, GREY),
+                    text(otherHull and Hulls.describe(otherHull) or "unknown hull",
+                        "Unageo-Regular", size, DIM),
+                    text(PlayerFleet.describe(other), "Unageo-Regular", size, WHITE),
+                    wideButton("Fly it", s, 110, true, false, function()
+                        LimitTheoryRedux:flyShip(other)
+                    end),
+                    empty
+                        and wideButton("Break up", s, 140, true, false, function()
+                            LimitTheoryRedux:decommissionShip(other)
+                        end)
+                        or wideButton("Strip it", s, 140, true, false, function()
+                            LimitTheoryRedux:stripShip(other)
+                        end),
+                }
+            }
+        end
     end
-    if #others == 0 then
-        rows[#rows + 1] = text("No other hull in this hangar. Buy one on the market, or have a drydock build it.",
+
+    -- A hull in the hangar is a good until it is made into a ship
+    local spareHulls = {}
+    for _, row in ipairs(hangar and hangar:list() or {}) do
+        local itsHull = Hulls:forItem(row.item.id)
+        if itsHull then spareHulls[#spareHulls + 1] = { hull = itsHull, units = row.units } end
+    end
+    if #spareHulls > 0 then
+        rows[#rows + 1] = text("HULLS IN THE HANGAR  a new ship starts with nothing in it",
+            "Unageo-Medium", math.floor(13 * s), DIM)
+        for _, row in ipairs(spareHulls) do
+            rows[#rows + 1] = Grid {
+                fixedHeight = math.floor(26 * s),
+                cells = { Grid.Fixed(200 * s), Grid.Fixed(480 * s), Grid.Fixed(210 * s) },
+                contents = {
+                    text(string.format("%s (x%d)", row.hull.displayName, row.units),
+                        "Unageo-Regular", size, GREY),
+                    text(Hulls.describe(row.hull), "Unageo-Regular", size, DIM),
+                    wideButton("Fit out and fly", s, 190, true, false, function()
+                        LimitTheoryRedux:commissionHull(row.hull)
+                    end),
+                }
+            }
+        end
+    elseif #parked == 0 then
+        rows[#rows + 1] = text("No other ship or hull here. Buy a hull on the market, or have a drydock build one.",
             "Unageo-Regular", size, DIM)
     end
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
@@ -820,8 +868,8 @@ local function refit(s)
     -- What the ship comes to with what is on it now
     local stats = loadout.stats or {}
     rows[#rows + 1] = text(string.format(
-            "YOUR SHIP           %s   ·   shield %d, armour %.0f, hull %d   ·   thrust x%.2f, turn x%.2f   ·   hold +%d t",
-            PlayerLoadout:describe(ship), stats.maxShield or 0, stats.armor or 0,
+            "THE FIT             %s   ·   shield %d, armour %.0f, hull %d   ·   thrust x%.2f, turn x%.2f   ·   hold +%d t",
+            PlayerFleet.describe(flying), stats.maxShield or 0, stats.armor or 0,
             stats.maxHealth or 0, stats.thrust or 1, stats.turn or 1, stats.cargoMass or 0),
         "Unageo-Medium", math.floor(13 * s), DIM)
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
@@ -846,7 +894,7 @@ local function refit(s)
                             and string.format("%s fitted to %s", row.fitting.displayName, mount.mountId)
                             or ("Cannot fit: " .. (reason or "no")), ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
                         if ok then
-                            PlayerLoadout:record(ship)
+                            PlayerFleet:record(ship)
                             LimitTheoryRedux:applyFitToShip()
                         end
                     end)
@@ -856,7 +904,7 @@ local function refit(s)
             buttons[#buttons + 1] = wideButton("Remove", s, 110, true, false, function()
                 local ok = ShipFittingSystem:unfitWeapon(ship, hangar, mount.mountId)
                 if ok then
-                    PlayerLoadout:record(ship)
+                    PlayerFleet:record(ship)
                     LimitTheoryRedux:applyFitToShip()
                     LimitTheoryRedux:notify("Stripped " .. mount.mountId, { 0.6, 0.9, 1.0 })
                 end
@@ -892,7 +940,7 @@ local function refit(s)
                             and string.format("%s fitted in slot %d", row.fitting.displayName, slot)
                             or ("Cannot fit: " .. (reason or "no")), ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
                         if ok then
-                            PlayerLoadout:record(ship)
+                            PlayerFleet:record(ship)
                             LimitTheoryRedux:applyFitToShip()
                         end
                     end)
@@ -902,7 +950,7 @@ local function refit(s)
             buttons[#buttons + 1] = wideButton("Remove", s, 110, true, false, function()
                 local ok = ShipFittingSystem:unfitModule(ship, hangar, slot)
                 if ok then
-                    PlayerLoadout:record(ship)
+                    PlayerFleet:record(ship)
                     LimitTheoryRedux:applyFitToShip()
                     LimitTheoryRedux:notify(string.format("Slot %d emptied", slot), { 0.6, 0.9, 1.0 })
                 end
