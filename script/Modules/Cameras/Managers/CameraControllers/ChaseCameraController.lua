@@ -1,6 +1,27 @@
 local CameraController = require("Modules.Cameras.Managers").CameraController
 local PhysicsComponents = require("Modules.Physics.Components")
 
+--- NaN is the only value that is not equal to itself; infinities compare
+--- out of range.
+---@param v number
+---@return boolean
+local function isFiniteNumber(v)
+    return type(v) == "number" and v == v and v > -math.huge and v < math.huge
+end
+
+---@param p Position|Vec3f
+---@return boolean
+local function isFinitePosition(p)
+    return p ~= nil and isFiniteNumber(p.x) and isFiniteNumber(p.y) and isFiniteNumber(p.z)
+end
+
+---@param q Quat
+---@return boolean
+local function isFiniteQuat(q)
+    return q ~= nil and isFiniteNumber(q.x) and isFiniteNumber(q.y)
+        and isFiniteNumber(q.z) and isFiniteNumber(q.w)
+end
+
 --- Chase camera — follows behind the ship, smoothly interpolating.
 --- Direct port of Legacy CameraChase into ECS controller pattern.
 ---@class ChaseCameraController : CameraController
@@ -120,6 +141,19 @@ function ChaseCameraController:onPreRender(dt)
             self.posSmooth.z + (self.posT.z - self.posSmooth.z) * lerpF
         )
         self.rotSmooth = self.rotSmooth:slerp(self.rotT, lerpF)
+    end
+
+    -- A number that is not a number poisons everything downstream: slerp
+    -- keeps it, the view matrix inherits it, and the frame is drawn from
+    -- garbage. Quat.FromLook no longer produces one, but a target whose
+    -- physics went bad still could, so the last good transform is kept
+    -- rather than passed on.
+    if not isFinitePosition(self.posSmooth) or not isFiniteQuat(self.rotSmooth) then
+        Log.Warn("ChaseCamera: the target's transform is not finite; holding the last good one")
+        self.posSmooth = self.transform:getPos()
+        self.rotSmooth = self.transform:getRot()
+        self.initialized = false
+        return
     end
 
     -- Set camera transform directly

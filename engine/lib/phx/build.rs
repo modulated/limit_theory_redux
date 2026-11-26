@@ -14,6 +14,16 @@ fn main() {
     if target_os != "windows" {
         println!("cargo::rustc-link-lib=z");
     }
+
+    // LuaJIT comes from mlua's `vendored` feature, which runs LuaJIT's own
+    // msvcbuild.bat: its `static` path compiles without /MD, so cl defaults to
+    // /MT and every object asks for the static CRT (LIBCMT) while Rust links
+    // the dynamic one (MSVCRT). The linker already resolves everything to
+    // MSVCRT and says so as LNK4098; this tells it to ignore the static CRT
+    // outright, which is what it was doing anyway, and the warning goes.
+    if target_os == "windows" && env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default() == "msvc" {
+        println!("cargo::rustc-link-arg=/NODEFAULTLIB:LIBCMT");
+    }
     if target_os == "macos" {
         println!("cargo::rustc-link-lib=framework=CoreHaptics");
     }

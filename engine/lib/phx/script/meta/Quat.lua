@@ -114,6 +114,7 @@ function Quat.FromEuler(yaw, pitch, roll) end
 ---@return Quat
 function Quat.FromLook(forward, up) end
 
+-- As [`Quat::from_look`]; a degenerate `up` is handled the same way.
 ---@param look Vec3f
 ---@param up Vec3f
 ---@return Quat

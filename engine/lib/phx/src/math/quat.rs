@@ -59,16 +59,35 @@ impl Quat {
         self.0.dot(other.0).abs().acos() * 2.0
     }
 
-    // Static helper (not instance)
+    /// A rotation looking along `forward`, with `up` deciding the roll.
+    ///
+    /// `up` parallel to `forward` leaves no plane to put the right vector in:
+    /// the cross product is zero, normalizing it gives NaN, and a NaN
+    /// rotation spreads into the camera's view matrix and from there into
+    /// everything drawn (and `slerp` keeps it forever). A camera looking
+    /// straight along its own up axis is a thing that happens -- a chase
+    /// camera whose smoothed position trails a fast-turning ship swings
+    /// through it -- so a degenerate `up` picks the nearest axis that is not
+    /// parallel to the look direction instead of poisoning the frame.
     pub fn from_look_static(forward: &Vec3, up: &Vec3) -> Self {
-        let z = -forward.normalize();
-        let x = up.cross(z).normalize();
+        let z = -forward.normalize_or(glam::Vec3::Z);
+        let mut x = up.cross(z);
+        if x.length_squared() < 1e-12 {
+            // Any axis the look direction is not aligned with will do
+            let fallback = if z.x.abs() < 0.9 {
+                glam::Vec3::X
+            } else {
+                glam::Vec3::Y
+            };
+            x = fallback.cross(z);
+        }
+        let x = x.normalize_or(glam::Vec3::X);
         let y = z.cross(x);
         Self(GlamQuat::from_mat3(&Mat3::from_cols(x, y, z)))
     }
 
     pub fn look_at_static(eye: &Vec3, target: &Vec3, up: &Vec3) -> Self {
-        let forward = (*target - *eye).normalize();
+        let forward = (*target - *eye).normalize_or(glam::Vec3::NEG_Z);
         Self::from_look_static(&forward, up)
     }
 
@@ -262,11 +281,9 @@ impl Quat {
         Self::from_look_static(forward, up)
     }
 
+    /// As [`Quat::from_look`]; a degenerate `up` is handled the same way.
     pub fn from_look_up(look: &Vec3, up: &Vec3) -> Self {
-        let z = (*look * -1.0).normalize();
-        let x = Vec3::cross(*up, z).normalize();
-        let y = Vec3::cross(z, x);
-        Self(glam::Quat::from_mat3(&Mat3::from_cols(x, y, z)))
+        Self::from_look_static(look, up)
     }
 
     pub fn look_at(eye: &Vec3, target: &Vec3, up: &Vec3) -> Self {

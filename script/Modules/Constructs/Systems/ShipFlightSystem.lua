@@ -64,6 +64,76 @@ local function thrustScale(shipEntity)
     return (flightCtrl.fitThrustScale or 1) * (flightCtrl.abilityThrustScale or 1)
 end
 
+--- Steer the ship toward the turn rate the input asks for.
+---
+--- Torque used to be applied straight from the input, which made the input a
+--- request for *angular acceleration*: holding a turn wound the rotation up
+--- until drag caught it, and `torqueScale` (up to 400x on a big hull) decided
+--- how fast that was. Chase steering holds its input for as long as the
+--- cursor is off centre, so that wind-up became a spin the player could not
+--- stop, fast enough for the chase camera to swing through its own up axis.
+---
+--- Now the input asks for a *rate*: the torque is proportional to the
+--- difference between the rate asked for and the rate the ship is actually
+--- turning at, so the ship accelerates to that rate and then holds it, no
+--- input can exceed `maxTurnRate`, and letting go brakes it (which also
+--- recovers from a spin a collision started).
+---@param shipEntity Entity
+---@param rb RigidBody
+---@param pitch number -1..1
+---@param yaw number -1..1
+---@param roll number -1..1
+---@param dt number
+---@param rateScale number|nil a share of the maximum turn rate (travel drive)
+local function applySteering(shipEntity, rb, pitch, yaw, roll, dt, rateScale)
+    local cfg = Config.game.shipFlight
+    local rot = rb:getRot()
+    local k = torqueScale(shipEntity)
+    local maxRate = (cfg.maxTurnRate or 1.8) * (rateScale or 1)
+    local gain = cfg.turnRateGain or 6.0
+
+    -- Where the ship is turning now, in its own axes
+    local spin = rot:inverse():mulV(rb:getVelocityA())
+
+    -- The most torque worth applying this step. torqueScale reaches 400 on a
+    -- big hull, which is far more than the rate error can absorb in one step:
+    -- the surplus would overshoot the rate and ring around it. A solid
+    -- sphere's inertia is a good enough estimate of the hull's to cap it at
+    -- "exactly enough to arrive at the rate asked for".
+    local radius = math.max(rb:getBoundingRadius(), 1e-4)
+    local inertia = 0.4 * math.max(rb:getMass(), 1e-6) * radius * radius
+    local step = math.max(dt or 0, 1e-4)
+
+    -- Angular drag pulls the rotation back toward a stop, so holding a rate
+    -- costs torque. Cancelling the drag at the rate the ship is turning at
+    -- now leaves the controller steering a body that simply holds whatever
+    -- rate it is given, which is what makes it settle *on* the rate asked
+    -- for instead of somewhere short of it.
+    local drag = cfg.angularDrag or 0
+
+    --- The torque for one axis. The controller asks for an acceleration
+    --- proportional to the rate error, never more than would arrive exactly
+    --- on the rate this step (so it cannot overshoot and ring), and the
+    --- torque is that plus the drag at the current rate, within what the
+    --- ship's engines can actually produce.
+    local function axisTorque(input, current, torqueMax)
+        local desired = Math.Clamp(input, -1, 1) * maxRate
+        local err = desired - current
+        local accel = err * gain
+        local arrival = math.abs(err) / step
+        accel = Math.Clamp(accel, -arrival, arrival)
+        local available = torqueMax * k
+        return Math.Clamp(inertia * (accel + drag * current), -available, available)
+    end
+
+    local localTorque = Vec3f(
+        axisTorque(pitch, spin.x, cfg.torquePitch),
+        axisTorque(-yaw, spin.y, cfg.torqueYaw),
+        axisTorque(-roll, spin.z, cfg.torqueRoll * 0.5)
+    )
+    rb:applyTorque(rot:mulV(localTorque))
+end
+
 --- Update ship from input.
 ---@param dt number
 ---@param shipEntity Entity
@@ -145,16 +215,8 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
         rb:applyForce(rot:getUp():scale(up * cfg.thrustUp * fitThrust))
     end
 
-    -- Apply torque in local space
-    if math.max(math.max(math.abs(pitch), math.abs(yaw)), math.abs(roll)) > 1e-6 then
-        local k = torqueScale(shipEntity)
-        local localTorque = Vec3f(
-            pitch * cfg.torquePitch * k,
-            -yaw  * cfg.torqueYaw * k,
-            -roll * cfg.torqueRoll * 0.5 * k
-        )
-        rb:applyTorque(rot:mulV(localTorque))
-    end
+    -- Steer toward the rate asked for (and brake toward a stop with no input)
+    applySteering(shipEntity, rb, pitch, yaw, roll, dt)
 end
 
 --- Reduced steering only (for travel drive — no thrust, slower rotation)
@@ -170,7 +232,6 @@ function ShipFlightSystem:updateSteeringOnly(dt, shipEntity, mouseAim, useDelta)
     local rb = rbCmp:getRigidBody()
     if not rb then return end
 
-    local cfg = Config.game.shipFlight
     local roll = ShipActions.Roll:get()
     local yaw, pitch = 0, 0
     if mouseAim then
@@ -188,18 +249,9 @@ function ShipFlightSystem:updateSteeringOnly(dt, shipEntity, mouseAim, useDelta)
         yaw, pitch = applyInversion(yaw, pitch)
     end
 
-    -- Reduced torque at high speed (10% of normal)
-    local steerFactor = 0.1
-    local rot = rb:getRot()
-    if math.max(math.max(math.abs(pitch), math.abs(yaw)), math.abs(roll)) > 1e-6 then
-        local k = torqueScale(shipEntity) * steerFactor
-        local localTorque = Vec3f(
-            pitch * cfg.torquePitch * k,
-            -yaw  * cfg.torqueYaw * k,
-            -roll * cfg.torqueRoll * 0.5 * k
-        )
-        rb:applyTorque(rot:mulV(localTorque))
-    end
+    -- A tenth of the turn rate under travel drive: the ship is covering
+    -- ground, not dogfighting
+    applySteering(shipEntity, rb, pitch, yaw, roll, dt, 0.1)
 end
 
 ---@param shipEntity Entity

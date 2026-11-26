@@ -95,6 +95,16 @@ Config.game = {
             linearDrag     = drag,
             angularDrag    = 20.0,
 
+            -- Steering is a rate request, not an acceleration one
+            -- (ShipFlightSystem.applySteering): the fastest the ship will
+            -- turn, in radians a second, and how hard it pushes to get there
+            -- (torque = clamp(rate error x gain) x torque). The rate is what
+            -- stops a held turn from winding the ship up into a spin; the
+            -- gain is the responsiveness -- higher snaps to the rate, lower
+            -- eases into it.
+            maxTurnRate    = 1.8,
+            turnRateGain   = 6.0,
+
             -- Input inversion
             invertYaw      = false,
             invertPitch    = false,
