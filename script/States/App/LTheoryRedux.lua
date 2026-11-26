@@ -847,6 +847,24 @@ function LimitTheoryRedux:switchHull(hull)
         self:notify("Hulls are swapped at a station.", { 1.0, 0.7, 0.3 })
         return false
     end
+    if not hull then return false end
+    -- The button that calls this is drawn by the station screen, and the swap
+    -- destroys the ship the screen is reading: it happens on the next
+    -- simulation step instead, with the screen between frames.
+    self.pendingHullSwitch = hull
+    return true
+end
+
+--- Carry out a queued hull switch (`switchHull`), between frames.
+function LimitTheoryRedux:processHullSwitch()
+    local hull = self.pendingHullSwitch
+    if not hull then return end
+    self.pendingHullSwitch = nil
+    local dock = self.docked
+    if not dock then
+        self:notify("Hulls are swapped at a station.", { 1.0, 0.7, 0.3 })
+        return false
+    end
     -- What is on the ship now is what comes across, whoever fitted it
     PlayerLoadout:record(self.playerShip)
     local hangar = dock.key and PlayerFactories:hangar(dock.key)
@@ -2434,6 +2452,9 @@ function LimitTheoryRedux:onStateSim(data)
     self:updateCloak(dt)
     self:updateMining(dt)
     AbilitySystem:update(self.playerShip, dt)
+    -- A hull the refit screen asked for: the ship is rebuilt here, not inside
+    -- the screen's own draw
+    self:processHullSwitch()
     self.simTime = (self.simTime or 0) + dt
     -- The player's shields recharge (DefenseComponent:update had no caller)
     local playerDefense = self.playerShip:get(ConstructComponents.Defense)
