@@ -45,6 +45,7 @@ local AsteroidFieldSystem = require('Modules.CelestialObjects.Systems.AsteroidFi
 local GeneralActions = require('Input.ActionBindings.GeneralActions')
 local CursorManager = require('Input.CursorManager')
 local SystemOverview = require('Modules.Navigation.Systems.SystemOverview')
+local SaveGame = require('Shared.Save.SaveGame')
 local Rulesets = require('Config.Gen.Rulesets')
 local UniverseManager = require('Modules.CelestialObjects.Managers.UniverseManager')
 local SolarSystemVisualizer = require('Modules.CelestialObjects.Managers.SolarSystemVisualizer')
@@ -413,7 +414,11 @@ end
 --- and the scenario's own things; then the systems that run it.
 ---@param seed integer|nil nil = a random seed
 ---@param scenario Scenario|nil nil = the default scenario
-function LimitTheoryRedux:startGame(seed, scenario)
+---@param seed any the game's seed (nil: a new one)
+---@param scenario Scenario|nil
+---@param load table|nil a saved game's state (SaveGame): the game is the
+---  saved one, made again from its seed and put back as it was
+function LimitTheoryRedux:startGame(seed, scenario, load)
     setGameScale()
     GameState:SetState(Enums.GameStates.InGame)
 
@@ -426,6 +431,9 @@ function LimitTheoryRedux:startGame(seed, scenario)
 
     self.cfg = SceneConfig
     self.scenario = scenario or Scenarios.default
+    -- The scenario the game began as: a jump replaces self.scenario with a
+    -- plain description, and a save has to name the scenario it came from
+    self.startScenarioId = self.scenario.id
     -- Bodies stay at their generated positions unless the scenario has
     -- orbits (see onStateSim)
     self.staticStarSystem = not self.scenario.orbits
@@ -451,6 +459,9 @@ function LimitTheoryRedux:startGame(seed, scenario)
 
     self:createSkybox()
     self:resetGalaxy()
+    -- A saved game: what the player owns and has done goes back before
+    -- anything is built, so the ship is built in the saved hull
+    if load then SaveGame.restoreManagers(self, load) end
     self:buildScene()
 
     -- Player controller owns camera modes, input routing, and ship reference
@@ -490,6 +501,66 @@ function LimitTheoryRedux:startGame(seed, scenario)
     -- the HUD and labels that the state's onRender draws.
     UIRouter:setCurrentPage("Gameplay")
     UIPageGameplay:setView("In_Game")
+
+    if load then self:finishLoad(load) end
+end
+
+--- The rest of loading, once the game's own start has run: into the saved
+--- system the way a jump goes (if the save was elsewhere), and the ship where
+--- it was.
+---@param state table
+function LimitTheoryRedux:finishLoad(state)
+    local saved = state.game and state.game.system or 1
+    if self.galaxy and saved ~= self.currentSystemId and self.galaxy.systems[saved] then
+        -- The rebuild a jump does (finishJump), arriving where the save was
+        -- rather than at a gate
+        self.jump = { from = nil, to = saved, name = self.galaxy.systems[saved].name,
+                      frames = REBUILD_DELAY_FRAMES, arrival = state.player or {} }
+        self:destroyScene(true)
+        if self.skybox then
+            Registry:destroyEntity(self.skybox, Enums.Registry.EntityDestroyMode.DestroyChildren)
+            self.skybox = nil
+        end
+        UIViewInGame:setPlayer(nil)
+        return
+    end
+    self:placeShipFromSave(state.player or {})
+    self:dockFromSave(state.player or {})
+end
+
+--- The ship where the save had it (a new one of the saved kind, at rest).
+---@param player table { position, forward }
+function LimitTheoryRedux:placeShipFromSave(player)
+    local p, f = player.position, player.forward
+    if not p then return end
+    self:respawnPlayerShip(Position(p.x, p.y, p.z), f and Vec3f(f.x, f.y, f.z) or nil)
+end
+
+--- Docked again at the station the save was docked at.
+---@param player table { docked = station key }
+function LimitTheoryRedux:dockFromSave(player)
+    if not player.docked then return end
+    local places = self.npcs and self.npcs.places
+    for _, dock in ipairs(places and places.docks or {}) do
+        if dock.key == player.docked then
+            self:dockPlayer(dock)
+            return
+        end
+    end
+    Log.Warn("Load: the station the save was docked at (%s) is not here", tostring(player.docked))
+end
+
+--- A saved game's stock for a station of the saved system, as it is built.
+---@param station Entity
+---@param key string
+function LimitTheoryRedux:applySavedStationStock(station, key)
+    local saved = self.savedStationStock and self.savedStationStock[key]
+    if not saved then return end
+    self.savedStationStock[key] = nil
+    local stock = station:get(EconomyComponents.Stock)
+    if not stock then return end
+    stock.units = {}
+    for itemId, n in pairs(saved.units or {}) do stock.units[itemId] = n end
 end
 
 --- The skybox for a seed (default `self.seed`): nebula, stars, light direction.
@@ -1667,8 +1738,10 @@ function LimitTheoryRedux:populateSystem()
                 radius = body:getBoundingRadius(),
                 faction = Config.game.docking.owner,
             })
-            -- The orders the player left here, back in the book
+            -- The orders the player left here, back in the book, and (loading)
+            -- the stock the save had
             MarketSystem:unpark(station, key)
+            self:applySavedStationStock(station, key)
             -- What the player's lines made here while they were away
             for _, event in ipairs(PlayerFactories:catchUp(station, key, self.simTime or 0)) do
                 self:notify(event.text, { 0.6, 0.9, 1.0 })
@@ -2515,7 +2588,13 @@ function LimitTheoryRedux:finishJump()
     self:spawnJumpGates()
     self.gateWatch = JumpGateSystem:watch(self.jumpGates)
 
-    self:placeShipAtArrival(jump.from)
+    if jump.arrival then
+        -- A loaded game arriving where it was saved
+        self:placeShipFromSave(jump.arrival)
+        if not jump.arrival.position then self:placeShipAtArrival(nil) end
+    else
+        self:placeShipAtArrival(jump.from)
+    end
     self.player:setShip(self.playerShip)
     UIViewInGame:setPlayer(self.player)
     self:populateSystem()
@@ -2524,7 +2603,11 @@ function LimitTheoryRedux:finishJump()
     self.jump = nil
     self.jumpFade = Config.game.jumpGates.fadeTime
     self.systemBanner = SYSTEM_BANNER_TIME
-    self:continueCourse()
+    if jump.arrival then
+        self:dockFromSave(jump.arrival)
+    else
+        self:continueCourse()
+    end
 end
 
 --- Put the player's ship (a new one of the same kind: it arrives at rest)
