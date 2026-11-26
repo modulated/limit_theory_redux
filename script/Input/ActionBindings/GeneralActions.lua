@@ -53,6 +53,23 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardX) },
     }),
 
+    --- Save into the quicksave slot.
+    ---@type ActionBinding
+    QuickSave = ActionBinding({
+        label = "Quicksave", group = "General",
+        keyboard = { Control.Single(Button.KeyboardF4) },
+    }),
+
+    --- Load the quicksave.
+    ---@type ActionBinding
+    QuickLoad = ActionBinding({
+        label = "Quickload", group = "General",
+        keyboard = {
+            Control.Combo(Button.KeyboardControlLeft, Button.KeyboardF4),
+            Control.Combo(Button.KeyboardControlRight, Button.KeyboardF4),
+        },
+    }),
+
     --- Lock the nearest hostile ship; again, the next nearest.
     ---@type ActionBinding
     TargetNearest = ActionBinding({

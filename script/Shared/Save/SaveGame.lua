@@ -339,6 +339,7 @@ end
 function SaveGame.save(game, slot)
     local okCapture, state = pcall(SaveGame.capture, game)
     if not okCapture then return false, "could not gather the game: " .. tostring(state) end
+    SaveGame.invalidate()
     return SaveFile.write(SaveGame.path(slot), SaveGame.summary(game, slot), state)
 end
 
@@ -371,16 +372,62 @@ function SaveGame.list()
     return rows
 end
 
+--- The slot list as the screens show it: read once and kept until a save is
+--- written (the screens draw every frame; the disk is read when it changed).
+---@type table[]|nil
+SaveGame.cached = nil
+
+---@return table[]
+function SaveGame.listCached()
+    if not SaveGame.cached then SaveGame.cached = SaveGame.list() end
+    return SaveGame.cached
+end
+
+--- Forget the cached list (a save was written, or a screen opened).
+function SaveGame.invalidate()
+    SaveGame.cached = nil
+end
+
 --- The most recent save in any slot, for Continue.
 ---@return string|nil slot
 function SaveGame.latest()
     local best, bestAt = nil, -1
-    for _, row in ipairs(SaveGame.list()) do
+    for _, row in ipairs(SaveGame.listCached()) do
         if row.meta and (row.meta.savedAt or 0) > bestAt then
             best, bestAt = row.slot, row.meta.savedAt or 0
         end
     end
     return best
+end
+
+--- A save's summary in two lines, for the screens: where it was, then
+--- what the player had and when.
+---@param meta table|nil
+---@return string where
+---@return string what
+function SaveGame.describeLines(meta)
+    if not meta then return "Empty", "" end
+    local where = meta.system or "?"
+    if meta.docked then where = where .. "  ·  docked at " .. meta.docked end
+    local parts = {}
+    if meta.credits then
+        local digits = tostring(math.floor(meta.credits)):reverse():gsub("(%d%d%d)", "%1,"):reverse()
+        parts[#parts + 1] = (digits:gsub("^,", "")) .. " cr"
+    end
+    if meta.ship then parts[#parts + 1] = meta.ship end
+    local t = meta.playTime or 0
+    parts[#parts + 1] = string.format("%dh %02dm played", math.floor(t / 3600), math.floor(t / 60) % 60)
+    if meta.savedAt then parts[#parts + 1] = os.date("%Y-%m-%d %H:%M", meta.savedAt) end
+    return where, table.concat(parts, "  ·  ")
+end
+
+--- A save's summary in one line.
+---@param meta table|nil
+---@return string
+function SaveGame.describe(meta)
+    if not meta then return "Empty" end
+    local where, what = SaveGame.describeLines(meta)
+    return where .. "  ·  " .. what
 end
 
 return SaveGame

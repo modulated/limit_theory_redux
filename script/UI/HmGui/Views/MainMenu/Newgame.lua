@@ -208,7 +208,7 @@ NewgameView:addContent(UIComponent.MenuScreen {
         UIComponent.MenuSidebar {
             contents = {
                 UIComponent.MenuLabel { x = 0, y = 88, w = MenuStyle.SIDEBAR_WIDTH, h = 70, size = 54, align = "center", text = "NEW GAME", color = MenuStyle.color.text },
-                UIComponent.MenuMainNav { selected = 1 },
+                UIComponent.MenuMainNav { selected = 2 },
                 UIComponent.MenuButton { x = 17, y = 996, w = 140, h = 44, title = "Back", callback = switchToMainScreen },
                 UIComponent.MenuButton {
                     x = 178, y = 996, w = 140, h = 44, title = "Start", style = "go",

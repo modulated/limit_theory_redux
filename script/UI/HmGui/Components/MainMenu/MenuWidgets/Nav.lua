@@ -5,7 +5,9 @@ local value, widget = Common.value, Common.widget
 
 ---The sidebar's nav list: uppercase items, the selected (or hovered) one
 ---between two thin rules.
----@param args { y: number, items: { title: string, callback: function }[], selected: integer|function|nil, align: string|nil, itemHeight: number|nil, size: number|nil, indent: number|nil }
+---An item with `enabled` (a function) that answers false is drawn dimmed and
+---cannot be clicked.
+---@param args { y: number, items: { title: string, callback: function, enabled: function|nil }[], selected: integer|function|nil, align: string|nil, itemHeight: number|nil, size: number|nil, indent: number|nil }
 local function Nav(args)
     local itemHeight = args.itemHeight or 66
     local size = args.size or 30
@@ -15,7 +17,8 @@ local function Nav(args)
         local selected = value(args.selected)
         for index, item in ipairs(args.items) do
             MenuStyle.beginAt(ctx, 0, args.y + (index - 1) * itemHeight, width, itemHeight)
-            local hover = Gui:isMouseOver(FocusType.Mouse)
+            local enabled = not item.enabled or item.enabled()
+            local hover = enabled and Gui:isMouseOver(FocusType.Mouse)
             if hover or index == selected then
                 for _, edge in ipairs({ AlignVertical.Top, AlignVertical.Bottom }) do
                     Gui:rect()
@@ -24,7 +27,8 @@ local function Nav(args)
                     Gui:setBackgroundColor(C.rule)
                 end
             end
-            Gui:text(string.upper(item.title), MenuStyle.fontOf("light", size), hover and C.textHover or C.text)
+            Gui:text(string.upper(item.title), MenuStyle.fontOf("light", size),
+                (not enabled and C.disabled) or (hover and C.textHover) or C.text)
             if args.align == "left" then
                 Gui:setAlignment(AlignHorizontal.Left, AlignVertical.Center)
                 Gui:setMarginEx(indent, 0, 0, 0)

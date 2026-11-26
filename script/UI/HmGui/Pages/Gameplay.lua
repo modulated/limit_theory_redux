@@ -20,6 +20,8 @@ local SystemMapView = require("UI.HmGui.Views.Gameplay.SystemMap")
 Gameplay:addViewToPage(SystemMapView)
 local StationView = require("UI.HmGui.Views.Gameplay.Station")
 Gameplay:addViewToPage(StationView)
+local SaveSlotsView = require("UI.HmGui.Views.Gameplay.SaveSlots")
+Gameplay:addViewToPage(SaveSlotsView)
 
 local deathTextVisible = false
 

@@ -33,6 +33,20 @@ local menuContainer = UIComponent.Container {
             end
         },
         UIComponent.Button_MainMenu {
+            title = "Save Game",
+            size = ResponsiveSize(200, 40, true),
+            font = { name = "Unageo-Medium", size = 20 },
+            align = { AlignHorizontal.Center, AlignVertical.Center },
+            callback = function() LimitTheoryRedux:openSaveSlots("save") end
+        },
+        UIComponent.Button_MainMenu {
+            title = "Load Game",
+            size = ResponsiveSize(200, 40, true),
+            font = { name = "Unageo-Medium", size = 20 },
+            align = { AlignHorizontal.Center, AlignVertical.Center },
+            callback = function() LimitTheoryRedux:openSaveSlots("load") end
+        },
+        UIComponent.Button_MainMenu {
             title = "Controls",
             size = ResponsiveSize(200, 40, true),
             font = { name = "Unageo-Medium", size = 20 },

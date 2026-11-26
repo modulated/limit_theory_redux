@@ -338,6 +338,7 @@ end
 function LimitTheoryRedux:closePauseMenu()
     self.pauseMenuOpen = false
     self.controlsOpen = false
+    self.saveSlotsMode = nil
     GameState:Unpause()
     if self.docked then
         -- Back to the station screen, which is where the game was
@@ -376,6 +377,16 @@ end
 
 --- Tear down the gameplay scene and return to the main menu.
 function LimitTheoryRedux:returnToMainMenu()
+    self:endGame()
+    -- The menu needs a free cursor (closePauseMenu re-applied the gameplay
+    -- capture); release it before switching back to the menu.
+    CursorManager:free()
+    self:initMainMenu()
+end
+
+--- End the game in progress: its systems stop and its scene goes. What
+--- follows is the main menu, or (loading a save) another game.
+function LimitTheoryRedux:endGame()
     self:closePauseMenu()
 
     if self._simTunnel then
@@ -401,12 +412,100 @@ function LimitTheoryRedux:returnToMainMenu()
     UIViewInGame:setPlayer(nil)
     UIViewInGame:setOverlayLines(nil)
     self.mapMode = 0
+    self.playerShip = nil
+    self.overviewShown = false
+end
 
-    -- The menu needs a free cursor (closePauseMenu re-applied the gameplay
-    -- capture just above); Release it before switching back to the menu.
-    CursorManager:free()
+------------------------------------------------------------------------------
+-- Saving and loading (Shared/Save/SaveGame.lua: what is kept and how)
+------------------------------------------------------------------------------
 
-    self:initMainMenu()
+--- Save the game into a slot.
+---@param slot string
+---@param quiet boolean|nil no message on success (the autosave)
+---@return boolean ok
+---@return string|nil problem
+function LimitTheoryRedux:saveGame(slot, quiet)
+    if not self.playerShip or not self.playerShip:isValid() then return false, "no game to save" end
+    if self.jump or self.rebuildInFrames then return false, "not during a jump" end
+    local ok, problem = SaveGame.save(self, slot)
+    if ok then
+        if not quiet then
+            self:notify(string.format("Saved: %s", SaveGame.SLOT_NAMES[slot] or slot), { 0.6, 0.9, 1.0 })
+        end
+    else
+        Log.Error("Save to %s failed: %s", slot, tostring(problem))
+        self:notify("Could not save: " .. tostring(problem), { 1.0, 0.4, 0.3 })
+    end
+    return ok, problem
+end
+
+--- Load a slot: the game in progress (if any) ends, and the saved one is
+--- made again from its seed and put back as it was.
+---@param slot string
+---@return boolean ok
+---@return string|nil problem
+function LimitTheoryRedux:loadGame(slot)
+    local meta, state, fromBackup = SaveGame.read(slot)
+    if not meta then
+        local problem = tostring(state)
+        Log.Warn("Load of %s failed: %s", slot, problem)
+        SaveGame.lastProblem = string.format("%s: %s", SaveGame.SLOT_NAMES[slot] or slot, problem)
+        if self.playerShip then self:notify("Could not load: " .. problem, { 1.0, 0.4, 0.3 }) end
+        return false, problem
+    end
+    SaveGame.lastProblem = nil
+
+    -- The scene in hand goes now and the saved one is built a few frames
+    -- later, as Regenerate and a jump do: the GPU frees the old scene's
+    -- textures only once the frames that drew them are done, and building at
+    -- once would need room for both
+    if self._simTunnel then self:endGame() end
+    self:cleanupMenuBackground()
+    if GameState.paused then GameState:Unpause() end
+    self.pendingLoad = {
+        state = state,
+        seed = SaveGame.unpackSeed(state.game.seed),
+        scenario = Scenarios.find(state.game and state.game.scenario) or Scenarios.default,
+        slot = slot,
+        fromBackup = fromBackup,
+        frames = REBUILD_DELAY_FRAMES,
+    }
+    return true
+end
+
+--- The second half of a load: build the saved game.
+function LimitTheoryRedux:finishLoadGame()
+    local pending = self.pendingLoad
+    self.pendingLoad = nil
+    self.loading = true
+    self:startGame(pending.seed, pending.scenario, pending.state)
+    self.loading = false
+    local name = SaveGame.SLOT_NAMES[pending.slot] or pending.slot
+    self:notify(string.format("Loaded: %s%s", name,
+        pending.fromBackup and " (its last save was damaged: the one before it was loaded)" or ""),
+        pending.fromBackup and { 1.0, 0.7, 0.3 } or { 0.6, 0.9, 1.0 })
+end
+
+--- Save into the autosave slot (on docking), quietly. Not while a save is
+--- being loaded (that docking is the load's own).
+function LimitTheoryRedux:autosave()
+    if self.loading then return end
+    self:saveGame("autosave", true)
+end
+
+--- The pause menu's Save and Load screens.
+---@param mode string "save" or "load"
+function LimitTheoryRedux:openSaveSlots(mode)
+    SaveGame.invalidate()
+    self.saveSlotsMode = mode
+    UIPageGameplay:setView("SaveSlots")
+end
+
+--- Back from them to the pause menu.
+function LimitTheoryRedux:closeSaveSlots()
+    self.saveSlotsMode = nil
+    UIPageGameplay:setView("Paused")
 end
 
 --- Start a game: the scenario's star system (ruleset-driven generation, then
@@ -1183,6 +1282,7 @@ function LimitTheoryRedux:dockAt(dock)
     local inRange, refused = self:dockInRange()
     if inRange and SystemOverview.same(inRange.entity, dock.entity) then
         self:dockPlayer(dock)
+        self:autosave()
         return
     end
     if refused and SystemOverview.same(refused.entity, dock.entity) then
@@ -1228,6 +1328,7 @@ function LimitTheoryRedux:processArrivalAction()
             self.arrivalAction = nil
             AutoPilotSystem:disengage(self.playerShip)
             self:dockPlayer(dock)
+            self:autosave()
             return
         end
         if refused and SystemOverview.same(refused.entity, action.entity) then
@@ -2945,6 +3046,14 @@ end
 
 ---@param data EventData
 function LimitTheoryRedux:onInput(data)
+    -- A load waits a few frames between the old scene going and the saved one
+    -- being built (loadGame); nothing else happens meanwhile
+    if self.pendingLoad then
+        self.pendingLoad.frames = self.pendingLoad.frames - 1
+        if self.pendingLoad.frames <= 0 then self:finishLoadGame() end
+        return
+    end
+
     if self:handleAppInput() then return end
 
     -- Regenerate waits a few frames between tearing down and building
@@ -2972,6 +3081,8 @@ function LimitTheoryRedux:onInput(data)
     if Input:isPressed(ApplicationBindings.Escape) then
         if self.controlsOpen then
             self:closeControls()
+        elseif self.saveSlotsMode then
+            self:closeSaveSlots()
         elseif self.mapMode ~= 0 and not self.pauseMenuOpen then
             self:closeMap()
         elseif self.pauseMenuOpen then
@@ -2991,6 +3102,8 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.Cloak:update(dt)
     GeneralActions.Overview:update(dt)
     GeneralActions.TargetNearest:update(dt)
+    GeneralActions.QuickSave:update(dt)
+    GeneralActions.QuickLoad:update(dt)
     GeneralActions.Mine:update(dt)
     GeneralActions.Repair:update(dt)
     for slot, binding in ipairs({ GeneralActions.Module1, GeneralActions.Module2,
@@ -3097,6 +3210,15 @@ function LimitTheoryRedux:onInput(data)
         self:targetNearestHostile()
     end
 
+    -- F4 quicksaves, Ctrl+F4 quickloads (checked first: F4 alone is down too)
+    local ctrl = Input:isDown(Button.KeyboardControlLeft) or Input:isDown(Button.KeyboardControlRight)
+    if GeneralActions.QuickLoad:isPressed() then
+        self:loadGame("quicksave")
+        return
+    elseif GeneralActions.QuickSave:isPressed() and not ctrl then
+        self:saveGame("quicksave")
+    end
+
     if GeneralActions.Dock:isPressed() and self:isTravelGame() then
         if self.docked then
             self:undockPlayer()
@@ -3104,6 +3226,7 @@ function LimitTheoryRedux:onInput(data)
             local dock, refused = self:dockInRange()
             if dock then
                 self:dockPlayer(dock)
+                self:autosave()
             elseif refused then
                 self:notify(Factions.name(refused.faction) .. " refuse you docking.", { 1.0, 0.4, 0.3 })
             end
