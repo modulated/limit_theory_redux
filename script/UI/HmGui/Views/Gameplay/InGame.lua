@@ -374,4 +374,14 @@ InGame:addContent({
     end
 })
 
+-- A question the game needs answered (before an attack turns a faction
+-- hostile): after the overview, so it sits over it
+local ConfirmDialog = require("UI.HmGui.Views.Gameplay.ConfirmDialog")
+InGame:addContent({
+    state = {},
+    render = function()
+        ConfirmDialog.render()
+    end
+})
+
 return InGame

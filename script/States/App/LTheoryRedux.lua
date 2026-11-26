@@ -1003,7 +1003,9 @@ end
 --- seen through.
 ---@param dt number
 function LimitTheoryRedux:updateOverview(dt)
-    local showing = self:overviewShowing()
+    -- The cursor is the UI's while the overview or a question is on screen
+    local overview = self:overviewShowing()
+    local showing = overview or self:confirmationShowing()
     if showing ~= (self.overviewHoldsCursor == true) then
         self.overviewHoldsCursor = showing
         if self.player then self.player:setMouseSteering(not showing) end
@@ -1016,7 +1018,7 @@ function LimitTheoryRedux:updateOverview(dt)
     if showing then
         -- Freed every frame, since a camera switch re-grabs it
         CursorManager:free()
-        SystemOverview:update(self, dt)
+        if overview then SystemOverview:update(self, dt) end
     else
         UIMouse.overPanel = false
     end
@@ -1188,11 +1190,13 @@ end
 --- hostile is only marked and followed on the HUD: shooting it is Attack.
 ---@param entity Entity
 ---@param name string|nil
-function LimitTheoryRedux:lockTarget(entity, name)
+---@param faction string|nil the ship's faction (Attack's warning needs it)
+function LimitTheoryRedux:lockTarget(entity, name, faction)
     if not entity or not entity:isValid() then return end
     if SystemOverview.same(entity, self.playerShip) then return end
     self.target = entity
     self.targetName = name or "target"
+    self.targetFaction = faction
     -- A new lock is not an attack on it, even if the last one was
     self.attacking = false
     self:notify(string.format("Target locked: %s", self.targetName), { 1.0, 0.85, 0.35 })
@@ -1200,13 +1204,15 @@ end
 
 --- Lock a ship and open fire on it, hostile or not. Shooting a ship whose
 --- faction is not hostile costs standing with that faction, hit by hit
---- (Reputation), and enough of it turns the whole faction against the player.
+--- (Reputation), and enough of it turns the whole faction against the
+--- player -- which the player is asked to confirm before it can happen
+--- (see `updateTargeting`).
 ---@param entity Entity
 ---@param name string|nil
----@param faction string|nil the ship's faction, for the warning
+---@param faction string|nil the ship's faction
 function LimitTheoryRedux:attackTarget(entity, name, faction)
     if not entity or not entity:isValid() then return end
-    self:lockTarget(entity, name)
+    self:lockTarget(entity, name, faction)
     self.attacking = true
     local who = faction and Factions.name(faction) or "its faction"
     self:notify(string.format("Attacking %s: every hit costs standing with %s", self.targetName, who),
@@ -1218,7 +1224,7 @@ function LimitTheoryRedux:clearTarget()
     if self.target then
         self:notify("Target released.", { 0.75, 0.8, 0.85 })
     end
-    self.target, self.targetName, self.attacking = nil, nil, false
+    self.target, self.targetName, self.targetFaction, self.attacking = nil, nil, nil, false
 end
 
 --- Whether a given entity is the locked target.
@@ -1228,6 +1234,111 @@ function LimitTheoryRedux:isTarget(entity)
     return SystemOverview.same(self.target, entity)
 end
 
+--- Lock the nearest hostile ship (Tab). Pressed again with one locked, the
+--- next nearest after it, round to the nearest again: a way through every
+--- hostile in the system without the mouse.
+function LimitTheoryRedux:targetNearestHostile()
+    if not self.playerShip or not self.playerShip:isValid() or not self.npcs then return end
+    local rbCmp = self.playerShip:get(PhysicsComponents.RigidBody)
+    local here = rbCmp and rbCmp:getRigidBody() and rbCmp:getRigidBody():getPos()
+    if not here then return end
+    local hostiles = {}
+    for _, npc in ipairs(self.npcs:mapEntries()) do
+        if npc.faction and npc.entity:isValid() and Factions.isHostile(npc.faction, Factions.Player) then
+            local body = npc.entity:get(PhysicsComponents.RigidBody)
+            local pos = body and body:getRigidBody() and body:getRigidBody():getPos()
+            if pos then
+                local dx, dy, dz = pos.x - here.x, pos.y - here.y, pos.z - here.z
+                hostiles[#hostiles + 1] = { npc = npc, d = dx * dx + dy * dy + dz * dz }
+            end
+        end
+    end
+    if #hostiles == 0 then
+        self:notify("No hostile ships in this system.", { 0.75, 0.8, 0.85 })
+        return
+    end
+    table.sort(hostiles, function(a, b) return a.d < b.d end)
+    local pick = 1
+    for i, h in ipairs(hostiles) do
+        if self:isTarget(h.npc.entity) then
+            pick = i % #hostiles + 1
+            break
+        end
+    end
+    local npc = hostiles[pick].npc
+    self:lockTarget(npc.entity, npc.label, npc.faction)
+end
+
+--- Whether attacking a ship of this faction could turn the faction hostile
+--- soon: the next kill, and a few hits besides, would take the standing
+--- past the hostile line. A kill is the big step (Config.game.reputation
+--- .killPenalty against 0.01 a hit), so the question has to be asked before
+--- the ship dies, not when the line is already crossed.
+---@param faction string|nil
+---@return boolean
+function LimitTheoryRedux:attackRisksHostility(faction)
+    if not faction or Reputation:isHostile(faction) then return false end
+    local cfg = Config.game.reputation
+    local margin = cfg.killPenalty + (cfg.hostilityWarningHits or 3) * cfg.damagePenalty
+    return Reputation:get(faction) - margin < Config.game.dispoHostileThreshold
+end
+
+--- Ask before an attack turns a faction hostile. The turrets hold fire on
+--- the target until the player answers: Keep attacking accepts that faction
+--- turning (it is not asked about again this game), Hold fire stops the
+--- attack and keeps the lock.
+function LimitTheoryRedux:askHostilityConfirmation()
+    local faction, name = self.targetFaction, self.targetName or "the target"
+    local factionName = Factions.name(faction)
+    -- The stations belong to one faction (Config.game.docking.owner): only
+    -- turning that one closes them
+    local docking = Config.game.docking and Config.game.docking.owner
+    local consequence = faction == docking
+        and "their ships will attack you on sight, and the stations will refuse you docking."
+        or "their ships will attack you on sight."
+    self.confirmation = {
+        kind = "hostility",
+        faction = faction,
+        title = string.format("Turn %s hostile?", factionName),
+        lines = {
+            string.format("Keep attacking %s, and %s will turn hostile:", name, factionName),
+            consequence,
+            string.format("Standing now %+.2f; hostile below %+.2f.",
+                Reputation:get(faction), Config.game.dispoHostileThreshold),
+            "Your guns hold fire on it until you choose.",
+        },
+        confirm = "Keep attacking",
+        cancel = "Hold fire",
+        onConfirm = function()
+            self.hostilityAccepted[faction] = true
+            self:notify(string.format("Attacking %s: %s will turn hostile.", name, factionName),
+                { 1.0, 0.45, 0.35 })
+        end,
+        onCancel = function()
+            self.attacking = false
+            self:notify(string.format("Holding fire on %s.", name), { 0.75, 0.8, 0.85 })
+        end,
+    }
+end
+
+--- The player answered the confirmation on screen.
+---@param confirmed boolean
+function LimitTheoryRedux:answerConfirmation(confirmed)
+    local confirmation = self.confirmation
+    if not confirmation then return end
+    self.confirmation = nil
+    local run = confirmed and confirmation.onConfirm or confirmation.onCancel
+    if run then run() end
+end
+
+--- Whether a confirmation is on the screen now (in flight; it waits through
+--- a map or the pause menu).
+---@return boolean
+function LimitTheoryRedux:confirmationShowing()
+    return self.confirmation ~= nil and self.playerShip ~= nil
+        and not self.docked and (self.mapMode or 0) == 0 and not self.pauseMenuOpen
+end
+
 --- Each frame: drop a target that has gone, and tell the turrets about the
 --- one that has not. The battery is rebuilt with the ship (an undock, a
 --- jump, a change of ship), so this is set every frame rather than once.
@@ -1235,15 +1346,32 @@ function LimitTheoryRedux:updateTargeting()
     if self.target and (not self.target:isValid() or self.docked or self.jump) then
         local name = self.targetName
         local destroyed = not self.target:isValid()
-        self.target, self.targetName, self.attacking = nil, nil, false
+        self.target, self.targetName, self.targetFaction, self.attacking = nil, nil, nil, false
         if destroyed and name then
             self:notify(string.format("Target lost: %s", name), { 0.75, 0.8, 0.85 })
         end
     end
+
+    -- Before an attack can turn a faction hostile, hold fire and ask
+    local firing = self.attacking and self.target ~= nil
+    self.hostilityAccepted = self.hostilityAccepted or {}
+    local faction = self.targetFaction
+    if firing and faction and not self.hostilityAccepted[faction]
+            and self:attackRisksHostility(faction) then
+        firing = false
+        if not self.confirmation then self:askHostilityConfirmation() end
+    end
+    -- A question about an attack that is no longer going on is withdrawn
+    local asking = self.confirmation
+    if asking and asking.kind == "hostility"
+            and (not self.attacking or not self.target or asking.faction ~= faction) then
+        self.confirmation = nil
+    end
+
     local battery = self.playerBattery
     if battery then
         battery.focusTargetEntity = self.target
-        battery.attackEntity = self.attacking and self.target or nil
+        battery.attackEntity = firing and self.target or nil
     end
 end
 
@@ -1554,6 +1682,8 @@ function LimitTheoryRedux:resetGalaxy()
     self.course = nil
     self.jump = nil
     Reputation:reset()
+    -- Which factions the player chose to turn against: asked afresh each game
+    self.hostilityAccepted = {}
     PlayerWallet:reset()
     PlayerCargo:reset()
     PlayerFactories:reset()
@@ -1743,7 +1873,8 @@ function LimitTheoryRedux:destroyScene(keepShip)
     -- The overview's list and anything it set going belong to this system
     SystemOverview:invalidate()
     self.lookingAt, self.arrivalAction = nil, nil
-    self.target, self.targetName, self.attacking = nil, nil, false
+    self.target, self.targetName, self.targetFaction, self.attacking = nil, nil, nil, false
+    self.confirmation = nil
     if self.scenario and self.scenario.teardown then
         self.scenario.teardown(self)
     end
@@ -2759,6 +2890,7 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.Dock:update(dt)
     GeneralActions.Cloak:update(dt)
     GeneralActions.Overview:update(dt)
+    GeneralActions.TargetNearest:update(dt)
     GeneralActions.Mine:update(dt)
     GeneralActions.Repair:update(dt)
     for slot, binding in ipairs({ GeneralActions.Module1, GeneralActions.Module2,
@@ -2859,6 +2991,10 @@ function LimitTheoryRedux:onInput(data)
 
     if GeneralActions.Overview:isPressed() and self:overviewAvailable() then
         self:setOverview(not self.overviewShown)
+    end
+
+    if GeneralActions.TargetNearest:isPressed() and self:isTravelGame() and not self.docked then
+        self:targetNearestHostile()
     end
 
     if GeneralActions.Dock:isPressed() and self:isTravelGame() then

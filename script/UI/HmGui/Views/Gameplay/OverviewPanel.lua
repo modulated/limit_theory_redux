@@ -44,6 +44,8 @@ local CHIP_OFF = Color(0.06, 0.09, 0.13, 1.00)
 local MENU_BG = Color(0.03, 0.05, 0.09, 0.96)
 local BAR_BG = Color(0.10, 0.60, 1.00, 0.12)
 local BAR_KNOB = Color(0.10, 0.60, 1.00, 0.70)
+local BAR_KNOB_HELD = Color(0.35, 0.75, 1.00, 0.95)
+local BAR_HOVER = Color(0.10, 0.60, 1.00, 0.25)
 local NO_COLOR = Color(0, 0, 0, 0)
 
 --- Each category's colour for the name column (ships use their faction's).
@@ -59,7 +61,7 @@ local HOSTILE = Color(1.00, 0.38, 0.32, 1.00)
 --- Sizes in HUD pixels (1080p): the panel, its columns, its rows.
 local WIDTH = 440
 local COL_NAME, COL_KIND, COL_DIST = 224, 84, 96
-local BAR_WIDTH = 5
+local BAR_WIDTH = 10      -- wide enough to grab
 local ROW_HEIGHT = 21
 local DOUBLE_CLICK = 0.35 -- seconds
 local WHEEL_ROWS = 3      -- rows a notch of the wheel scrolls
@@ -83,6 +85,9 @@ local menu = nil
 local lastClick = { entity = nil, time = -1 }
 --- The first row shown (0 = the top of the list).
 local scroll = 0
+--- The knob being dragged: where the cursor and the list were when it was
+--- grabbed, or nil.
+local drag = nil
 
 local same = SystemOverview.same
 
@@ -163,7 +168,7 @@ local function actionsFor(entry)
             end
             add("Release target", function() game:clearTarget() end)
         else
-            add("Target", function() game:lockTarget(entry.entity, entry.name) end)
+            add("Target", function() game:lockTarget(entry.entity, entry.name, entry.faction) end)
             if not entry.hostile then
                 add("Attack", function() game:attackTarget(entry.entity, entry.name, entry.faction) end)
             end
@@ -333,22 +338,70 @@ local function drawRow(entry, apTarget)
     return nil
 end
 
---- The scroll bar beside the rows: a track the height of the rows shown,
---- and a knob whose size and place are the share of the list in view.
+--- The knob's size and place on the track, in HUD pixels.
+---@param total integer
+---@param rows integer
+---@return number trackHeight, number knob, number top
+local function knobGeometry(total, rows)
+    local trackHeight = rows * ROW_HEIGHT
+    if total <= rows then return trackHeight, trackHeight, 0 end
+    local knob = math.max(14, math.floor(trackHeight * rows / total))
+    local top = math.floor((trackHeight - knob) * scroll / math.max(1, total - rows))
+    return trackHeight, knob, top
+end
+
+--- One piece of the track; returns whether it was pressed this frame.
+local function trackPiece(height, color, hoverColor)
+    Gui:beginStackContainer()
+    Gui:setFixedSize(BAR_WIDTH, math.max(0, height))
+    local hover = Gui:isMouseOver(FocusType.Mouse)
+    Gui:setBackgroundColor(hover and hoverColor or color)
+    Gui:endContainer()
+    return hover and Input:mouse():isPressed(MouseControl.Left)
+end
+
+--- The scroll bar beside the rows: a track the height of the rows shown and
+--- a knob whose size and place are the share of the list in view. Drag the
+--- knob to scroll; click the track above or below it for a page.
+---
+--- The track is three pieces -- above the knob, the knob, below it -- each
+--- asking for the mouse, so where a click lands needs no screen coordinates.
 ---@param total integer
 ---@param rows integer
 local function drawScrollbar(total, rows)
-    local trackHeight = rows * ROW_HEIGHT
+    local trackHeight, knob, top = knobGeometry(total, rows)
     Gui:beginVerticalContainer()
     Gui:setFixedSize(BAR_WIDTH, trackHeight)
-    Gui:setBackgroundColor(total > rows and BAR_BG or NO_COLOR)
     if total > rows then
-        local knob = math.max(12, math.floor(trackHeight * rows / total))
-        local top = math.floor((trackHeight - knob) * scroll / math.max(1, total - rows))
-        box(BAR_WIDTH, top, nil)
-        box(BAR_WIDTH, knob, BAR_KNOB)
+        local dragging = drag ~= nil
+        if trackPiece(top, BAR_BG, BAR_HOVER) then
+            scroll = scroll - rows
+        end
+        if trackPiece(knob, dragging and BAR_KNOB_HELD or BAR_KNOB, BAR_KNOB_HELD) then
+            drag = { y = Input:mouse():position().y, scroll = scroll }
+        end
+        if trackPiece(trackHeight - top - knob, BAR_BG, BAR_HOVER) then
+            scroll = scroll + rows
+        end
     end
     Gui:endContainer()
+end
+
+--- While the knob is held: the list follows the cursor, the knob's travel
+--- standing for the whole list. Let go and the drag ends.
+---@param total integer
+---@param rows integer
+---@param s number the HUD scale (the cursor moves in screen pixels)
+local function followDrag(total, rows, s)
+    if not drag then return end
+    if not Input:mouse():isDown(MouseControl.Left) or total <= rows then
+        drag = nil
+        return
+    end
+    local trackHeight, knob = knobGeometry(total, rows)
+    local travel = math.max(1, trackHeight - knob)
+    local moved = (Input:mouse():position().y - drag.y) / s
+    scroll = drag.scroll + math.floor(moved * (total - rows) / travel + 0.5)
 end
 
 --- The whole panel, and the menu over it.
@@ -365,9 +418,12 @@ function OverviewPanel.render()
     local list = SystemOverview:visible()
     local rows = math.max(1, cfg.maxRows or 18)
     local total = #list
+    -- A question on screen has the mouse: the list waits for it
+    local modal = game.confirmationShowing and game:confirmationShowing()
+    if modal then drag = nil end
     -- The wheel scrolls the list while the cursor is over the panel (last
     -- frame's answer: the panel has not been laid out yet this frame)
-    if UIMouse.overPanel and not menu then
+    if UIMouse.overPanel and not menu and not modal and not drag then
         local wheel = Input:mouse():value(MouseControl.ScrollY)
         if math.abs(wheel) > 0.001 then
             -- Notches, rounded away from zero symmetrically (floor(x - 0.5)
@@ -377,6 +433,7 @@ function OverviewPanel.render()
             scroll = scroll - notches * WHEEL_ROWS
         end
     end
+    followDrag(total, rows, s)
     scroll = math.max(0, math.min(scroll, math.max(0, total - rows)))
     local apTarget = autopilotTarget()
     local clickedEntry, clickKind = nil, nil
@@ -429,11 +486,13 @@ function OverviewPanel.render()
     box(4, 1, nil)
     drawScrollbar(total, rows)
     Gui:endContainer()
+    -- A page click on the track may have gone past an end
+    scroll = math.max(0, math.min(scroll, math.max(0, total - rows)))
 
     -- Where the list is, and what it leaves out
     local footer
     if total > rows then
-        footer = string.format("%d-%d of %d  ·  wheel to scroll", scroll + 1, math.min(total, scroll + rows), total)
+        footer = string.format("%d-%d of %d  ·  wheel or drag to scroll", scroll + 1, math.min(total, scroll + rows), total)
     else
         footer = string.format("%d listed", total)
     end
@@ -448,7 +507,9 @@ function OverviewPanel.render()
 
     -- The menu, over everything
     local overMenu = drawMenu(s)
-    UIMouse.overPanel = overPanel or overMenu
+    -- A drag holds the mouse wherever the cursor wanders: the left button is
+    -- also the fire button, and the cameras have no business with it either
+    UIMouse.overPanel = overPanel or overMenu or drag ~= nil
 
     -- Clicks: a press outside an open menu closes it; on a row it selects,
     -- doubles to approach, or opens the menu there

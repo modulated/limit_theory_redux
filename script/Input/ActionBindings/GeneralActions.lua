@@ -53,6 +53,13 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardX) },
     }),
 
+    --- Lock the nearest hostile ship; again, the next nearest.
+    ---@type ActionBinding
+    TargetNearest = ActionBinding({
+        label = "Target nearest hostile (again: next)", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardTab) },
+    }),
+
     --- The overview: what is in the system, nearest first. While it is open
     --- the cursor is free for it and the mouse does not steer.
     ---@type ActionBinding

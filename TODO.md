@@ -31,8 +31,10 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    - [x] The overview (O): everything in the system, filtered by category (asteroids only
          within `Config.game.overview.asteroidRange`), sorted by any column, scrolled with the
          wheel, filters and sort remembered in user.ini; right click for Target, Attack, Look at,
-         Approach, Dock or Jump (now, or on arrival) and Show on map. Still to do: dragging the
-         scroll bar; a key to target the nearest hostile; naming systems' belts.
+         Approach, Dock or Jump (now, or on arrival) and Show on map; the scroll bar drags and
+         pages; Tab locks the nearest hostile (again: the next). Still to do: naming systems'
+         belts; deleting the legacy System_Map view (UI/HmGui/Views/Gameplay/SystemMap.lua),
+         which nothing opens and whose Tab binding is dead.
 4. **Obstacle avoidance.** Autopilot flies straight lines and can fly through a planet. Expose
    `Physics::shape_cast`/`shape_overlap` (`engine/lib/phx/src/physics/physics.rs`) to Lua, then
    steer around bodies' bounding spheres. Optional: smooth routes with a 3D Catmull-Rom or
@@ -77,8 +79,9 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          replaced this fork's port of Legacy's flecks; the clouds need their texture pass and
          shader converted).
    - [ ] Reputation from more than kills and hits (escorting, trading) once there is more
-         to do. The player can now attack a neutral ship (the overview's Attack), which costs
-         standing hit by hit; nothing yet warns before a faction turns hostile.
+         to do. The player can attack a neutral ship (the overview's Attack), which costs
+         standing hit by hit; the guns hold fire and a dialog asks before the next kill could
+         turn the faction hostile.
    - [ ] Credits only come from bounties, trading and mining sales; they go on hull repairs,
          factory leases, fittings and hulls. Insurance, fuel and ammunition are the obvious sinks
          still missing.

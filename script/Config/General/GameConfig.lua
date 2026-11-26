@@ -231,6 +231,9 @@ Config.game = {
         killPenalty    = 0.25, -- destroying a ship of a faction
         enemyKillBonus = 0.05, -- ...to each faction hostile to it
         damagePenalty  = 0.01, -- per hit on a ship of a faction
+        -- An attack asks before it can turn a faction hostile: when the next
+        -- kill plus this many hits would cross Config.game.dispoHostileThreshold
+        hostilityWarningHits = 3,
     },
 
     -- How dangerous each star system is (galaxy map colour, arrival banner,
