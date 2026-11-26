@@ -1,9 +1,21 @@
 name: Release
 
+# Two kinds of build come out of here:
+#
+#   * a push to main makes a *nightly*: published over the `latest` tag,
+#     marked a prerelease, and unsigned. No signing key is needed, so an
+#     ordinary commit cannot fail the release on one.
+#   * a push of a version tag (v0.2.0, say) makes a *release*: published
+#     under that tag, not a prerelease, and signed with Minisign. Here the
+#     key is required, and a missing or malformed one fails the run.
+#
+# workflow_dispatch is the manual way to run either (the ref decides which).
 on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
     paths-ignore:
       - "**/README.md"
       - "**/CONTRIBUTING.md"
@@ -14,6 +26,7 @@ on:
       - "**/.gitignore"
       - "**/.gitattributes"
       - "**/.editorconfig"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,6 +41,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.build_name.outputs.build }}
+      kind: ${{ steps.build_name.outputs.kind }}
+      tag: ${{ steps.build_name.outputs.tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -44,11 +59,29 @@ jobs:
           echo "SHA_SHORT=$CALCULATED_SHA" >> $GITHUB_ENV
       - name: Confirm git commit SHA output
         run: echo $SHA_SHORT
-      - name: Confirm nightly build name
+      # A tag names its own build (v0.2.0 -> 0.2.0, which is what the engine
+      # reports); a commit on main is named by the package version and the
+      # commit it came from.
+      - name: Name this build
         id: build_name
+        shell: bash
         run: |
-          echo $NEXT_VERSION-$SHA_SHORT
-          echo build=$NEXT_VERSION-$SHA_SHORT >> $GITHUB_OUTPUT
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            BUILD="${TAG#v}"
+            KIND=tagged
+          else
+            TAG=latest
+            BUILD="${NEXT_VERSION}-${SHA_SHORT}"
+            KIND=nightly
+          fi
+          echo "A ${KIND} build: ${BUILD}, published as '${TAG}'"
+          {
+            echo "build=${BUILD}"
+            echo "kind=${KIND}"
+            echo "tag=${TAG}"
+          } >> "$GITHUB_OUTPUT"
 
   build-windows:
     needs: gen-build-version
@@ -155,6 +188,8 @@ jobs:
 
   release:
     name: New release
+    # The environment is where the signing key lives. A nightly reads nothing
+    # from it; a tagged release needs GAME_SIGNING_PRIVATE_KEY to be set here.
     environment: game-release-signing
     permissions:
       contents: write
@@ -177,11 +212,17 @@ jobs:
             archive="${directory%/}.zip"
             (cd "${directory}" && zip -r "../${archive}" .)
           done
+      # Signing is for tagged releases only. A nightly off main is unsigned,
+      # so no key is needed to publish one; for a tag the key is required and
+      # its absence fails the run rather than shipping something unsigned
+      # under a version number.
       - name: Install Minisign
+        if: needs.gen-build-version.outputs.kind == 'tagged'
         run: |
           sudo apt-get update
           sudo apt-get install -y minisign
       - name: Sign release archives
+        if: needs.gen-build-version.outputs.kind == 'tagged'
         shell: bash
         env:
           GAME_SIGNING_PRIVATE_KEY: ${{ secrets.GAME_SIGNING_PRIVATE_KEY }}
@@ -189,6 +230,7 @@ jobs:
           set -euo pipefail
           if [[ -z "${GAME_SIGNING_PRIVATE_KEY}" ]]; then
             echo "GAME_SIGNING_PRIVATE_KEY is not configured in the game-release-signing environment." >&2
+            echo "A tagged release is signed: add the key, or push the tag again once it is there." >&2
             exit 1
           fi
           umask 077
@@ -204,29 +246,38 @@ jobs:
           for archive in ./*.zip; do
             minisign -S -W -s "${key_path}" -m "${archive}" -x "${archive}.minisig" -t "Limit Theory Redux ${{ needs.gen-build-version.outputs.build }}"
           done
-      - name: echo repo
-        run: echo ${{github.repository}}
+      # A nightly always moves the `latest` tag onto the commit it was built
+      # from, so the old release and tag are cleared first. There may be
+      # nothing to clear -- the first nightly, or one after the release was
+      # deleted by hand -- and that is not a failure.
       - name: Get latest release ID
+        if: needs.gen-build-version.outputs.kind == 'nightly'
         uses: octokit/request-action@dad4362715b7fb2ddedf9772c8670824af564f0d # v2.4.0
         id: get_latest_release
+        continue-on-error: true
         with:
           route: GET /repos/${{github.repository}}/releases/tags/latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Delete latest release
+        if: needs.gen-build-version.outputs.kind == 'nightly' && steps.get_latest_release.outcome == 'success'
         uses: octokit/request-action@dad4362715b7fb2ddedf9772c8670824af564f0d # v2.4.0
+        continue-on-error: true
         with:
           route: DELETE /repos/${{github.repository}}/releases/{release_id}
           release_id: ${{ fromJson(steps.get_latest_release.outputs.data).id }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Delete 'latest' tag ref
+        if: needs.gen-build-version.outputs.kind == 'nightly'
         uses: octokit/request-action@dad4362715b7fb2ddedf9772c8670824af564f0d # v2.4.0
+        continue-on-error: true
         with:
           route: DELETE /repos/${{github.repository}}/git/refs/tags/latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Re-create 'latest' tag with the current SHA
+        if: needs.gen-build-version.outputs.kind == 'nightly'
         uses: octokit/request-action@dad4362715b7fb2ddedf9772c8670824af564f0d # v2.4.0
         with:
           route: POST /repos/${{github.repository}}/git/refs
@@ -234,16 +285,18 @@ jobs:
           sha: ${{ github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create release
+      - name: Publish
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: "Nightly ${{ needs.gen-build-version.outputs.build }}"
-          body: "Build log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          tag_name: latest
+          name: ${{ needs.gen-build-version.outputs.kind == 'tagged' && format('Limit Theory Redux {0}', needs.gen-build-version.outputs.build) || format('Nightly {0}', needs.gen-build-version.outputs.build) }}
+          body: |
+            Build log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            ${{ needs.gen-build-version.outputs.kind == 'tagged' && 'Each archive has a Minisign signature (.minisig) beside it.' || 'A nightly build off main, unsigned. Signed archives come with tagged releases.' }}
+          tag_name: ${{ needs.gen-build-version.outputs.tag }}
           draft: false
-          prerelease: true
+          prerelease: ${{ needs.gen-build-version.outputs.kind != 'tagged' }}
           files: |
             ./*.zip
             ./*.zip.minisig
