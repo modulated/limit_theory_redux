@@ -105,6 +105,20 @@ Config.game = {
             maxTurnRate    = 1.8,
             turnRateGain   = 6.0,
 
+            -- How the mouse steers in the chase camera.
+            --   "movement": push the mouse to hold a turn, which decays back
+            --     to straight when the mouse stops (`steeringDecay`, in
+            --     shares of the turn a second). Depends on nothing but the
+            --     mouse's movement, so it survives a confined cursor and a
+            --     remote desktop session placing the pointer.
+            --   "cursor": the cursor's distance from the middle of the screen
+            --     is the turn rate (the Legacy scheme). Flies well with a
+            --     cursor that stays where it is put, and badly otherwise:
+            --     there is no neutral to return to but the screen's middle.
+            -- First person always steers by movement.
+            chaseSteering  = "movement",
+            steeringDecay  = 4.0,
+
             -- Input inversion
             invertYaw      = false,
             invertPitch    = false,

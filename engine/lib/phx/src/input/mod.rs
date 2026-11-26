@@ -48,6 +48,12 @@ impl Input {
         self.user_changes.as_ref()
     }
 
+    /// The mouse, to be told about something other than an input event (the
+    /// window regaining focus, say). Not part of the scripting interface.
+    pub fn mouse_state_mut(&mut self) -> &mut MouseState {
+        &mut self.mouse_state
+    }
+
     pub fn reset(&mut self) {
         self.user_changes.clear();
 

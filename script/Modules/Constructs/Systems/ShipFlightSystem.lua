@@ -64,6 +64,35 @@ local function thrustScale(shipEntity)
     return (flightCtrl.fitThrustScale or 1) * (flightCtrl.abilityThrustScale or 1)
 end
 
+-- LTR_DEBUG_INPUT=1 logs what the mouse is actually telling the game, once a
+-- second while the mouse is steering: the cursor's position against the
+-- window's size, the movement reported this frame, the steering that came
+-- out of it and the rate the ship is turning at. The numbers say which of
+-- those is lying when the ship will not fly straight.
+local DEBUG_INPUT = (os.getenv("LTR_DEBUG_INPUT") or "") ~= ""
+local debugTimer = 0
+
+---@param rb RigidBody
+---@param yaw number
+---@param pitch number
+---@param spin table the ship's angular velocity, in its own axes
+---@param dt number
+local function logSteering(rb, yaw, pitch, spin, dt)
+    debugTimer = debugTimer + (dt or 0)
+    if debugTimer < 1.0 then return end
+    debugTimer = 0
+    local pos = Input:mouse():position()
+    local delta = Input:mouse():delta()
+    Log.Info(
+        "input: cursor (%.0f, %.0f) of %.0fx%.0f logical, %.0fx%.0f physical" ..
+        "  ·  moved (%.1f, %.1f)  ·  steering yaw %.3f pitch %.3f" ..
+        "  ·  turning (%.2f, %.2f, %.2f) rad/s  ·  scheme %s",
+        pos.x, pos.y, Window:width(), Window:height(),
+        Window:physicalWidth(), Window:physicalHeight(),
+        delta.x, delta.y, yaw, pitch, spin.x, spin.y, spin.z,
+        tostring(Config.game.shipFlight.chaseSteering))
+end
+
 --- Steer the ship toward the turn rate the input asks for.
 ---
 --- Torque used to be applied straight from the input, which made the input a
@@ -132,13 +161,62 @@ local function applySteering(shipEntity, rb, pitch, yaw, roll, dt, rateScale)
         axisTorque(-roll, spin.z, cfg.torqueRoll * 0.5)
     )
     rb:applyTorque(rot:mulV(localTorque))
+
+    if DEBUG_INPUT then logSteering(rb, yaw, pitch, spin, dt) end
+end
+
+--- Steering from the mouse's *movement*: the ship holds a turn while the
+--- mouse is pushed, and the turn decays back to straight when the mouse
+--- stops. Nothing here depends on where the cursor is, which is what makes
+--- it work when the cursor cannot be trusted -- it is confined at the
+--- window's edge, or a remote desktop session is placing it.
+---@param shipEntity Entity
+---@param dt number
+---@return number yaw
+---@return number pitch
+local function movementSteering(shipEntity, dt)
+    local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return 0, 0 end
+    local cfg = Config.game.shipFlight
+    local delta = Input:mouse():delta()
+    local sx = math.max(Window:width(), 1)
+    local sy = math.max(Window:height(), 1)
+    local sens = UserSettings.mouseSensitivityFactor() -- Mouse Sensitivity setting
+
+    local yaw = Math.Clamp(flightCtrl:getTargetYaw() + delta.x / sx * sens, -0.8, 0.8)
+    local pitch = Math.Clamp(flightCtrl:getTargetPitch() - delta.y / sy * sens, -0.8, 0.8)
+
+    -- Back toward straight when the mouse stops. Clamped so a long frame
+    -- cannot send the factor negative and flip the turn.
+    local keep = Math.Clamp(1.0 - (cfg.steeringDecay or 4.0) * dt, 0, 1)
+    flightCtrl:setTargetYaw(yaw * keep)
+    flightCtrl:setTargetPitch(pitch * keep)
+
+    -- Dead zones
+    if math.abs(yaw) < 0.004 then yaw = 0 end
+    if math.abs(pitch) < 0.008 then pitch = 0 end
+    return yaw, pitch
+end
+
+--- What the mouse is asking the ship to do, by the scheme in force.
+---@param shipEntity Entity
+---@param dt number
+---@param useDelta boolean first person: always by movement
+---@return number yaw
+---@return number pitch
+local function mouseSteering(shipEntity, dt, useDelta)
+    local scheme = Config.game.shipFlight.chaseSteering or "movement"
+    if useDelta or scheme ~= "cursor" then
+        return movementSteering(shipEntity, dt)
+    end
+    return cursorSteering()
 end
 
 --- Update ship from input.
 ---@param dt number
 ---@param shipEntity Entity
 ---@param mouseAim boolean Mouse controls ship rotation
----@param useDelta boolean Use mouse delta (first person) vs steering toward the cursor (chase)
+---@param useDelta boolean First person (always steers by movement)
 function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
     if not shipEntity then return end
 
@@ -167,34 +245,7 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
     local yaw   = 0
     local pitch = 0
     if mouseAim then
-        if useDelta then
-            -- FPS mode: indirect aiming with accumulation and decay
-            local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
-            if flightCtrl then
-                local delta = Input:mouse():delta()
-                local sx = Window:width()
-                local sy = Window:height()
-                local sens = UserSettings.mouseSensitivityFactor() -- Mouse Sensitivity setting
-
-                local tYaw = Math.Clamp(
-                    flightCtrl:getTargetYaw() + delta.x / sx * sens, -0.8, 0.8)
-                local tPitch = Math.Clamp(
-                    flightCtrl:getTargetPitch() - delta.y / sy * sens, -0.8, 0.8)
-
-                yaw   = tYaw
-                pitch = tPitch
-
-                -- Decay toward center when mouse stops
-                flightCtrl:setTargetYaw(tYaw * (1.0 - 4.0 * dt))
-                flightCtrl:setTargetPitch(tPitch * (1.0 - 4.0 * dt))
-            end
-            -- Dead zones
-            if math.abs(yaw)   < 0.004 then yaw   = 0 end
-            if math.abs(pitch) < 0.008 then pitch = 0 end
-        else
-            -- Chase: turn toward the cursor (legacy style)
-            yaw, pitch = cursorSteering()
-        end
+        yaw, pitch = mouseSteering(shipEntity, dt, useDelta)
         yaw, pitch = applyInversion(yaw, pitch)
     end
 
@@ -235,17 +286,7 @@ function ShipFlightSystem:updateSteeringOnly(dt, shipEntity, mouseAim, useDelta)
     local roll = ShipActions.Roll:get()
     local yaw, pitch = 0, 0
     if mouseAim then
-        if useDelta then
-            local delta = Input:mouse():delta()
-            local sx, sy = Window:width(), Window:height()
-            local sens = UserSettings.mouseSensitivityFactor()
-            yaw   = Math.Clamp(delta.x / sx * 4.0 * sens, -1.0, 1.0)
-            pitch = Math.Clamp(-delta.y / sy * 4.0 * sens, -1.0, 1.0)
-            if math.abs(yaw)   < 0.0001 then yaw   = 0 end
-            if math.abs(pitch) < 0.0001 then pitch = 0 end
-        else
-            yaw, pitch = cursorSteering()
-        end
+        yaw, pitch = mouseSteering(shipEntity, dt, useDelta)
         yaw, pitch = applyInversion(yaw, pitch)
     end
 

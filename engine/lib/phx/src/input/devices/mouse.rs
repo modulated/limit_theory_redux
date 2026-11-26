@@ -63,12 +63,24 @@ pub struct MouseState {
     /// movement, so it is ignored and the cursor's own movement is used
     /// instead. See [`MouseState::update_raw_delta`].
     raw_motion_is_absolute: bool,
+    /// A position has been reported, so there is something to measure
+    /// movement against.
+    has_position: bool,
+    /// The next position is a jump, not movement: the cursor entered the
+    /// window, the window regained focus, or something warped it.
+    skip_next_delta: bool,
 }
 
 /// No mouse reports moving this far in a single packet (they arrive at up to
 /// the polling rate, often 1000 Hz, so even a fast flick is a few hundred
 /// pixels at most). A "delta" this large is an absolute coordinate.
 const RAW_MOTION_SANITY_LIMIT: f32 = 2000.0;
+
+/// A cursor reported this much further along than the last report did not
+/// travel: it was put there (see [`MouseState::update_position`]). Generous,
+/// so that a fast flick between two coalesced reports still counts as
+/// movement.
+const CURSOR_JUMP_LIMIT: f32 = 900.0;
 
 impl MouseState {
     pub fn control_state(&self) -> &ControlState {
@@ -117,24 +129,45 @@ impl MouseState {
 
     pub fn update_position(&mut self, x: f32, y: f32) -> bool {
         let prev_pos = self.position;
+        let had_position = self.has_position;
 
         self.position = Vec2::new(x, y);
+        self.has_position = true;
 
         // Only where no raw motion arrives: a cursor held in the window (the
         // camera's grab) stops at its edge while the mouse keeps moving.
         if !self.has_raw_motion {
-            self.axis_state
-                .add(MouseControl::DeltaX as _, x - prev_pos.x);
-            self.axis_state
-                .add(MouseControl::DeltaY as _, y - prev_pos.y);
+            let (dx, dy) = (x - prev_pos.x, y - prev_pos.y);
+            // A cursor does not travel this far between two reports: it was
+            // put there. The first position after entering the window or
+            // after a session reconnects, a warp, a resolution change, a
+            // remote desktop pointer re-syncing -- each is a jump, and
+            // reading it as movement swings the camera right round.
+            let jumped = !had_position
+                || self.skip_next_delta
+                || dx.abs() > CURSOR_JUMP_LIMIT
+                || dy.abs() > CURSOR_JUMP_LIMIT;
+            self.skip_next_delta = false;
+            if !jumped {
+                self.axis_state.add(MouseControl::DeltaX as _, dx);
+                self.axis_state.add(MouseControl::DeltaY as _, dy);
+            }
         }
         self.control_state.update()
     }
 
     pub fn update_in_window(&mut self, in_window: bool) -> bool {
         self.in_window = in_window;
+        // Wherever the cursor comes back, it did not travel there
+        self.skip_next_delta = true;
 
         self.control_state.update()
+    }
+
+    /// The window lost or regained focus: the cursor may be somewhere else
+    /// entirely when it comes back, and that is not movement either.
+    pub fn forget_position_delta(&mut self) {
+        self.skip_next_delta = true;
     }
 
     /// The device's own movement, independent of the cursor. Windows sends

@@ -208,6 +208,9 @@ impl ApplicationHandler for MainLoop {
             }
             WindowEvent::Focused(focused) => {
                 engine.window.focused = focused;
+                // The cursor can be anywhere when the window comes back, and
+                // that is a jump, not the mouse having been moved there
+                engine.input.mouse_state_mut().forget_position_delta();
             }
             WindowEvent::DroppedFile(file) => {
                 engine
