@@ -69,7 +69,6 @@ local StationTradeSystem = require('Modules.Economy.Systems.StationTradeSystem')
 local ProductionSystem = require('Modules.Economy.Systems.ProductionSystem')
 local EconomyComponents = require('Modules.Economy.Components')
 local AsteroidOre = require('Shared.Helpers.AsteroidOre')
-local SpaceDust = require('Modules.Rendering.Systems.SpaceDust')
 local CoreComponentsAll = require('Modules.Core.Components')
 local RenderComponent = require('Modules.Rendering.Components').Render
 local Factions = require('Modules.NPC.Factions')
@@ -1173,14 +1172,6 @@ function LimitTheoryRedux:populateSystem()
     self.npcs:setPlayer(self.playerShip)
     self:updatePlayerVisibility()
 
-    -- Space dust around the camera, streaking with the ship's speed
-    if Config.game.dust.enabled then
-        self:addSceneEntity(SpaceDust.create(function()
-            if self.docked or not self.playerShip or not self.playerShip:isValid() then return nil end
-            local rbCmp = self.playerShip:get(PhysicsComponents.RigidBody)
-            return rbCmp and rbCmp:getRigidBody() and rbCmp:getVelocity() or nil
-        end))
-    end
     local system = self.galaxy and self.galaxy.systems[self.currentSystemId]
     local level = self:currentHostility()
     if level then
@@ -1224,6 +1215,8 @@ end
 --- Run the scenario's setup (after the scene and the player controller exist).
 function LimitTheoryRedux:setupScenario()
     self.scenarioData = {}
+    -- The speed effects, as Settings has them (a scenario may try others)
+    require('Modules.Rendering.Systems.SpeedFeelSystem'):enable(self)
     if self.scenario.setup then
         self.scenario.setup(self)
     end
@@ -1379,6 +1372,7 @@ end
 --- system and (unless kept) the player's ship.
 ---@param keepShip boolean|nil
 function LimitTheoryRedux:destroyScene(keepShip)
+    require('Modules.Rendering.Systems.SpeedFeelSystem'):disable()
     if self.scenario and self.scenario.teardown then
         self.scenario.teardown(self)
     end

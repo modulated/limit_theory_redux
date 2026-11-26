@@ -493,18 +493,6 @@ Config.game = {
         detection      = 0.2,  -- NPCs see a cloaked ship this fraction as far
     },
 
-    -- Space dust (Legacy Effects/Dust's flecks): streaks around the camera
-    -- that show how fast it moves.
-    dust = {
-        enabled     = true,
-        count       = 400,
-        cubeSize    = 0.4,    -- game units: flecks wrap around a cube this big
-        width       = 0.0006, -- streak width
-        lengthScale = 0.08,   -- streak length per unit of speed
-        maxLength   = 0.06,
-        minSpeed    = 0.02,   -- no streaks below this speed
-    },
-
     -- The player's armed ship in the travel scenarios (those with stations):
     -- a small gunship whose turrets engage hostile ships by themselves.
     playerGunship = {

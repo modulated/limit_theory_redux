@@ -67,8 +67,9 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          does at 2.5x the laser's reach; mining a unit out identifies it too. Left over: a belt's
          composition is still public on the system map, and a surveyed rock has no marker in the
          world. See [doc/items.md](doc/items.md).
-   - [ ] Legacy's dust clouds (only the flecks are ported; the clouds need their texture
-         pass and shader converted).
+   - [ ] Legacy's dust clouds (the streaking dust is upstream's SpeedFeelSystem, which
+         replaced this fork's port of Legacy's flecks; the clouds need their texture pass and
+         shader converted).
    - [ ] Reputation from more than kills and hits (escorting, trading) once there is more
          to do; the player can't attack neutral ships yet, so standing mostly rises.
    - [ ] Credits only come from bounties, trading and mining sales; they go on hull repairs,
