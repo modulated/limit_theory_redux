@@ -164,6 +164,7 @@ package.loaded["Modules.Core.Components"] = { Seed = SeedStub }
 local StockComponent = require("Modules.Economy.Components.StockComponent")
 local ProductionComponent = require("Modules.Economy.Components.ProductionComponent")
 local WorkforceComponent = require("Modules.Economy.Components.WorkforceComponent")
+local OrderBookComponent = require("Modules.Economy.Components.OrderBookComponent")
 
 -- Modules.Economy.Components pulls in components that need the engine's
 -- Entity and TimeStamp; the trade and production systems only use these two.
@@ -171,12 +172,14 @@ package.loaded["Modules.Economy.Components"] = {
     Stock = StockComponent,
     Production = ProductionComponent,
     Workforce = WorkforceComponent,
+    OrderBook = OrderBookComponent,
 }
 
 local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
 local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
 local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
+local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
 
 ------------------------------------------------------------------------------
 -- Arguments
@@ -535,6 +538,14 @@ local function FakeEntity(name)
     return entity
 end
 
+--- The market moves the player's goods through one store at a time; each
+--- actor here (the trader, the prospector, the crafter) has its own, so the
+--- accessor is pointed at whichever of them is trading.
+---@param store StockComponent|nil
+local function useStore(store)
+    MarketSystem:setPlayerAccess({ hangar = function() return store end })
+end
+
 --- The ores of the system, as `Config.game.mining.ores` names them.
 ---@return table[] { def, weight }, with `total`
 local function systemOres()
@@ -568,6 +579,8 @@ for index = 1, args.stations do
         workforce:arrive({ worker = worker, station = index })
     end
     ProductionSystem:assign(station, rng, index == 1, oreIds)
+    station:add(OrderBookComponent())
+    station.marketKey = "sim:" .. index
     StationTradeSystem:stock(station, rng, oreIds)
     -- Count a line's completed runs: a line only leaves `running` by finishing
     station.lineState = {}
@@ -612,10 +625,10 @@ local trader = {
     startCredits = PlayerWallet:get(),
 }
 
---- The trader: at each station in turn, sell whatever it is carrying, then
---- fill the hold with the one good whose margin against another station's
---- buy-back price is best. The point is not to be clever: it is to see
---- whether hauling can pay at all at the current settings.
+--- The trader: at each station in turn, sell whatever it is carrying into the
+--- bids standing there, then buy whatever the books say can be sold dearer at
+--- another station. The point is not to be clever: it is to see whether the
+--- spreads the order books throw up are worth flying between.
 ---@param dt number
 local function updateTrader(dt)
     trader.timer = trader.timer - dt
@@ -624,49 +637,43 @@ local function updateTrader(dt)
     trader.trips = trader.trips + 1
 
     local here = trader.station
-    -- Sell the hold
+    useStore(trader.hold)
     for _, row in ipairs(trader.hold:list()) do
-        local sold, earned = StationTradeSystem:sell(here, trader.hold, row.item.id, row.units)
-        trader.sold = trader.sold + earned
-        if sold == 0 then break end
+        local result = MarketSystem:sellAtMarket(here, here.marketKey, row.item.id, row.units)
+        trader.sold = trader.sold + result.credits
     end
 
-    -- Where to next, and with what: the best (buy here, sell there) margin
     local bestItem, bestTarget, bestMargin = nil, nil, 0
     for _, there in ipairs(stations) do
         if there ~= here then
-            for _, row in ipairs(StationTradeSystem:listing(here)) do
-                if row.units > 0 then
-                    local margin = StationTradeSystem:sellPrice(there, row.item.id) - row.buy
-                    if margin > bestMargin then
-                        bestItem, bestTarget, bestMargin = row.item, there, margin
-                    end
+            for _, row in ipairs(MarketSystem:listing(here)) do
+                local other = MarketSystem:quote(there, row.item.id)
+                if row.ask and other.bid and other.bid - row.ask > bestMargin then
+                    bestItem, bestTarget, bestMargin = row.item, there, other.bid - row.ask
                 end
             end
         end
     end
     if bestItem then
-        -- Buy while it is still worth buying: each unit pushes the price up
-        -- here, so a trader stops when the margin is gone rather than
-        -- emptying the shelves at the first price it saw
-        local spent = 0
+        -- Buy while the spread lasts: each unit taken lifts the next ask
         while true do
-            local margin = StationTradeSystem:sellPrice(bestTarget, bestItem.id)
-                - StationTradeSystem:buyPrice(here, bestItem.id)
-            if margin <= 0 then break end
-            local bought, paid = StationTradeSystem:buy(here, trader.hold, bestItem.id, 1)
-            if bought < 1 then break end
-            spent = spent + paid
+            local ask = MarketSystem:quote(here, bestItem.id).ask
+            local bid = MarketSystem:quote(bestTarget, bestItem.id).bid
+            if not ask or not bid or bid <= ask then break end
+            local result = MarketSystem:buyAtMarket(here, here.marketKey, bestItem.id, 1)
+            if result.filled < 1 then break end
+            trader.bought = trader.bought + result.credits
         end
-        trader.bought = trader.bought + spent
         trader.station = bestTarget
     else
-        -- Nothing worth hauling: move on anyway
         trader.station = stations[(function()
-            for i, s in ipairs(stations) do if s == here then return i % #stations + 1 end end
+            for i, station in ipairs(stations) do
+                if station == here then return i % #stations + 1 end
+            end
             return 1
         end)()]
     end
+    useStore(nil)
 end
 
 --- Where goods come from and go to, in units, per item: the answer to "is
@@ -703,9 +710,8 @@ local function record(bucket, before)
 end
 
 --- The other way a player makes money: fill the hold out of a belt and sell
---- it. Mining takes the real `playerTimePerUnit` per unit and the hold is
---- the real capacity, so this is the mining income the game actually offers,
---- next to the trader's hauling income.
+--- it into the best bid standing anywhere in the system. Mining takes the
+--- real `playerTimePerUnit` per unit and the hold is the real capacity.
 local prospector = {
     hold = StockComponent(Config.game.cargo.holdCapacity),
     ore = ores[rng:getInt(1, #ores)].def,
@@ -723,22 +729,24 @@ local function updateProspector(dt)
     prospector.timer = prospector.timer - dt
     if prospector.timer > 0 then return end
     if prospector.state == "mining" then
-        -- The hold is full: fly to a station
         prospector.hold:add(prospector.ore.id, prospector.unitsPerTrip)
         prospector.mined = prospector.mined + prospector.unitsPerTrip
         addFlow(flows.mined, prospector.ore.id, prospector.unitsPerTrip)
         prospector.state = "flying"
         prospector.timer = args.trip
     elseif prospector.state == "flying" then
-        -- Sell the lot where it pays best
-        local best, bestPrice
+        local best, bestBid
         for _, station in ipairs(stations) do
-            local price = StationTradeSystem:sellPrice(station, prospector.ore.id)
-            if not bestPrice or price > bestPrice then best, bestPrice = station, price end
+            local bid = MarketSystem:quote(station, prospector.ore.id).bid
+            if bid and (not bestBid or bid > bestBid) then best, bestBid = station, bid end
         end
-        local _, earned = StationTradeSystem:sell(best, prospector.hold, prospector.ore.id,
-            prospector.hold:count(prospector.ore.id))
-        prospector.earned = prospector.earned + earned
+        if best then
+            useStore(prospector.hold)
+            local result = MarketSystem:sellAtMarket(best, best.marketKey, prospector.ore.id,
+                prospector.hold:count(prospector.ore.id))
+            prospector.earned = prospector.earned + result.credits
+            useStore(nil)
+        end
         prospector.trips = prospector.trips + 1
         prospector.state = "mining"
         prospector.timer = prospector.unitsPerTrip * Config.game.mining.playerTimePerUnit
@@ -746,15 +754,14 @@ local function updateProspector(dt)
 end
 
 --- The player's own industry: rent the best line the first station offers,
---- buy its inputs there, let it run, sell what it makes back. The point is to
---- see whether the station's cut and the spread leave the renter anything.
-local crafter = { spent = 0, earned = 0, runs = 0, recipe = nil, key = "sim:1" }
+--- buy its inputs off its book, let it run, sell what it makes back. Whether
+--- the station's cut and the spread leave the renter anything.
+local crafter = { spent = 0, earned = 0, runs = 0, recipe = nil, key = "sim:factory" }
 
 local function startCrafter()
     PlayerFactories:reset()
     local offered = PlayerFactories:offered(stations[1])
     if #offered == 0 then return end
-    -- The best of what is offered, by what a run adds at equilibrium prices
     local function value(entries)
         local total = 0
         for _, entry in ipairs(entries) do
@@ -762,7 +769,17 @@ local function startCrafter()
         end
         return total
     end
+    -- A line is only worth renting if its inputs can actually be had here:
+    -- prefer the recipes whose every input has someone offering it
+    local function buyable(recipe)
+        for _, entry in ipairs(recipe.inputs) do
+            if not MarketSystem:quote(stations[1], entry.item.id).ask then return false end
+        end
+        return true
+    end
     table.sort(offered, function(a, b)
+        local ba, bb = buyable(a), buyable(b)
+        if ba ~= bb then return ba end
         return (value(a.outputs) - value(a.inputs)) / a.duration
             > (value(b.outputs) - value(b.inputs)) / b.duration
     end)
@@ -775,14 +792,14 @@ local function updateCrafter(dt)
     if not crafter.recipe then return end
     local station = stations[1]
     local hangar = PlayerFactories:hangar(crafter.key)
-    local credits = PlayerWallet:get()
+    useStore(hangar)
 
-    -- Keep a run's worth of inputs in the hangar, bought here
+    -- Keep a couple of runs' worth of inputs in the hangar, bought off the book
     for _, entry in ipairs(crafter.recipe.inputs) do
         local short = entry.count * 2 - hangar:count(entry.item.id)
         if short > 0 then
-            local _, paid = StationTradeSystem:buy(station, hangar, entry.item.id, short)
-            crafter.spent = crafter.spent + paid
+            local result = MarketSystem:buyAtMarket(station, crafter.key, entry.item.id, short)
+            crafter.spent = crafter.spent + result.credits
         end
     end
 
@@ -798,17 +815,15 @@ local function updateCrafter(dt)
         end
     end
 
-    -- Sell what it made back to the station
+    -- Sell what it made into the bids standing here
     for _, entry in ipairs(crafter.recipe.outputs) do
         local held = hangar:count(entry.item.id)
         if held > 0 then
-            local _, earned = StationTradeSystem:sell(station, hangar, entry.item.id, held)
-            crafter.earned = crafter.earned + earned
+            local result = MarketSystem:sellAtMarket(station, crafter.key, entry.item.id, held)
+            crafter.earned = crafter.earned + result.credits
         end
     end
-    -- The fee comes out of the wallet inside PlayerFactories:update
-    crafter.fees = (crafter.fees or 0) + math.max(0, credits - PlayerWallet:get()
-        - (crafter.spentThisStep or 0))
+    useStore(nil)
 end
 
 ------------------------------------------------------------------------------
@@ -851,20 +866,24 @@ if csv then
     for index in ipairs(stations) do
         for _, def in ipairs(watched) do
             header[#header + 1] = string.format("s%d_%s_stock", index, def.name)
-            header[#header + 1] = string.format("s%d_%s_buy", index, def.name)
+            header[#header + 1] = string.format("s%d_%s_bid", index, def.name)
+            header[#header + 1] = string.format("s%d_%s_ask", index, def.name)
         end
     end
     header[#header + 1] = "credits"
     csv:write(table.concat(header, ",") .. "\n")
 end
 
--- Price extremes per station and item, for the summary
+-- Price extremes per station and item, for the summary: what things have
+-- actually traded for on the book, else the best ask standing
 local priceRange = {}
 local function recordPrices()
     for index, station in ipairs(stations) do
         for _, def in ipairs(watched) do
             local key = index .. ":" .. def.id
-            local price = StationTradeSystem:buyPrice(station, def.id)
+            local quote = MarketSystem:quote(station, def.id)
+            local price = quote.last or quote.ask or quote.bid
+            if not price then goto continue end
             local range = priceRange[key]
             if not range then
                 priceRange[key] = { min = price, max = price, sum = price, n = 1 }
@@ -874,6 +893,7 @@ local function recordPrices()
                 range.sum = range.sum + price
                 range.n = range.n + 1
             end
+            ::continue::
         end
     end
 end
@@ -909,10 +929,13 @@ local function reportHour(hour)
         local stock = station:get(StockComponent)
         for _, def in ipairs(watched) do
             local units = stock:count(def.id)
-            local price = StationTradeSystem:buyPrice(station, def.id)
-            row[#row + 1] = string.format("%18s", string.format("%d @ %d", units, price))
+            local quote = MarketSystem:quote(station, def.id)
+            row[#row + 1] = string.format("%18s", string.format("%d %s/%s", units,
+                quote.bid and tostring(quote.bid) or "-",
+                quote.ask and tostring(quote.ask) or "-"))
             csvRow[#csvRow + 1] = tostring(units)
-            csvRow[#csvRow + 1] = tostring(price)
+            csvRow[#csvRow + 1] = tostring(quote.bid or "")
+            csvRow[#csvRow + 1] = tostring(quote.ask or "")
         end
     end
     row[#row + 1] = string.format("%12d", PlayerWallet:get())
@@ -938,6 +961,11 @@ while elapsed < totalSeconds do
     before = snapshot()
     StationTradeSystem:update(stations, step)
     record(flows.imports, before)
+    -- The books: lapsed orders go, and each station re-posts its own as its
+    -- stock moves
+    local keys = {}
+    for _, station in ipairs(stations) do keys[station] = station.marketKey end
+    MarketSystem:update(stations, keys, step, elapsed)
 
     -- Lines: count the runs, and the time spent waiting for stock
     for _, station in ipairs(stations) do
@@ -1017,7 +1045,7 @@ for index, station in ipairs(stations) do
 end
 
 out("")
-out("Prices (buy price per unit, over the run)")
+out("Prices on the books (last traded, else the best order, over the run)")
 out("    %-22s %-10s %8s %8s %8s %8s", "item", "station", "equil", "min", "mean", "max")
 for index, station in ipairs(stations) do
     for _, def in ipairs(watched) do
@@ -1025,8 +1053,8 @@ for index, station in ipairs(stations) do
         if range then
             local equilibrium = def.startEquilibriumPrice or cfg.defaultPrice
             local note = ""
-            local pinnedLow = math.ceil(equilibrium * cfg.minScarcity * (1 + cfg.spread))
-            local pinnedHigh = math.ceil(equilibrium * cfg.maxScarcity * (1 + cfg.spread))
+            local pinnedLow = math.ceil(equilibrium * cfg.minScarcity)
+            local pinnedHigh = math.ceil(equilibrium * cfg.maxScarcity)
             if range.max >= pinnedHigh then note = note .. " at the shortage bound" end
             if range.min <= pinnedLow then note = note .. " at the glut bound" end
             out("    %-22s %-10s %8d %8d %8.0f %8d%s", def.displayName, station.name,
@@ -1103,7 +1131,10 @@ if args.trader then
     end
 end
 out("")
-out("Settings used: trade.spread=%.2f targetValue=%d priceSoftness=%d scarcity=%.2f..%.2f",
-    cfg.spread, cfg.targetValue, cfg.priceSoftness, cfg.minScarcity, cfg.maxScarcity)
+out("Settings used: targetValue=%d priceSoftness=%d scarcity=%.2f..%.2f",
+    cfg.targetValue, cfg.priceSoftness, cfg.minScarcity, cfg.maxScarcity)
+out("               market: brokerFee=%.2f salesTax=%.2f stationMargin=%.2f orderShare=%.2f",
+    Config.game.market.brokerFee, Config.game.market.salesTax,
+    Config.game.market.stationMargin, Config.game.market.orderShare)
 out("               importPerSecond=%.2f importFloor=%.2f production.timeScale=%.1f",
     cfg.importPerSecond, cfg.importFloor, Config.game.production.timeScale)

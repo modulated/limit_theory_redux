@@ -1,3 +1,5 @@
 return {
-    Marketplace = require('Modules.Economy.Systems.MarketplaceSystem'),
+    Market = require('Modules.Economy.Systems.MarketSystem'),
+    Production = require('Modules.Economy.Systems.ProductionSystem'),
+    StationTrade = require('Modules.Economy.Systems.StationTradeSystem'),
 }

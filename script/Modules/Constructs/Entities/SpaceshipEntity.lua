@@ -48,6 +48,6 @@ return function(seed, meshes, type, stats)
             stats and stats.defense.armor,
             stats and stats.defense.shieldRegen
         ),
-        Economy.Inventory()
+        Economy.Stock()
     )
 end

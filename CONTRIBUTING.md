@@ -210,10 +210,10 @@ Changing `RUSTFLAGS` rebuilds every crate, so set it the same way each time (for
 ## Tuning the economy
 
 `luajit tools/economy-sim.lua` runs the game's economy headless — the real
-config, item and production registries and trade and production systems, with
-stations, miners and an optional trader and prospector — and reports prices,
-production, where the goods came from and what an hour of mining or hauling
-pays. `--seeds 8` shows the spread across systems. Use it rather than the game
+config, the item and production registries and the real market, trade and
+production systems, with stations posting orders, miners, and an optional
+trader, prospector and crafter — and reports the books, production, where the
+goods came from and what an hour of mining, hauling or manufacturing pays. `--seeds 8` shows the spread across systems. Use it rather than the game
 to set anything in `Config.game.{trade,production,mining,cargo}`; see
 [doc/items.md](doc/items.md).
 

@@ -7,7 +7,8 @@ local Grid = UILayout.Grid
 local Items = require("Shared.Registries.Items")
 local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local PlayerCargo = require("Modules.Economy.Managers.PlayerCargo")
-local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
+local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
+local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
 local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
 local EconomyComponents = require("Modules.Economy.Components")
 local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
@@ -17,19 +18,23 @@ local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
 -- way out. Docking opens it (LimitTheoryRedux:dockPlayer) and undocking
 -- closes it; F undocks as well, wherever the cursor is.
 --
--- Three tabs: the Market (buy and sell, into the ship's hold or into the
--- hangar), the Factory (the station's own lines, and the lines the player
--- rents) and the Hangar (what the player keeps here, and moving it to and
--- from the ship).
+-- Four tabs: the Market (the station's order book: trade at the market or
+-- place an order of your own), the Factory (the station's own lines and the
+-- lines the player rents), the Hangar (what the player keeps here, and moving
+-- it to and from the ship) and Nearby (what was last seen of the markets
+-- within reach, which is where the spreads worth flying for show up).
 --
 -- NOTE: the prices and the stock are the station's own
--- (Modules/Economy/Systems/StationTradeSystem.lua), the leases and the hangar
--- are PlayerFactories'; this view only shows them and asks them to act.
+-- (Modules/Economy/Systems/MarketSystem.lua: a station posts orders, and a
+-- price is whatever someone will pay), the leases and the hangar are
+-- PlayerFactories'; this view only shows them and asks them to act.
 
---- Which tab is up, and where market trades go: the ship's hold or the
---- hangar at this station. Kept on the view, so they survive a redraw.
+--- Which tab is up. Kept on the view, so it survives a redraw.
+---
+--- The market trades out of the hangar, as it must: an order has to be backed
+--- by goods that are at the station. The Hangar tab moves goods between the
+--- hangar and the ship.
 Station.tab = "market"
-Station.target = "ship"
 
 local WHITE = Color(1.00, 1.00, 1.00, 1.00)
 local GREY = Color(0.75, 0.77, 0.80, 1.00)
@@ -61,21 +66,6 @@ end
 local function stationKey()
     local dock = LimitTheoryRedux.docked
     return dock and dock.key or nil
-end
-
---- The store market trades go through: the ship's hold, or the hangar here.
----@return StockComponent|nil
-local function tradeStore()
-    if Station.target == "hangar" then
-        local key = stationKey()
-        return key and PlayerFactories:hangar(key) or nil
-    end
-    return PlayerCargo:get()
-end
-
----@return string
-local function storeName()
-    return Station.target == "hangar" and "hangar" or "hold"
 end
 
 ---@return string
@@ -116,79 +106,304 @@ local function smallButton(label, s, enabled, callback)
     }
 end
 
---- Buy `units` of an item and say how it went.
+---@param label string
+---@param s number
+---@param width number
+---@param enabled boolean
+---@param active boolean
+---@param callback function
+---@return UIComponentButton
+local function wideButton(label, s, width, enabled, active, callback)
+    return UIComponent.Button {
+        title = label,
+        width = math.floor(width * s),
+        height = math.floor(28 * s),
+        font = { name = "Unageo-Medium", size = math.floor(14 * s) },
+        color = {
+            text = enabled and WHITE or DIM,
+            background = active and BUTTON_HI or BUTTON_BG,
+            highlight = enabled and BUTTON_HI or BUTTON_BG,
+        },
+        callback = enabled and callback or function() end
+    }
+end
+
+--- Which item the order panel is working on, and what it is set to.
+Station.order = { itemId = nil, side = "buy", price = nil, units = 10 }
+
+--- Point the order panel at an item, starting from the market's own price.
+---@param station Entity
+---@param itemId integer
+---@param side string
+local function selectOrder(station, itemId, side)
+    local quote = MarketSystem:quote(station, itemId)
+    local start = side == "buy" and (quote.bid or quote.ask or quote.last)
+        or (quote.ask or quote.bid or quote.last)
+    Station.order = {
+        itemId = itemId,
+        side = side,
+        price = math.max(1, math.floor(start or 10)),
+        units = Station.order.units or 10,
+    }
+end
+
+--- Buy at the market: take the best asks there are.
 ---@param station Entity
 ---@param itemId integer
 ---@param units integer
-local function buy(station, itemId, units)
-    local store = tradeStore()
-    if not store then return end
-    local bought, spent = StationTradeSystem:buy(station, store, itemId, units)
+local function buyAtMarket(station, itemId, units)
+    local key = stationKey()
     local def = Items:getDefinition(itemId)
-    if bought > 0 then
-        LimitTheoryRedux:notify(string.format("Bought %d %s for %s (to the %s)", bought,
-            def.displayName, PlayerWallet.format(spent), storeName()), { 0.6, 0.9, 1.0 })
+    local result = MarketSystem:buyAtMarket(station, key, itemId, units)
+    if result.filled > 0 then
+        LimitTheoryRedux:notify(string.format("Bought %d %s for %s (%.0f a unit)",
+            result.filled, def.displayName, PlayerWallet.format(result.credits),
+            result.average or 0), { 0.6, 0.9, 1.0 })
     else
-        LimitTheoryRedux:notify("Cannot buy that: no stock, no credits or no room.", { 1.0, 0.4, 0.3 })
+        LimitTheoryRedux:notify("Nothing on offer: " .. (result.reason or "no sellers"),
+            { 1.0, 0.4, 0.3 })
     end
 end
 
---- Sell `units` of an item out of the hold.
+--- Sell at the market: hit the best bids there are.
 ---@param station Entity
 ---@param itemId integer
 ---@param units integer
-local function sell(station, itemId, units)
-    local store = tradeStore()
-    if not store then return end
-    local sold, earned = StationTradeSystem:sell(station, store, itemId, units)
+local function sellAtMarket(station, itemId, units)
+    local key = stationKey()
     local def = Items:getDefinition(itemId)
+    local result = MarketSystem:sellAtMarket(station, key, itemId, units)
+    local sold = result.filled + (result.scrapped or 0)
     if sold > 0 then
-        LimitTheoryRedux:notify(string.format("Sold %d %s for %s (from the %s)", sold,
-            def.displayName, PlayerWallet.format(earned), storeName()), { 0.6, 0.9, 1.0 })
+        local note = ""
+        if (result.scrapped or 0) > 0 then
+            note = string.format(" (%d of it as scrap: nobody was bidding)", result.scrapped)
+        end
+        LimitTheoryRedux:notify(string.format("Sold %d %s for %s, %.0f a unit%s",
+            sold, def.displayName, PlayerWallet.format(result.credits),
+            result.average or 0, note), { 0.6, 0.9, 1.0 })
     else
-        LimitTheoryRedux:notify(store:count(itemId) > 0
-            and "This station will take no more of that."
-            or ("Nothing of that in the " .. storeName() .. "."), { 1.0, 0.4, 0.3 })
+        LimitTheoryRedux:notify("Could not sell: " .. (result.reason or "nothing to sell"),
+            { 1.0, 0.4, 0.3 })
     end
 end
 
---- One row of the market: the item, the station's stock and prices, what the
---- hold holds, and the buttons.
+--- One row of the book: what it last traded for, the best bid and ask with
+--- how much is behind them, what the hangar holds, and the way in.
 ---@param station Entity
----@param row table from StationTradeSystem:listing
+---@param row table from MarketSystem:listing
 ---@param s number scale
 ---@return UILayoutGrid
 local function marketRow(station, row, s)
-    local store = tradeStore() or PlayerCargo:get()
-    local held = store:count(row.item.id)
-    local canBuy = StationTradeSystem:maxBuyable(station, store, row.item.id)
-    local canSell = StationTradeSystem:maxSellable(station, store, row.item.id)
+    local key = stationKey()
+    local hangar = key and PlayerFactories:hangar(key)
+    local held = hangar and hangar:count(row.item.id) or 0
     local size = math.floor(15 * s)
+    local selected = Station.order.itemId == row.item.id
 
     return Grid {
         fixedHeight = math.floor(24 * s),
         cells = {
             Grid.Fixed(COL_ITEM * s), Grid.Fixed(COL_NUM * s), Grid.Fixed(COL_NUM * s),
             Grid.Fixed(COL_NUM * s), Grid.Fixed(COL_NUM * s),
-            Grid.Fixed((COL_BUTTON + 6) * s), Grid.Fixed((COL_BUTTON + 6) * s),
-            Grid.Fixed((COL_BUTTON + 6) * s), Grid.Fixed((COL_BUTTON + 6) * s),
+            Grid.Fixed((COL_BUTTON + 14) * s), Grid.Fixed((COL_BUTTON + 14) * s),
+            Grid.Fixed((COL_BUTTON + 14) * s),
         },
         contents = {
-            text(row.item.displayName, "Unageo-Regular", size, GREY),
-            text(tostring(row.units), "Unageo-Regular", size, WHITE, AlignHorizontal.Right),
-            text(tostring(row.buy), "Unageo-Regular", size, GOLD, AlignHorizontal.Right),
-            text(tostring(row.sell), "Unageo-Regular", size, GREEN, AlignHorizontal.Right),
+            text(row.item.displayName, "Unageo-Regular", size, selected and WHITE or GREY),
+            text(row.last and tostring(row.last) or "-", "Unageo-Regular", size,
+                row.last and WHITE or DIM, AlignHorizontal.Right),
+            text(row.bid and string.format("%d (%d)", row.bid, row.bidUnits) or "-",
+                "Unageo-Regular", size, row.bid and GREEN or DIM, AlignHorizontal.Right),
+            text(row.ask and string.format("%d (%d)", row.ask, row.askUnits) or "-",
+                "Unageo-Regular", size, row.ask and GOLD or DIM, AlignHorizontal.Right),
             text(held > 0 and tostring(held) or "-", "Unageo-Regular", size,
                 held > 0 and WHITE or DIM, AlignHorizontal.Right),
-            smallButton("Buy", s, canBuy >= 1, function() buy(station, row.item.id, 1) end),
-            smallButton("Buy 10", s, canBuy >= 1, function() buy(station, row.item.id, 10) end),
-            smallButton("Sell", s, canSell >= 1, function() sell(station, row.item.id, 1) end),
-            smallButton("Sell all", s, canSell >= 1, function() sell(station, row.item.id, held) end),
+            smallButton("Buy 10", s, row.ask ~= nil, function()
+                buyAtMarket(station, row.item.id, 10)
+            end),
+            smallButton("Sell all", s, row.bid ~= nil and held >= 1, function()
+                sellAtMarket(station, row.item.id, held)
+            end),
+            smallButton("Order", s, true, function()
+                selectOrder(station, row.item.id, held > 0 and "sell" or "buy")
+            end),
         }
     }
 end
 
---- The market table: a header row and one row per thing the station deals in.
+--- The order panel: name a price, name a quantity, place it. Credits are
+--- held for a buy order and the goods for a sell order until it fills, is
+--- cancelled or lapses.
+---@param station Entity
+---@param s number
+---@return UILayoutGrid|nil
+local function orderPanel(station, s)
+    local order = Station.order
+    if not order.itemId then return nil end
+    local def = Items:getDefinition(order.itemId)
+    if not def then return nil end
+    local key = stationKey()
+    local hangar = key and PlayerFactories:hangar(key)
+    local held = hangar and hangar:count(order.itemId) or 0
+    local quote = MarketSystem:quote(station, order.itemId)
+    local cfg = Config.game.market
+    local size = math.floor(14 * s)
+
+    local value = order.price * order.units
+    local fee = math.ceil(value * cfg.brokerFee)
+    local needed = order.side == "buy" and value + fee or fee
+    local can = order.side == "buy" and PlayerWallet:has(needed) or (held >= order.units
+        and PlayerWallet:has(fee))
+
+    local function step(label, delta, field, minimum)
+        return smallButton(label, s, true, function()
+            local next = field == "price"
+                and math.floor(order.price * (1 + delta) + (delta > 0 and 0.5 or -0.5))
+                or order.units + delta
+            if field == "price" and next == order.price then
+                next = order.price + (delta > 0 and 1 or -1)
+            end
+            order[field] = math.max(minimum, next)
+        end)
+    end
+
+    return Grid {
+        layoutType = GuiLayoutType.Vertical,
+        spacing = math.floor(4 * s),
+        cells = Grid.Fit(),
+        contents = {
+            UIComponent.Divider { color = RULE },
+            Grid {
+                fixedHeight = math.floor(26 * s),
+                cells = { Grid.Fixed(300 * s), Grid.Fixed(150 * s), Grid.Fixed(150 * s),
+                          Grid.Fixed(220 * s) },
+                contents = {
+                    text(string.format("ORDER: %s", def.displayName), "Unageo-Medium",
+                        math.floor(13 * s), ACCENT),
+                    wideButton("Buy order", s, 130, true, order.side == "buy",
+                        function() order.side = "buy" end),
+                    wideButton("Sell order", s, 130, true, order.side == "sell",
+                        function() order.side = "sell" end),
+                    text(string.format("market: bid %s / ask %s",
+                        quote.bid and tostring(quote.bid) or "-",
+                        quote.ask and tostring(quote.ask) or "-"),
+                        "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+                }
+            },
+            Grid {
+                fixedHeight = math.floor(26 * s),
+                cells = { Grid.Fixed(120 * s), Grid.Fixed(90 * s), Grid.Fixed(70 * s),
+                          Grid.Fixed(70 * s), Grid.Fixed(70 * s), Grid.Fixed(70 * s),
+                          Grid.Fixed(130 * s), Grid.Fixed(90 * s), Grid.Fixed(70 * s),
+                          Grid.Fixed(70 * s), Grid.Fixed(70 * s), Grid.Fixed(70 * s) },
+                contents = {
+                    text("price", "Unageo-Regular", size, DIM),
+                    text(tostring(order.price), "Unageo-Medium", size, WHITE, AlignHorizontal.Right),
+                    step("-10%", -0.1, "price", 1),
+                    step("-1%", -0.01, "price", 1),
+                    step("+1%", 0.01, "price", 1),
+                    step("+10%", 0.1, "price", 1),
+                    text("        units", "Unageo-Regular", size, DIM),
+                    text(tostring(order.units), "Unageo-Medium", size, WHITE, AlignHorizontal.Right),
+                    step("-100", -100, "units", 1),
+                    step("-10", -10, "units", 1),
+                    step("+10", 10, "units", 1),
+                    step("+100", 100, "units", 1),
+                }
+            },
+            Grid {
+                fixedHeight = math.floor(28 * s),
+                cells = { Grid.Fixed(620 * s), Grid.Fixed(150 * s), Grid.Fixed(130 * s) },
+                contents = {
+                    text(order.side == "buy"
+                        and string.format("%s held for the order, %s broker's fee%s",
+                            PlayerWallet.format(value), PlayerWallet.format(fee),
+                            quote.ask and order.price >= quote.ask and "  ·  fills at once" or "")
+                        or string.format("%d of %d in the hangar, %s broker's fee, %d%% tax on the sale",
+                            held, order.units, PlayerWallet.format(fee),
+                            math.floor(cfg.salesTax * 100)),
+                        "Unageo-Regular", size, can and GREY or GOLD),
+                    wideButton("Place", s, can, false, function()
+                        local result = MarketSystem:placeOrder(station, key, order.side,
+                            order.itemId, order.units, order.price)
+                        if result.filled > 0 and result.resting then
+                            LimitTheoryRedux:notify(string.format(
+                                "%d filled at once, %d standing at %d",
+                                result.filled, result.resting.units, order.price), { 0.6, 0.9, 1.0 })
+                        elseif result.filled > 0 then
+                            LimitTheoryRedux:notify(string.format("Filled %d at an average of %.0f",
+                                result.filled, result.average or 0), { 0.6, 0.9, 1.0 })
+                        elseif result.resting then
+                            LimitTheoryRedux:notify(string.format("%s order standing: %d at %d",
+                                order.side == "buy" and "Buy" or "Sell", result.resting.units,
+                                order.price), { 0.6, 0.9, 1.0 })
+                        else
+                            LimitTheoryRedux:notify("Order refused: " .. (result.reason or "no"),
+                                { 1.0, 0.4, 0.3 })
+                        end
+                    end),
+                    wideButton("Close", s, true, false, function()
+                        Station.order = { itemId = nil, side = "buy", units = order.units }
+                    end),
+                }
+            },
+        }
+    }
+end
+
+--- The player's standing orders here, with the way out of them.
+---@param station Entity
+---@param s number
+---@return UILayoutGrid|nil
+local function myOrders(station, s)
+    local orders = MarketSystem:playerOrders(station)
+    if #orders == 0 then return nil end
+    local key = stationKey()
+    local size = math.floor(14 * s)
+    local rows = {
+        text("YOUR ORDERS", "Unageo-Medium", math.floor(13 * s), DIM),
+        UIComponent.Divider { color = RULE },
+    }
+    for _, order in ipairs(orders) do
+        local def = Items:getDefinition(order.itemId)
+        local quote = MarketSystem:quote(station, order.itemId)
+        local best = order.side == "buy" and quote.bid or quote.ask
+        local leading = best == order.price
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(24 * s),
+            cells = { Grid.Fixed(120 * s), Grid.Fixed(COL_ITEM * s), Grid.Fixed(120 * s),
+                      Grid.Fixed(100 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
+            contents = {
+                text(order.side == "buy" and "BUY" or "SELL", "Unageo-Medium", size,
+                    order.side == "buy" and GREEN or GOLD),
+                text(def and def.displayName or "?", "Unageo-Regular", size, GREY),
+                text(string.format("%d at %d", order.units, order.price), "Unageo-Regular",
+                    size, WHITE, AlignHorizontal.Right),
+                text(leading and "best" or "outbid", "Unageo-Regular", size,
+                    leading and ACCENT or DIM, AlignHorizontal.Right),
+                text(order.side == "buy"
+                    and string.format("  %s held", PlayerWallet.format(order.escrowCredits or 0))
+                    or string.format("  %d units held", order.escrowUnits or 0),
+                    "Unageo-Regular", size, DIM),
+                wideButton("Cancel", s, true, false, function()
+                    MarketSystem:cancel(station, key, order)
+                    LimitTheoryRedux:notify("Order cancelled; the broker keeps the fee.",
+                        { 0.6, 0.9, 1.0 })
+                end),
+            }
+        }
+    end
+    return Grid {
+        layoutType = GuiLayoutType.Vertical,
+        spacing = math.floor(2 * s),
+        cells = Grid.Fit(),
+        contents = rows
+    }
+end
+
+--- The market: the book here, the order panel, your orders, and what is known
+--- of the markets within reach.
 ---@param station Entity
 ---@param s number
 ---@return UILayoutGrid
@@ -202,22 +417,25 @@ local function market(station, s)
         },
         contents = {
             text("GOODS", "Unageo-Medium", headerSize, DIM),
-            text("IN STOCK", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-            text("BUY", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-            text("SELL", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-            text(Station.target == "hangar" and "IN HANGAR" or "IN HOLD",
-                "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
+            text("LAST", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
+            text("BID (QTY)", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
+            text("ASK (QTY)", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
+            text("IN HANGAR", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
         }
     }
 
     local rows = { header, UIComponent.Divider { color = RULE } }
-    local listing = StationTradeSystem:listing(station)
+    local listing = MarketSystem:listing(station)
     for _, row in ipairs(listing) do
         rows[#rows + 1] = marketRow(station, row, s)
     end
     if #listing == 0 then
-        rows[#rows + 1] = text("This station has nothing to trade.", "Unageo-Regular", math.floor(15 * s), DIM)
+        rows[#rows + 1] = text("No orders standing here.", "Unageo-Regular", math.floor(15 * s), DIM)
     end
+    local panel = orderPanel(station, s)
+    if panel then rows[#rows + 1] = panel end
+    local mine = myOrders(station, s)
+    if mine then rows[#rows + 1] = mine end
 
     return Grid {
         layoutType = GuiLayoutType.Vertical,
@@ -265,28 +483,6 @@ local function production(station, s)
         spacing = math.floor(2 * s),
         cells = Grid.Fit(),
         contents = rows
-    }
-end
-
----@param label string
----@param s number
----@param width number
----@param enabled boolean
----@param active boolean
----@param callback function
----@return UIComponentButton
-local function wideButton(label, s, width, enabled, active, callback)
-    return UIComponent.Button {
-        title = label,
-        width = math.floor(width * s),
-        height = math.floor(28 * s),
-        font = { name = "Unageo-Medium", size = math.floor(14 * s) },
-        color = {
-            text = enabled and WHITE or DIM,
-            background = active and BUTTON_HI or BUTTON_BG,
-            highlight = enabled and BUTTON_HI or BUTTON_BG,
-        },
-        callback = enabled and callback or function() end
     }
 end
 
@@ -463,12 +659,7 @@ local function hangar(station, s)
                     move(hold, store, inHold, "to the hangar")
                 end),
                 wideButton("Sell", s, 78, inHangar >= 1, false, function()
-                    local sold, earned = StationTradeSystem:sell(station, store, item.id, inHangar)
-                    LimitTheoryRedux:notify(sold > 0
-                        and string.format("Sold %d %s for %s", sold, item.displayName,
-                            PlayerWallet.format(earned))
-                        or "This station will take no more of that.",
-                        sold > 0 and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
+                    sellAtMarket(station, item.id, inHangar)
                 end),
             }
         }
@@ -482,7 +673,81 @@ local function hangar(station, s)
     }
 end
 
---- The tab row, and where market trades go.
+--- What is known of the markets within reach: the best spreads first, then
+--- every station whose book has been seen, with how stale the note is. Only
+--- the system you are in is live, so this is memory, not a live feed -- which
+--- is the point: you have to go and look.
+---@param s number
+---@return UILayoutGrid
+local function nearby(s)
+    local size = math.floor(14 * s)
+    local galaxy = LimitTheoryRedux.galaxy
+    local systemId = LimitTheoryRedux.currentSystemId or 1
+    local now = LimitTheoryRedux.simTime or 0
+    local rows = {
+        text(string.format("MARKETS WITHIN %d JUMPS        what was last seen of them",
+                MarketIntel:getRange()),
+            "Unageo-Medium", math.floor(13 * s), DIM),
+        UIComponent.Divider { color = RULE },
+    }
+
+    local spreads = MarketIntel:bestSpreads(galaxy, systemId, now, 8)
+    if #spreads > 0 then
+        rows[#rows + 1] = text("BEST SPREADS", "Unageo-Medium", math.floor(13 * s), ACCENT)
+        for _, spread in ipairs(spreads) do
+            rows[#rows + 1] = Grid {
+                fixedHeight = math.floor(22 * s),
+                cells = { Grid.Fixed(COL_ITEM * s), Grid.Fixed(330 * s), Grid.Fixed(330 * s),
+                          Grid.Fixed(120 * s) },
+                contents = {
+                    text(spread.item.displayName, "Unageo-Regular", size, GREY),
+                    text(string.format("buy %d at %s, %s", spread.buyPrice, spread.buyAt.label,
+                        spread.buyAt.systemName), "Unageo-Regular", size, GOLD),
+                    text(string.format("sell %d at %s, %s", spread.sellPrice, spread.sellAt.label,
+                        spread.sellAt.systemName), "Unageo-Regular", size, GREEN),
+                    text(string.format("+%d a unit", spread.margin), "Unageo-Medium", size,
+                        WHITE, AlignHorizontal.Right),
+                }
+            }
+        end
+        rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    end
+
+    local known = MarketIntel:nearby(galaxy, systemId, now)
+    if #known == 0 then
+        rows[#rows + 1] = text("No market has been seen yet. Dock at one.",
+            "Unageo-Regular", size, DIM)
+    end
+    for _, record in ipairs(known) do
+        local counted = 0
+        for _ in pairs(record.quotes) do counted = counted + 1 end
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(22 * s),
+            cells = { Grid.Fixed(300 * s), Grid.Fixed(240 * s), Grid.Fixed(180 * s),
+                      Grid.Fixed(180 * s) },
+            contents = {
+                text(string.format("%s, %s", record.label, record.systemName),
+                    "Unageo-Regular", size, GREY),
+                text(record.jumps == 0 and "this system"
+                    or string.format("%d jump%s away", record.jumps, record.jumps == 1 and "" or "s"),
+                    "Unageo-Regular", size, DIM),
+                text(string.format("%d goods quoted", counted), "Unageo-Regular", size, DIM),
+                text(record.jumps == 0 and "live" or MarketIntel.describeAge(record.age),
+                    "Unageo-Regular", size, record.jumps == 0 and ACCENT or DIM,
+                    AlignHorizontal.Right),
+            }
+        }
+    end
+
+    return Grid {
+        layoutType = GuiLayoutType.Vertical,
+        spacing = math.floor(2 * s),
+        cells = Grid.Fit(),
+        contents = rows
+    }
+end
+
+--- The tab row.
 ---@param s number
 ---@return UILayoutGrid
 local function tabs(s)
@@ -496,11 +761,7 @@ local function tabs(s)
             tab("Market", "market"),
             tab("Factory", "factory"),
             tab("Hangar", "hangar"),
-            text("        trade with:", "Unageo-Regular", math.floor(13 * s), DIM),
-            wideButton("Ship hold", s, 120, true, Station.target == "ship",
-                function() Station.target = "ship" end),
-            wideButton("Hangar", s, 120, true, Station.target == "hangar",
-                function() Station.target = "hangar" end),
+            tab("Nearby", "nearby"),
         }
     }
 end
@@ -555,6 +816,8 @@ local function screen(s)
             contents[#contents + 1] = factory(station, s)
         elseif Station.tab == "hangar" then
             contents[#contents + 1] = hangar(station, s)
+        elseif Station.tab == "nearby" then
+            contents[#contents + 1] = nearby(s)
         else
             contents[#contents + 1] = market(station, s)
         end

@@ -2,20 +2,17 @@ local Items = require("Shared.Registries.Items")
 local Economy = require("Modules.Economy.Components")
 local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 
---- The station's shop: what it holds, what it pays, what it charges.
+--- A station's own side of the economy: what it holds, what it thinks things
+--- are worth, what it is short of and what arrives from off screen.
 ---
---- A station's prices come from its own shelves. Each item it trades in has a
---- target stock; the price is the item's equilibrium price scaled by how far
---- the shelves are from that target, so a refinery that is drowning in iron
---- sells it cheap, and a station whose energy cells have run out pays over
---- the odds for them. Production and the ore the miners bring in move the
---- stock, so the prices follow what the system is actually doing. The spread
---- between what a station pays and what it charges is the house's cut.
----
---- This is the port of Legacy's Elements/Economy/Market.lua and Trader.lua,
---- in the shape the rest of the new code works in: stock on the station
---- entity, credits through `PlayerWallet`, no per-unit order entities. The
---- order-book `MarketplaceSystem` is still there for NPC-to-NPC trading.
+--- Nothing here is a price the player pays. Prices are the order book's
+--- (`Modules/Economy/Systems/MarketSystem.lua`); this is the station's
+--- *valuation*, which is what it posts its own orders at. Each item it deals
+--- in has a target stock, and `basePrice` is the item's base value scaled by
+--- how far its shelves are from that target, so a refinery drowning in iron
+--- values it at less than one that has run out. Production, the ore the
+--- miners bring and every trade on the book move the stock, so the
+--- valuations follow what the system is actually doing.
 ---@class StationTradeSystem
 local StationTradeSystem = {}
 
@@ -91,9 +88,8 @@ function StationTradeSystem:trades(station, itemId)
     return book(station).traded[itemId] == true
 end
 
---- Everything the station deals in, in item order, with its stock and prices:
---- `{ item, units, buy, sell }` (`buy`: what you pay it per unit; `sell`:
---- what it pays you).
+--- Everything the station deals in, in item order, with what it holds and
+--- what it reckons each is worth: `{ item, units, value }`.
 ---@param station Entity
 ---@return table[]
 function StationTradeSystem:listing(station)
@@ -106,8 +102,7 @@ function StationTradeSystem:listing(station)
             rows[#rows + 1] = {
                 item = def,
                 units = stockCmp:count(id),
-                buy = self:buyPrice(station, id),
-                sell = self:sellPrice(station, id),
+                value = self:basePrice(station, id),
             }
         end
     end
@@ -115,8 +110,10 @@ function StationTradeSystem:listing(station)
     return rows
 end
 
---- The item's price here before the spread: its equilibrium price, scaled by
---- how short of its target the shelves are.
+--- What the station reckons an item is worth here: its base value, scaled by
+--- how short of its target the shelves are. The station's own orders are
+--- posted either side of this; the price anyone actually trades at is the
+--- book's.
 ---@param station Entity
 ---@param itemId integer
 ---@return number
@@ -136,117 +133,11 @@ function StationTradeSystem:basePrice(station, itemId)
     return base * scarcity
 end
 
---- What the player pays the station for one unit.
----@param station Entity
----@param itemId integer
----@return integer
-function StationTradeSystem:buyPrice(station, itemId)
-    local spread = Config.game.trade.spread
-    return math.max(1, math.ceil(self:basePrice(station, itemId) * (1 + spread)))
-end
 
---- What the station pays the player for one unit.
----@param station Entity
----@param itemId integer
----@return integer
-function StationTradeSystem:sellPrice(station, itemId)
-    local spread = Config.game.trade.spread
-    return math.max(1, math.floor(self:basePrice(station, itemId) * (1 - spread)))
-end
 
---- How many units the player could buy: what is on the shelves, what the
---- credits cover and what the hold can take.
----@param station Entity
----@param hold StockComponent
----@param itemId integer
----@return integer
-function StationTradeSystem:maxBuyable(station, hold, itemId)
-    local stockCmp = station:get(Economy.Stock)
-    if not stockCmp or not self:trades(station, itemId) then return 0 end
-    local units = stockCmp:count(itemId)
-    local price = self:buyPrice(station, itemId)
-    local affordable = math.floor(PlayerWallet:get() / price)
-    local room = hold:getRoomFor(itemId)
-    return math.max(0, math.min(units, affordable, room))
-end
 
---- Buy from the station into `hold`, paying out of the player's wallet. Buys
---- fewer units than asked when the shelves, the credits or the hold run out.
----@param station Entity
----@param hold StockComponent
----@param itemId integer
----@param units integer
----@return integer bought, integer spent
-function StationTradeSystem:buy(station, hold, itemId, units)
-    units = math.min(math.floor(units or 0), self:maxBuyable(station, hold, itemId))
-    if units <= 0 then return 0, 0 end
-    local def = Items:getDefinition(itemId)
-    local stockCmp = station:get(Economy.Stock)
-    -- Unit by unit: each one bought makes the next one dearer, so a big
-    -- order moves the price instead of clearing the shelves at the first one
-    local spent, bought = 0, 0
-    for _ = 1, units do
-        local price = self:buyPrice(station, itemId)
-        if not PlayerWallet:has(price) then break end
-        if stockCmp:remove(itemId, 1) < 1 then break end
-        if hold:add(itemId, 1) < 1 then
-            stockCmp:add(itemId, 1)
-            break
-        end
-        PlayerWallet:remove(price, "Bought " .. def.displayName)
-        spent = spent + price
-        bought = bought + 1
-    end
-    return bought, spent
-end
 
---- How many units the station will still take: it stops buying a thing once
---- it is sitting on `Config.game.trade.buyCeiling` times what it likes to
---- keep, so a hold full of one ore cannot be dumped on one station for ever.
----@param station Entity
----@param hold StockComponent
----@param itemId integer
----@return integer
-function StationTradeSystem:maxSellable(station, hold, itemId)
-    local stockCmp = station:get(Economy.Stock)
-    if not stockCmp then return 0 end
-    local ceiling = math.floor(self:targetStock(station, itemId) * Config.game.trade.buyCeiling)
-    return math.max(0, math.min(hold:count(itemId), ceiling - stockCmp:count(itemId)))
-end
 
---- Sell out of `hold` to the station.
----@param station Entity
----@param hold StockComponent
----@param itemId integer
----@param units integer
----@return integer sold, integer earned
-function StationTradeSystem:sell(station, hold, itemId, units)
-    local stockCmp = station:get(Economy.Stock)
-    if not stockCmp then return 0, 0 end
-    units = math.min(math.floor(units or 0), self:maxSellable(station, hold, itemId))
-    if units <= 0 then return 0, 0 end
-    local def = Items:getDefinition(itemId)
-    -- A station buys anything that can be mined or made, whether it deals in
-    -- it or not, but at a loss to the seller when it has no use for it
-    local wanted = self:trades(station, itemId)
-    local sold, earned = 0, 0
-    for _ = 1, units do
-        local price = self:sellPrice(station, itemId)
-        if not wanted then
-            price = math.max(1, math.floor(price * Config.game.trade.unwantedFactor))
-        end
-        if hold:remove(itemId, 1) < 1 then break end
-        stockCmp:add(itemId, 1)
-        PlayerWallet:add(price, "Sold " .. def.displayName)
-        earned = earned + price
-        sold = sold + 1
-    end
-    if sold > 0 and not wanted then
-        -- It deals in it now: it has some
-        self:invalidate(station)
-    end
-    return sold, earned
-end
 
 --- Put goods in a station's store without money changing hands (an NPC
 --- miner unloading its hold, the initial stock).

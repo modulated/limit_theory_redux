@@ -8,8 +8,10 @@ Status sections say how much of each is actually wired up.
 Status summary (2026-11): it all runs. 58 items with permanent ids; every belt and ring has a
 composition and mining reads it; a rock knows what it holds; stations hold stock, price it by how
 short they are, run the production chains against it, and trade with the player on a docked screen;
-the player has a hold, a mining laser, credits, a hangar at every station and lines they can rent
-there; NPC workers are the hands the factory floors run on. Legacy's economy is deleted. What is
+every station has an order book where prices are whatever
+someone will pay, and the player can take the best order or place one of their own; the player has
+a hold, a mining laser, credits, a hangar at every station and lines they can rent there; NPC
+workers are the hands the factory floors run on. Legacy's economy is deleted. What is
 missing is listed in the last section — chiefly NPC traders that actually haul, equipment that can be fitted, and
 saving.
 
@@ -25,10 +27,11 @@ saving.
 | Asteroid entity carrying an item + quantity | `script/Modules/CelestialObjects/Entities/AsteroidEntity.lua` |
 | Mineable rocks, yields and regrowth | `script/Modules/NPC/Managers/MiningField.lua`, `Config.game.mining` |
 | Miner job (mine, dock, sell) | `script/Modules/NPC/Jobs/Mining.lua`, `Actions/MineAt.lua` |
-| Order-book market (not used by the player) | `script/Modules/Economy/Systems/MarketplaceSystem.lua`, `Components/InventoryComponent.lua`, `Entities/OrderEntity.lua` |
 | Player credits (bounties, repairs) | `script/Modules/Economy/Managers/PlayerWallet.lua`, `Config.game.economy` |
 | **The production recipes** | `script/Shared/Definitions/ProductionDefs.lua`, `Shared/Registries/Productions.lua`, `Shared/Types/ProductionDefinition.lua` |
-| Station stock, prices, buying and selling | `script/Modules/Economy/Systems/StationTradeSystem.lua` |
+| **The market**: order books, matching, escrow, fees | `script/Modules/Economy/Systems/MarketSystem.lua`, `Components/OrderBookComponent.lua` |
+| What a station reckons things are worth, its stock and imports | `script/Modules/Economy/Systems/StationTradeSystem.lua` |
+| What is known of other systems' markets | `script/Modules/Economy/Managers/MarketIntel.lua` |
 | Stations making things | `script/Modules/Economy/Systems/ProductionSystem.lua`, `Components/ProductionComponent.lua` |
 | A store of goods (stations, the hold) | `script/Modules/Economy/Components/StockComponent.lua` |
 | The player's hold | `script/Modules/Economy/Managers/PlayerCargo.lua` |
@@ -232,40 +235,54 @@ A miner's hold carries the ore's id and display name (`npc.cargo.itemId`, `npc.c
 selling still only logs a line (`Jobs/Mining.lua`, `SellCargo`) because stations hold no stock. The
 player cannot mine at all.
 
-## 4. Trade
+## 4. Trade: the market
 
-Docking at a station (F) opens its own screen (`UI/HmGui/Views/Gameplay/Station.lua`): what it has,
-what it pays, what the hold is carrying, what its lines are making, hull repair and undock.
+Every station has an **order book**, and what a thing is worth there is what someone will pay for
+it. Nothing has a price of its own any more.
 
-**Prices come from the shelves.** `Modules/Economy/Systems/StationTradeSystem.lua` gives every item
-a station deals in a target stock, by value (`Config.game.trade.targetValue`), and prices it at its
-equilibrium price scaled by how far the shelves are from that target, bounded both ways
-(`minScarcity`, `maxScarcity`). A refinery drowning in iron sells it cheap; one that has run out of
-energy cells pays over the odds. The `spread` either side is the house's cut, so buying and selling
-the same thing back always costs something. Buying and selling go unit by unit, so a big order
-moves the price rather than clearing the shelves at the first one.
+- **A station posts orders** (`MarketSystem:refreshStation`, every `market.refreshInterval`): a bid
+  for everything it deals in until it holds all it wants, and an offer of whatever it has beyond
+  the reserve it keeps back (`reserveShare`). Both sit `stationMargin` either side of its own
+  *valuation* — `StationTradeSystem:basePrice`, the item's base value scaled by how far its shelves
+  are from its target. So a station drowning in ore bids next to nothing for more and offers it
+  cheap; one that has run out of energy cells bids over the odds. The valuation is the station's
+  opinion, not the price: the price is the book's.
+- **The player trades two ways.** At the market: take the best orders standing, for whatever they
+  are asking. Or with a **limit order**: name a price and wait. Credits are escrowed for a buy
+  order and the goods taken for a sell order, both returned if it is cancelled or lapses
+  (`orderLifetime`). Placing one costs a broker's fee (`brokerFee`), and a sale pays tax
+  (`salesTax`), which are the two reasons not to place orders carelessly. Undercut the best ask by
+  a credit and you are first in line.
+- **A trade happens at the resting order's price**, oldest first at the same price, so undercutting
+  works and a big market order walks up the book instead of clearing it at the first price.
+- **Orders are backed by goods that are there.** The market trades out of the player's **hangar**
+  at that station, not the ship's hold; the Hangar tab moves goods between the two.
+- **Nothing is stranded.** Whatever nobody bids for, the station takes as scrap at `scrapFactor`
+  of its valuation. A scrap sale is not a market price and is kept out of the book's history.
 
-A station deals in everything its recipes make or need, plus the ores of its system. It will buy
-something it has no use for at `unwantedFactor` of the price, and deals in it afterwards.
+**Reading other markets.** Only the system you are in is simulated, so other books cannot be read
+live — what can be read is what was last seen of them. Every station's book is written down when
+you are there (`Modules/Economy/Managers/MarketIntel.lua`), and the station screen's **Nearby** tab
+shows those notes for systems within `market.remoteJumps` jumps (3), with their age and the best
+spreads they imply: buy here at this price, sell there at that one. The range is a config number so
+a ship module can raise it later (`MarketIntel:setRange`).
 
-**What moves the stock:**
+**What moves the stock behind the orders:**
 
 | Source | What it does |
 |--------|--------------|
 | The station's own production | makes its outputs, eats its inputs (section 5) |
-| NPC miners | `Jobs/Mining.lua` unloads a full hold into the station it docks at |
-| The player | buying and selling on the station screen |
+| NPC miners | `Jobs/Mining.lua` unloads a full hold into the station it docks at, which becomes an offer |
+| The player | every fill on the book, and scrap sales |
 | Imports | a trickle (`importPerSecond`) of what the station cannot make itself, capped at `importFloor` of its target, standing in for the freighters nobody sees |
 
-**The player's side:** `Modules/Economy/Managers/PlayerCargo.lua` is the hold, kept beside the
-wallet rather than on the ship (which is destroyed and rebuilt on undocking, on a jump and on a
-respawn). Its capacity is a mass (`Config.game.cargo.holdCapacity`), so ore fills it and data cubes
-do not. Mining (E held) takes a unit at a time out of the nearest rock in reach, from the same
-yield the NPC miners work. Credits are `PlayerWallet`; bounties and hull repair go through it too.
+**The player's side:** `PlayerCargo` is the ship's hold, kept beside the wallet rather than on the
+ship (which is destroyed and rebuilt on undocking, on a jump and on a respawn); its capacity is a
+mass, so ore fills it and data cubes do not. Mining (E held) takes a unit at a time out of the
+nearest rock in reach, from the same yield the NPC miners work. Credits are `PlayerWallet`.
 
-Still only NPC-to-NPC: the order-book `MarketplaceSystem` (bids, asks, price discovery, orders as
-entities) is untouched and nothing drives it yet. The station shop above is the one the player
-uses.
+The order-book `MarketplaceSystem` that came with the ECS port is **gone**, along with its order
+entities, price and marketplace components and its test state: there is one market model now.
 
 ## 5. Production (crafting)
 
@@ -382,7 +399,10 @@ worth roughly twice the ore it came from.
 stations making and trading, miners bringing ore in, optionally a trader
 hauling between stations and a prospector mining and selling. A simulated day
 takes about a second, so the numbers in `Config.game.{trade,production,mining,cargo}`
-can be tuned by running it rather than by flying around.
+can be tuned by running it rather than by flying around. The actors trade on
+the real order books: the trader works the spreads between stations, the
+prospector sells its ore into the best bid it can find, and the crafter rents
+a line, buys its inputs off the book and sells the output back.
 
 ```sh
 luajit tools/economy-sim.lua                                   # a two-day run
@@ -393,8 +413,8 @@ luajit tools/economy-sim.lua --help
 ```
 
 What it reports: runs per production line (and which lines **starved**, never
-completing a run), each station's stock, each watched item's price range with
-a note when it is **pinned** at a scarcity bound, where every unit came from
+completing a run), each station's stock with the best bid and ask on its book,
+each watched item's traded price range, where every unit came from
 (produced, imported, mined, hauled), and the income of the trader and the
 prospector in credits an hour. `--seeds N` runs several systems and prints the
 spread, which matters: income swings by more than ten times depending on
@@ -445,8 +465,6 @@ hangar and rentable factory lines at every station, and the deletion of Legacy's
 - [ ] **A prospecting scanner**: rocks carry their ore and remaining yield
       (`AsteroidOre.ofEntity`); nothing reads it yet, so the ore is on the HUD as soon as a rock is
       in reach.
-- [ ] **One market model.** The order-book `MarketplaceSystem` and the station shop both price
-      goods; either the shop should post its orders into the book, or the book should go.
 - [ ] **Saving.** The hold, the wallet, every station's stock and every production line's progress
       are the state a saved game needs (see item ids, section 1).
 - [ ] **Balance.** `Config.game.trade` and `Config.game.production` were set by eye: the target

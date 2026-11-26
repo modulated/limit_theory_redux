@@ -380,6 +380,25 @@ Config.game = {
         importFloor     = 0.35,  -- ...up to this fraction of its target, and no further
     },
 
+    -- The market (Modules/Economy/Systems/MarketSystem.lua). Every station
+    -- has an order book and a price is whatever someone will pay: a station
+    -- bids for what its lines need and offers what it is sitting on, priced
+    -- from `trade` below (its own opinion of what things are worth), and
+    -- everyone else trades against those orders or posts their own. A trade
+    -- happens at the price of the order that was already there, so
+    -- undercutting works.
+    market = {
+        brokerFee      = 0.02,   -- of an order's value, to place it (not refunded)
+        salesTax       = 0.03,   -- of what a sale brings in
+        orderLifetime  = 3600.0, -- game seconds an order stands for
+        refreshInterval = 45.0,  -- game seconds between a station re-posting its orders
+        stationMargin  = 0.08,   -- how far a station's own orders sit either side of its valuation
+        orderShare     = 0.5,    -- the share of its shortfall or surplus it puts on the book at once
+        reserveShare   = 0.5,    -- the share of its target it keeps back rather than offering
+        scrapFactor    = 0.25,   -- what a station pays for something nobody bid for
+        remoteJumps    = 3,      -- jumps away whose books can still be read (a module may raise it)
+    },
+
     -- Stations making things (Modules/Economy/Systems/ProductionSystem.lua).
     -- The recipes are Shared/Definitions/ProductionDefs.lua; `timeScale`
     -- compresses Legacy's durations (4 s to 4 hours) into a session.
