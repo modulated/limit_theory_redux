@@ -1,4 +1,5 @@
 use glam::Vec2;
+use tracing::warn;
 
 use crate::input::*;
 
@@ -58,7 +59,16 @@ pub struct MouseState {
     /// Raw motion events (`update_raw_delta`) have arrived: they are the
     /// mouse's movement from then on, and cursor moves no longer count.
     has_raw_motion: bool,
+    /// The raw motion stream carries absolute coordinates rather than
+    /// movement, so it is ignored and the cursor's own movement is used
+    /// instead. See [`MouseState::update_raw_delta`].
+    raw_motion_is_absolute: bool,
 }
+
+/// No mouse reports moving this far in a single packet (they arrive at up to
+/// the polling rate, often 1000 Hz, so even a fast flick is a few hundred
+/// pixels at most). A "delta" this large is an absolute coordinate.
+const RAW_MOTION_SANITY_LIMIT: f32 = 2000.0;
 
 impl MouseState {
     pub fn control_state(&self) -> &ControlState {
@@ -127,10 +137,42 @@ impl MouseState {
         self.control_state.update()
     }
 
+    /// The device's own movement, independent of the cursor. Windows sends
+    /// one event per mouse report (up to the mouse's polling rate, often
+    /// 1000 Hz), so many arrive per frame: they add up.
+    ///
+    /// Not every mouse reports movement. A remote desktop session, a virtual
+    /// machine's pointer, a graphics tablet and some KVM switches report
+    /// *absolute* position instead, flagged `MOUSE_MOVE_ABSOLUTE` and scaled
+    /// to 0..65535 across the virtual desktop. winit 0.30 tests that flag
+    /// with `has_flag(usFlags, MOUSE_MOVE_RELATIVE)`, and `MOUSE_MOVE_RELATIVE`
+    /// is zero, so `usFlags & 0 == 0` holds for every packet: absolute
+    /// coordinates arrive as `DeviceEvent::MouseMotion` deltas. The smallest
+    /// movement then reads as tens of thousands of pixels, which sends
+    /// anything steering by mouse movement -- the first-person and orbit
+    /// cameras, first-person flight -- spinning.
+    ///
+    /// A packet beyond any real mouse's reach says the stream is absolute.
+    /// From then on it is ignored and the cursor's own movement
+    /// ([`MouseState::update_position`]) is the mouse's movement, which the
+    /// window system reports correctly in those sessions.
     pub fn update_raw_delta(&mut self, dx: f32, dy: f32) -> bool {
-        // The device's own movement, independent of the cursor. Windows sends
-        // one event per mouse report (up to the mouse's polling rate, often
-        // 1000 Hz), so many arrive per frame: they add up.
+        if self.raw_motion_is_absolute {
+            return false;
+        }
+        if dx.abs() > RAW_MOTION_SANITY_LIMIT || dy.abs() > RAW_MOTION_SANITY_LIMIT {
+            warn!(
+                "Raw mouse motion of ({dx}, {dy}) is an absolute position, not movement \
+                 (a remote desktop session or a virtual pointer): using the cursor's \
+                 movement from here on."
+            );
+            self.raw_motion_is_absolute = true;
+            self.has_raw_motion = false;
+            // Whatever this frame accumulated before the stream was found out
+            self.axis_state.zero(MouseControl::DeltaX as _);
+            self.axis_state.zero(MouseControl::DeltaY as _);
+            return false;
+        }
         self.has_raw_motion = true;
         self.axis_state.add(MouseControl::DeltaX as _, dx)
             && self.axis_state.add(MouseControl::DeltaY as _, dy)
