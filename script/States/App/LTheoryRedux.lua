@@ -63,6 +63,8 @@ local CombatLog = require('Modules.Constructs.Systems.CombatLog')
 local PlayerWallet = require('Modules.Economy.Managers.PlayerWallet')
 local PlayerCargo = require('Modules.Economy.Managers.PlayerCargo')
 local PlayerFactories = require('Modules.Economy.Managers.PlayerFactories')
+local MarketSystem = require('Modules.Economy.Systems.MarketSystem')
+local MarketIntel = require('Modules.Economy.Managers.MarketIntel')
 local StationTradeSystem = require('Modules.Economy.Systems.StationTradeSystem')
 local ProductionSystem = require('Modules.Economy.Systems.ProductionSystem')
 local EconomyComponents = require('Modules.Economy.Components')
@@ -763,8 +765,47 @@ function LimitTheoryRedux:dockPlayer(dock)
     self:updatePlayerVisibility()
     self:setOrbitFocus(dock.entity, self:orbitDistances(dock.radius))
     self:notify("Docked. Shields recharged.", { 0.6, 0.9, 1.0 })
+    self:recordMarketIntel()
     -- The station's own screen: its market, its production and the way out
     self:openStationScreen()
+end
+
+--- Where the market moves the player's goods: the hangar at the station
+--- being traded with, and the ship's hold. Set once, before any trading.
+function LimitTheoryRedux:connectMarket()
+    MarketSystem:setPlayerAccess({
+        hangar = function(key) return key and PlayerFactories:hangar(key) or nil end,
+        cargo = function() return PlayerCargo:get() end,
+    })
+end
+
+--- This system's stations by key, for the market and the player's lines.
+---@return Entity[] stations, table<Entity, string> keys
+function LimitTheoryRedux:marketStations()
+    local stations, keys = {}, {}
+    local places = self.npcs and self.npcs.places
+    for _, dock in ipairs(places and places.docks or {}) do
+        if dock.key and dock.entity:isValid() then
+            stations[#stations + 1] = dock.entity
+            keys[dock.entity] = dock.key
+        end
+    end
+    return stations, keys
+end
+
+--- What the player knows of this system's books, written down so the markets
+--- of nearby systems can be read from the station screen later.
+function LimitTheoryRedux:recordMarketIntel()
+    local places = self.npcs and self.npcs.places
+    for _, dock in ipairs(places and places.docks or {}) do
+        if dock.key and dock.entity:isValid() then
+            local book = dock.entity:get(EconomyComponents.OrderBook)
+            if book then
+                MarketIntel:record(dock.key, self.currentSystemId or 1, dock.label,
+                    book, self.simTime or 0)
+            end
+        end
+    end
 end
 
 --- The player's rented lines at this system's stations, after the stations'
@@ -923,6 +964,8 @@ function LimitTheoryRedux:resetGalaxy()
     PlayerWallet:reset()
     PlayerCargo:reset()
     PlayerFactories:reset()
+    MarketIntel:reset()
+    self:connectMarket()
     self.simTime = 0
     self.messages = {}
     self.docked = nil
@@ -1409,6 +1452,7 @@ function LimitTheoryRedux:spawnStations()
         -- (the ores of this system, so there is something to trade on day one)
         station:add(EconomyComponents.Stock())
         station:add(EconomyComponents.Workforce(Config.game.production.stationCrew))
+        station:add(EconomyComponents.OrderBook())
         local oreIds = self:systemOreIds()
         ProductionSystem:assign(station, self.rng, i == 1, oreIds)
         StationTradeSystem:stock(station, self.rng, oreIds)
@@ -2184,6 +2228,15 @@ function LimitTheoryRedux:onStateSim(data)
     ProductionSystem:update(self.stations or {}, dt)
     self:updatePlayerFactories(dt)
     StationTradeSystem:update(self.stations or {}, dt)
+    -- The books: lapsed orders go, and the stations re-post theirs as their
+    -- stock moves
+    local stations, keys = self:marketStations()
+    MarketSystem:update(stations, keys, dt, self.simTime or 0)
+    self.marketIntelTimer = (self.marketIntelTimer or 0) - dt
+    if self.marketIntelTimer <= 0 then
+        self.marketIntelTimer = Config.game.market.refreshInterval
+        self:recordMarketIntel()
+    end
     Profiler.End()
     if self.scenario.update then
         Profiler.Begin('Sim.Scenario')

@@ -25,6 +25,7 @@ return function(seed, meshes, stats)
             stats and stats.defense.armor,
             stats and stats.defense.shieldRegen
         ),
-        Economy.Inventory(),
-        Economy.Marketplace())
+        -- Its store, its market and the hands that work it are added by the
+        -- game state when it places the station (LTheoryRedux:spawnStations)
+        Economy.Stock())
 end
