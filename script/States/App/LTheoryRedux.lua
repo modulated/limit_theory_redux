@@ -76,6 +76,7 @@ local Factions = require('Modules.NPC.Factions')
 local GunshipRecipe = require('Modules.NPC.Managers.GunshipRecipe')
 local PlayerLoadout = require('Modules.Constructs.Managers.PlayerLoadout')
 local ShipFittingSystem = require('Modules.Constructs.Systems.ShipFittingSystem')
+local AbilitySystem = require('Modules.Constructs.Systems.AbilitySystem')
 local Fittings = require('Shared.Registries.Fittings')
 local ArmedShipBuilder = require('Modules.Constructs.Managers.ArmedShipBuilder')
 local WeaponBattery = require('Modules.Constructs.Systems.WeaponBattery')
@@ -824,6 +825,31 @@ function LimitTheoryRedux:recordMarketIntel()
     end
 end
 
+--- Fire the active module in a slot (the number keys). A slot with nothing
+--- in it, or a passive module, says so rather than doing nothing silently.
+---@param slot integer
+function LimitTheoryRedux:fireModule(slot)
+    if not self.playerShip or not self.playerShip:isValid() then return end
+    local loadout = self.playerShip:get(ConstructComponents.Loadout)
+    local fitting = loadout and loadout:getModule(slot)
+    if not fitting then
+        self:notify(string.format("Slot %d is empty.", slot), { 0.7, 0.7, 0.7 })
+        return
+    end
+    if not fitting:isActive() then
+        self:notify(string.format("%s works on its own.", fitting.displayName), { 0.7, 0.7, 0.7 })
+        return
+    end
+    if fitting.ability.key == "miningLaser" then
+        self:notify("Hold E to mine.", { 0.7, 0.7, 0.7 })
+        return
+    end
+    local fired, reason = AbilitySystem:trigger(self.playerShip, fitting.ability.key, self)
+    if not fired and reason then
+        self:notify(reason, { 1.0, 0.7, 0.3 })
+    end
+end
+
 --- What the fit changes beyond the ship's own components: the hold's
 --- capacity, which lives with the player, not the hull.
 function LimitTheoryRedux:applyFitToShip()
@@ -1013,6 +1039,7 @@ function LimitTheoryRedux:resetGalaxy()
     MarketIntel:reset()
     self:connectMarket()
     -- The ship a new game starts in: empty slots but for what it comes with
+    AbilitySystem:reset()
     PlayerLoadout:reset(Config.game.fitting.moduleSlots)
     for _, name in ipairs(Config.game.fitting.startingModules) do
         local def = Fittings:getByName(name)
@@ -1945,7 +1972,25 @@ function LimitTheoryRedux:drawNavigation()
             if #rows > 1 then hold = hold .. string.format(" +%d", #rows - 1) end
         end
         DrawEx.TextAlpha(font, hold, 12, w - 290, 66, 270, 16, 0.75, 0.85, 0.9, 0.85, 1.0, 0.5)
-        local y = 88
+        -- The modules on the number keys, and what they are doing
+        local modules = AbilitySystem:status(self.playerShip)
+        local moduleY = 84
+        for _, row in ipairs(modules) do
+            local label, cr, cg, cb
+            if row.active > 0 then
+                label = string.format("%d  %s  %.0fs", row.slot, row.fitting.displayName, row.active)
+                cr, cg, cb = 0.5, 1.0, 0.7
+            elseif row.ready then
+                label = string.format("%d  %s", row.slot, row.fitting.displayName)
+                cr, cg, cb = 0.85, 0.9, 0.95
+            else
+                label = string.format("%d  %s  %.0fs", row.slot, row.fitting.displayName, row.remaining)
+                cr, cg, cb = 0.55, 0.57, 0.62
+            end
+            DrawEx.TextAlpha(font, label, 12, w - 290, moduleY, 270, 16, cr, cg, cb, 0.9, 1.0, 0.5)
+            moduleY = moduleY + 16
+        end
+        local y = math.max(88, moduleY + 4)
         for _, faction in ipairs({ Factions.Security, Factions.Trader, Factions.Pirate }) do
             local r, g, b = Factions.color(faction)
             DrawEx.TextAlpha(font, string.format("%s  %+.2f  %s", Factions.name(faction),
@@ -2114,6 +2159,13 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.Cloak:update(dt)
     GeneralActions.Mine:update(dt)
     GeneralActions.Repair:update(dt)
+    for slot, binding in ipairs({ GeneralActions.Module1, GeneralActions.Module2,
+                                  GeneralActions.Module3, GeneralActions.Module4 }) do
+        binding:update(dt)
+        if binding:isPressed() and not self.docked then
+            self:fireModule(slot)
+        end
+    end
 
     if GeneralActions.CycleMapMode:isPressed() then
         -- 2D map, 3D map, then the galaxy map when there is a galaxy
@@ -2283,6 +2335,7 @@ function LimitTheoryRedux:onStateSim(data)
     self.player:update(dt)
     self:updateCloak(dt)
     self:updateMining(dt)
+    AbilitySystem:update(self.playerShip, dt)
     self.simTime = (self.simTime or 0) + dt
     -- The player's shields recharge (DefenseComponent:update had no caller)
     local playerDefense = self.playerShip:get(ConstructComponents.Defense)

@@ -12,6 +12,10 @@ local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
 local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
 local EconomyComponents = require("Modules.Economy.Components")
 local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
+local PlayerLoadout = require("Modules.Constructs.Managers.PlayerLoadout")
+local ShipFittingSystem = require("Modules.Constructs.Systems.ShipFittingSystem")
+local AbilitySystem = require("Modules.Constructs.Systems.AbilitySystem")
+local Fittings = require("Shared.Registries.Fittings")
 
 -- The screen the player sees while docked: what the station has and what it
 -- pays, what the hold is carrying, what its factory floor is making, and the
@@ -21,8 +25,9 @@ local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
 -- Four tabs: the Market (the station's order book: trade at the market or
 -- place an order of your own), the Factory (the station's own lines and the
 -- lines the player rents), the Hangar (what the player keeps here, and moving
--- it to and from the ship) and Nearby (what was last seen of the markets
--- within reach, which is where the spreads worth flying for show up).
+-- it to and from the ship), Nearby (what was last seen of the markets within
+-- reach, which is where the spreads worth flying for show up) and Refit (the
+-- ship's mounts and module slots, fitted out of this station's hangar).
 --
 -- NOTE: the prices and the stock are the station's own
 -- (Modules/Economy/Systems/MarketSystem.lua: a station posts orders, and a
@@ -747,6 +752,180 @@ local function nearby(s)
     }
 end
 
+--- Refitting the ship: its mounts, its module slots, and what the hangar
+--- here has that could go in them. Fitting takes the part out of the hangar
+--- and bolts it on; taking one off puts it back. The station charges nothing
+--- for the work.
+---@param s number
+---@return UILayoutGrid
+local function refit(s)
+    local size = math.floor(14 * s)
+    local key = stationKey()
+    local ship = LimitTheoryRedux.playerShip
+    local rows = {}
+    if not ship or not ship:isValid() then
+        return Grid { cells = Grid.Fit(), contents = { text("No ship.", "Unageo-Regular", size, DIM) } }
+    end
+    local loadout = ship:get(require("Modules.Constructs.Components").Loadout)
+    if not loadout then
+        return Grid { cells = Grid.Fit(), contents = {
+            text("This hull cannot be refitted.", "Unageo-Regular", size, DIM) } }
+    end
+    local hangar = key and PlayerFactories:hangar(key)
+
+    --- What is in the hangar that would go in this kind of slot.
+    ---@param slotKind string
+    ---@param sizeClass string|nil
+    ---@return table[]
+    local function available(slotKind, sizeClass)
+        local list = {}
+        for _, row in ipairs(ShipFittingSystem:fittableFrom(ship, hangar)) do
+            if row.fitting.slot == slotKind
+                and (slotKind ~= "weapon" or ShipFittingSystem:weaponFits(row.fitting, sizeClass)) then
+                list[#list + 1] = row
+            end
+        end
+        return list
+    end
+
+    -- What the ship comes to with what is on it now
+    local stats = loadout.stats or {}
+    rows[#rows + 1] = text(string.format(
+            "YOUR SHIP           %s   ·   shield %d, armour %.0f, hull %d   ·   thrust x%.2f, turn x%.2f   ·   hold +%d t",
+            PlayerLoadout:describe(ship), stats.maxShield or 0, stats.armor or 0,
+            stats.maxHealth or 0, stats.thrust or 1, stats.turn or 1, stats.cargoMass or 0),
+        "Unageo-Medium", math.floor(13 * s), DIM)
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+
+    -- The guns
+    rows[#rows + 1] = text("MOUNTS", "Unageo-Medium", math.floor(13 * s), ACCENT)
+    local mounts = ShipFittingSystem:mounts(ship)
+    if #mounts == 0 then
+        rows[#rows + 1] = text("This hull has no mounts.", "Unageo-Regular", size, DIM)
+    end
+    for _, mount in ipairs(mounts) do
+        local fitted = loadout:getWeapon(mount.mountId)
+        local offers = available("weapon", mount.sizeClass)
+        local buttons = {}
+        for _, row in ipairs(offers) do
+            if not fitted or fitted.id ~= row.fitting.id then
+                buttons[#buttons + 1] = wideButton(
+                    string.format("%s (%d)", row.fitting.displayName, row.units), s, 190, true, false,
+                    function()
+                        local ok, reason = ShipFittingSystem:fitWeapon(ship, hangar, mount.mountId, row.fitting)
+                        LimitTheoryRedux:notify(ok
+                            and string.format("%s fitted to %s", row.fitting.displayName, mount.mountId)
+                            or ("Cannot fit: " .. (reason or "no")), ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
+                        if ok then
+                            PlayerLoadout:record(ship)
+                            LimitTheoryRedux:applyFitToShip()
+                        end
+                    end)
+            end
+        end
+        if fitted then
+            buttons[#buttons + 1] = wideButton("Remove", s, 110, true, false, function()
+                local ok = ShipFittingSystem:unfitWeapon(ship, hangar, mount.mountId)
+                if ok then
+                    PlayerLoadout:record(ship)
+                    LimitTheoryRedux:applyFitToShip()
+                    LimitTheoryRedux:notify("Stripped " .. mount.mountId, { 0.6, 0.9, 1.0 })
+                end
+            end)
+        end
+        local cells = { Grid.Fixed(220 * s), Grid.Fixed(260 * s) }
+        local contents = {
+            text(string.format("%s  (%s)", mount.mountId, tostring(mount.sizeClass or "any")),
+                "Unageo-Regular", size, GREY),
+            text(fitted and fitted.displayName or "as built", "Unageo-Regular", size,
+                fitted and WHITE or DIM),
+        }
+        for _, button in ipairs(buttons) do
+            cells[#cells + 1] = Grid.Fixed(200 * s)
+            contents[#contents + 1] = button
+        end
+        rows[#rows + 1] = Grid { fixedHeight = math.floor(26 * s), cells = cells, contents = contents }
+    end
+
+    -- The slots
+    rows[#rows + 1] = text("MODULE SLOTS        the number keys fire the active ones",
+        "Unageo-Medium", math.floor(13 * s), ACCENT)
+    for slot = 1, loadout:getModuleSlots() do
+        local fitted = loadout:getModule(slot)
+        local buttons = {}
+        for _, row in ipairs(available("module")) do
+            if not fitted or fitted.id ~= row.fitting.id then
+                buttons[#buttons + 1] = wideButton(
+                    string.format("%s (%d)", row.fitting.displayName, row.units), s, 200, true, false,
+                    function()
+                        local ok, reason = ShipFittingSystem:fitModule(ship, hangar, slot, row.fitting)
+                        LimitTheoryRedux:notify(ok
+                            and string.format("%s fitted in slot %d", row.fitting.displayName, slot)
+                            or ("Cannot fit: " .. (reason or "no")), ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
+                        if ok then
+                            PlayerLoadout:record(ship)
+                            LimitTheoryRedux:applyFitToShip()
+                        end
+                    end)
+            end
+        end
+        if fitted then
+            buttons[#buttons + 1] = wideButton("Remove", s, 110, true, false, function()
+                local ok = ShipFittingSystem:unfitModule(ship, hangar, slot)
+                if ok then
+                    PlayerLoadout:record(ship)
+                    LimitTheoryRedux:applyFitToShip()
+                    LimitTheoryRedux:notify(string.format("Slot %d emptied", slot), { 0.6, 0.9, 1.0 })
+                end
+            end)
+        end
+        local cells = { Grid.Fixed(90 * s), Grid.Fixed(230 * s), Grid.Fixed(360 * s) }
+        local contents = {
+            text(string.format("slot %d", slot), "Unageo-Regular", size, GREY),
+            text(fitted and fitted.displayName or "empty", "Unageo-Regular", size,
+                fitted and WHITE or DIM),
+            text(fitted and fitted:describeEffects() or "", "Unageo-Regular", size, DIM),
+        }
+        for _, button in ipairs(buttons) do
+            cells[#cells + 1] = Grid.Fixed(210 * s)
+            contents[#contents + 1] = button
+        end
+        rows[#rows + 1] = Grid { fixedHeight = math.floor(26 * s), cells = cells, contents = contents }
+    end
+
+    -- What the hangar is holding that goes nowhere yet
+    local spare = ShipFittingSystem:fittableFrom(ship, hangar)
+    if #spare > 0 then
+        rows[#rows + 1] = text("IN THE HANGAR", "Unageo-Medium", math.floor(13 * s), DIM)
+        rows[#rows + 1] = UIComponent.Divider { color = RULE }
+        for _, row in ipairs(spare) do
+            rows[#rows + 1] = Grid {
+                fixedHeight = math.floor(22 * s),
+                cells = { Grid.Fixed(230 * s), Grid.Fixed(90 * s), Grid.Fixed(100 * s), Grid.Fixed(460 * s) },
+                contents = {
+                    text(row.fitting.displayName, "Unageo-Regular", size, GREY),
+                    text(string.format("x%d", row.units), "Unageo-Regular", size, WHITE,
+                        AlignHorizontal.Right),
+                    text(row.fitting.slot == "weapon"
+                        and string.format("  %s mount", tostring(row.fitting.sizeClass))
+                        or "  module", "Unageo-Regular", size, DIM),
+                    text(row.fitting:describeEffects(), "Unageo-Regular", size, DIM),
+                }
+            }
+        end
+    else
+        rows[#rows + 1] = text("Nothing in this hangar to fit. Buy parts on the market, or make them.",
+            "Unageo-Regular", size, DIM)
+    end
+
+    return Grid {
+        layoutType = GuiLayoutType.Vertical,
+        spacing = math.floor(2 * s),
+        cells = Grid.Fit(),
+        contents = rows
+    }
+end
+
 --- The tab row.
 ---@param s number
 ---@return UILayoutGrid
@@ -762,6 +941,7 @@ local function tabs(s)
             tab("Factory", "factory"),
             tab("Hangar", "hangar"),
             tab("Nearby", "nearby"),
+            tab("Refit", "refit"),
         }
     }
 end
@@ -818,6 +998,8 @@ local function screen(s)
             contents[#contents + 1] = hangar(station, s)
         elseif Station.tab == "nearby" then
             contents[#contents + 1] = nearby(s)
+        elseif Station.tab == "refit" then
+            contents[#contents + 1] = refit(s)
         else
             contents[#contents + 1] = market(station, s)
         end

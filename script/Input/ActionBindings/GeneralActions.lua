@@ -53,6 +53,32 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardX) },
     }),
 
+    --- The four module slots: a fitted active module fires on its key
+    --- (Modules/Constructs/Systems/AbilitySystem.lua)
+    ---@type ActionBinding
+    Module1 = ActionBinding({
+        label = "Fire the module in slot 1", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardKey1) },
+    }),
+
+    ---@type ActionBinding
+    Module2 = ActionBinding({
+        label = "Fire the module in slot 2", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardKey2) },
+    }),
+
+    ---@type ActionBinding
+    Module3 = ActionBinding({
+        label = "Fire the module in slot 3", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardKey3) },
+    }),
+
+    ---@type ActionBinding
+    Module4 = ActionBinding({
+        label = "Fire the module in slot 4", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardKey4) },
+    }),
+
     ---@type ActionBinding
     ReloadShaders = ActionBinding({
         label = "Reload shaders", group = "Debug",
