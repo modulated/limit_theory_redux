@@ -3,7 +3,7 @@ resolver = "2"
 members = ["engine/bin/*", "engine/lib/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Limit Theory Redux Team"]
 edition = "2024"
 license = "MIT/Apache-2.0"

@@ -74,6 +74,9 @@ local CoreComponentsAll = require('Modules.Core.Components')
 local RenderComponent = require('Modules.Rendering.Components').Render
 local Factions = require('Modules.NPC.Factions')
 local GunshipRecipe = require('Modules.NPC.Managers.GunshipRecipe')
+local PlayerLoadout = require('Modules.Constructs.Managers.PlayerLoadout')
+local ShipFittingSystem = require('Modules.Constructs.Systems.ShipFittingSystem')
+local Fittings = require('Shared.Registries.Fittings')
 local ArmedShipBuilder = require('Modules.Constructs.Managers.ArmedShipBuilder')
 local WeaponBattery = require('Modules.Constructs.Systems.WeaponBattery')
 local DrawEx = require('UI.DrawEx')
@@ -623,9 +626,12 @@ end
 
 --- The rock the player's ship could mine now: the nearest spawned asteroid
 --- within range of the ship, with something left in it.
+---@param ignoreLaser boolean|nil true to find a rock even with nothing to cut it with
 ---@return table|nil info { entity, field, asteroid, pos, scale, rock }
-function LimitTheoryRedux:mineableRock()
+function LimitTheoryRedux:mineableRock(ignoreLaser)
     if self.docked or not self.playerShip or not self.npcs or not self.npcs.mining then return nil end
+    -- A rock is just a rock without something to cut it with
+    if not ignoreLaser and not self:fittedAbility("miningLaser") then return nil end
     local rbCmp = self.playerShip:get(PhysicsComponents.RigidBody)
     local body = rbCmp and rbCmp:getRigidBody()
     if not body then return nil end
@@ -634,7 +640,8 @@ function LimitTheoryRedux:mineableRock()
     local best, bestDist
     for _, info in ipairs(AsteroidFieldSystem:getSpawnedEntities()) do
         if info.field and info.asteroid then
-            local reach = info.scale + cfg.playerRange
+            -- A better sensor reaches further (Survey Scanner, Ship Sensor)
+            local reach = info.scale + cfg.playerRange * self:fitStat("scanRange", 1)
             local d = pos:distance(info.pos)
             if d <= reach and (not bestDist or d < bestDist) then
                 best, bestDist = info, d
@@ -660,7 +667,7 @@ function LimitTheoryRedux:updateMining(dt)
     if not self:isTravelGame() then return end
     if self.docked or self.mapMode ~= 0 then
         self.miningProgress, self.miningTarget, self.miningScan = nil, nil, nil
-        self.miningFullWarned = false
+        self.miningFullWarned, self.miningNoLaserHint = false, false
         return
     end
     -- Looking for a rock in reach walks the spawned asteroids, so it is done
@@ -668,7 +675,14 @@ function LimitTheoryRedux:updateMining(dt)
     self.miningScan = (self.miningScan or 0) - dt
     if self.miningScan <= 0 or (self.miningTarget and self.miningTarget.rock.yield < 1) then
         self.miningScan = Config.game.mining.playerScanInterval
-        self.miningTarget = self:mineableRock()
+        if self:fittedAbility("miningLaser") then
+            self.miningTarget = self:mineableRock()
+            self.miningNoLaserHint = false
+        else
+            -- Nothing to cut with: say so when a rock is close enough to matter
+            self.miningTarget = nil
+            self.miningNoLaserHint = self:mineableRock(true) ~= nil
+        end
     end
     local mining = GeneralActions.Mine:isDown()
     local info = self.miningTarget
@@ -691,9 +705,11 @@ function LimitTheoryRedux:updateMining(dt)
         return
     end
     self.miningFullWarned = false
+    -- A better laser cuts faster
+    local perUnit = cfg.playerTimePerUnit / math.max(0.1, self:fitStat("miningRate", 1))
     self.miningProgress = (self.miningProgress or 0) + dt
-    while self.miningProgress >= cfg.playerTimePerUnit do
-        self.miningProgress = self.miningProgress - cfg.playerTimePerUnit
+    while self.miningProgress >= perUnit do
+        self.miningProgress = self.miningProgress - perUnit
         if not self.npcs.mining:take(info.rock) then
             self:notify(info.rock.item .. ": nothing left in this rock.", { 1.0, 0.7, 0.3 })
             self.miningTarget = nil
@@ -806,6 +822,36 @@ function LimitTheoryRedux:recordMarketIntel()
             end
         end
     end
+end
+
+--- What the fit changes beyond the ship's own components: the hold's
+--- capacity, which lives with the player, not the hull.
+function LimitTheoryRedux:applyFitToShip()
+    if not self.playerShip or not self.playerShip:isValid() then return end
+    local loadout = self.playerShip:get(ConstructComponents.Loadout)
+    if not loadout then return end
+    local added = loadout:getStat("cargoMass", 0)
+    PlayerCargo:setCapacity(Config.game.cargo.holdCapacity + added)
+end
+
+--- What the fit says about a stat, or the default when nothing is fitted.
+---@param stat string
+---@param fallback number
+---@return number
+function LimitTheoryRedux:fitStat(stat, fallback)
+    local loadout = self.playerShip and self.playerShip:isValid()
+        and self.playerShip:get(ConstructComponents.Loadout)
+    if not loadout then return fallback end
+    return loadout:getStat(stat, fallback)
+end
+
+--- The module the player has fitted for an ability, or nil.
+---@param abilityKey string
+---@return FittingDefinition|nil
+function LimitTheoryRedux:fittedAbility(abilityKey)
+    local loadout = self.playerShip and self.playerShip:isValid()
+        and self.playerShip:get(ConstructComponents.Loadout)
+    return loadout and loadout:findAbility(abilityKey) or nil
 end
 
 --- The player's rented lines at this system's stations, after the stations'
@@ -966,6 +1012,16 @@ function LimitTheoryRedux:resetGalaxy()
     PlayerFactories:reset()
     MarketIntel:reset()
     self:connectMarket()
+    -- The ship a new game starts in: empty slots but for what it comes with
+    PlayerLoadout:reset(Config.game.fitting.moduleSlots)
+    for _, name in ipairs(Config.game.fitting.startingModules) do
+        local def = Fittings:getByName(name)
+        if def then
+            PlayerLoadout:grantModule(def)
+        else
+            Log.Warn("Config.game.fitting.startingModules names no fitting: %s", tostring(name))
+        end
+    end
     self.simTime = 0
     self.messages = {}
     self.docked = nil
@@ -1364,6 +1420,15 @@ function LimitTheoryRedux:createPlayerShip(position, shipType, hullIdx, seed)
             turnScale = math.max(1, math.min(400, ratio * ratio))
         end
         flightCtrl.torqueScale = turnScale
+        -- The fit comes back onto the new hull: its guns, its modules and the
+        -- stats they come to (PlayerLoadout outlives the ship entity)
+        local returned = PlayerLoadout:restore(self.playerShip, gunship.turrets,
+            Config.game.fitting.moduleSlots, PlayerCargo:get())
+        if returned > 0 then
+            self:notify(string.format("%d fitting(s) would not fit this hull; they are in the hold.",
+                returned), { 1.0, 0.7, 0.3 })
+        end
+        self:applyFitToShip()
         self.playerBattery = self.weaponCombat:addBattery(WeaponBattery(gunship, {
             name = "Your ship",
             aiActive = true,
@@ -1822,6 +1887,10 @@ function LimitTheoryRedux:drawNavigation()
         end
         -- Mining: what the rock in reach holds, and how the hold is doing
         local rock = self.miningTarget
+        if not rock and not self:fittedAbility("miningLaser") and self.miningNoLaserHint then
+            table.insert(lines, { text = "A rock, and nothing fitted to cut it: a Mining Laser goes in a module slot",
+                color = { 1.0, 0.7, 0.3 } })
+        end
         if rock then
             local mining = GeneralActions.Mine:isDown()
             table.insert(lines, {

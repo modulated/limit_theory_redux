@@ -45,9 +45,23 @@ end
 --- mass turns slower (inertia grows with the radius squared), so a ship can
 --- carry a multiplier that keeps the reference fighter's feel
 --- (ShipFlightControl.torqueScale, set when the ship is built; default 1).
+--- ...times whatever is fitted: a module that helps the ship turn, or
+--- armour plate that does not (ShipFittingSystem writes `fitTurnScale`).
 local function torqueScale(shipEntity)
     local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
-    return flightCtrl and flightCtrl.torqueScale or 1
+    if not flightCtrl then return 1 end
+    return (flightCtrl.torqueScale or 1) * (flightCtrl.fitTurnScale or 1)
+end
+
+--- How much the ship's thrust is scaled by what is fitted: engines up,
+--- plating and cargo pods down, an afterburner while it burns
+--- (ShipFittingSystem writes `fitThrustScale`; AbilitySystem the boost).
+---@param shipEntity Entity
+---@return number
+local function thrustScale(shipEntity)
+    local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return 1 end
+    return (flightCtrl.fitThrustScale or 1) * (flightCtrl.abilityThrustScale or 1)
 end
 
 --- Update ship from input.
@@ -65,6 +79,7 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
 
     local cfg = Config.game.shipFlight
 
+    local fitThrust = thrustScale(shipEntity)
     -- Read thrust input
     local forward = ShipActions.ThrustZ:get()
     local right   = ShipActions.ThrustX:get()
@@ -121,13 +136,13 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
 
     -- Apply translational forces
     if math.abs(forward) > 1e-6 then
-        rb:applyForce(rot:getForward():scale(forward * cfg.thrustForward * mult))
+        rb:applyForce(rot:getForward():scale(forward * cfg.thrustForward * mult * fitThrust))
     end
     if math.abs(right) > 1e-6 then
-        rb:applyForce(rot:getRight():scale(right * cfg.thrustRight * 0.5))
+        rb:applyForce(rot:getRight():scale(right * cfg.thrustRight * 0.5 * fitThrust))
     end
     if math.abs(up) > 1e-6 then
-        rb:applyForce(rot:getUp():scale(up * cfg.thrustUp))
+        rb:applyForce(rot:getUp():scale(up * cfg.thrustUp * fitThrust))
     end
 
     -- Apply torque in local space

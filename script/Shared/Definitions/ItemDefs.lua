@@ -98,7 +98,19 @@ ItemGroup {
         ItemDefinition { id = 36, name = "Ship Weapon, Pulse Bay", mass = 1000, energyDensity = 9, startEquilibriumPrice = 3000 },
         ItemDefinition { id = 37, name = "Ship Weapon, Beam Bay", mass = 1200, energyDensity = 9, startEquilibriumPrice = 3500 },
         ItemDefinition { id = 38, name = "Ship Weapon, Cannon Bay", mass = 2500, energyDensity = 10, startEquilibriumPrice = 5000 },
-        ItemDefinition { id = 39, name = "Ship Weapon, Launcher Bay", mass = 800, energyDensity = 7, startEquilibriumPrice = 2500 }
+        ItemDefinition { id = 39, name = "Ship Weapon, Launcher Bay", mass = 800, energyDensity = 7, startEquilibriumPrice = 2500 },
+        -- Modules a ship can be fitted with (Shared/Definitions/FittingDefs.lua).
+        -- Each is a good like any other: bought on a market or made in a
+        -- factory, carried in the hangar, bolted on at a station.
+        ItemDefinition { id = 59, name = "Shield Booster", mass = 90, energyDensity = 12, startEquilibriumPrice = 1800 },
+        ItemDefinition { id = 60, name = "Armour Plating", mass = 400, energyDensity = 2, startEquilibriumPrice = 900 },
+        ItemDefinition { id = 61, name = "Shield Capacitor", mass = 120, energyDensity = 14, startEquilibriumPrice = 1500 },
+        ItemDefinition { id = 62, name = "Cargo Pod", mass = 250, energyDensity = 3, startEquilibriumPrice = 1100 },
+        ItemDefinition { id = 63, name = "Afterburner", mass = 180, energyDensity = 16, startEquilibriumPrice = 2200 },
+        ItemDefinition { id = 64, name = "Manoeuvring Thrusters", mass = 150, energyDensity = 10, startEquilibriumPrice = 1400 },
+        ItemDefinition { id = 65, name = "Hull Repair Pulse", mass = 200, energyDensity = 15, startEquilibriumPrice = 2600 },
+        ItemDefinition { id = 66, name = "Mining Laser", mass = 160, energyDensity = 11, startEquilibriumPrice = 1700 },
+        ItemDefinition { id = 67, name = "Survey Scanner", mass = 70, energyDensity = 18, startEquilibriumPrice = 2000 }
     }
 }
 
@@ -204,6 +216,15 @@ ItemGroup {
 ---@field ShipWeaponBeamBay ItemDefinition
 ---@field ShipWeaponCannonBay ItemDefinition
 ---@field ShipWeaponLauncherBay ItemDefinition
+---@field ShieldBooster ItemDefinition
+---@field ArmourPlating ItemDefinition
+---@field ShieldCapacitor ItemDefinition
+---@field CargoPod ItemDefinition
+---@field Afterburner ItemDefinition
+---@field ManoeuvringThrusters ItemDefinition
+---@field HullRepairPulse ItemDefinition
+---@field MiningLaser ItemDefinition
+---@field SurveyScanner ItemDefinition
 
 ---@class ItemsConstructs
 ---@field ShipHullSolo ItemDefinition
@@ -223,4 +244,4 @@ ItemGroup {
 ---@field EnergyCell ItemDefinition
 ---@field RadioactiveIsotopes ItemDefinition
 
--- The next free item id: 59
+-- The next free item id: 68

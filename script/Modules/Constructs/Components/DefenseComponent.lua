@@ -45,6 +45,22 @@ function DefenseComponent:setCurrentShield(value)
     self._currentShield = math.max(0, math.min(value, self._maxShield))
 end
 
+--- A refit changed what the ship can hold (ShipFittingSystem:apply). The
+--- current shield follows the maximum down, and is left where it is if the
+--- maximum goes up: fitting a bigger shield gives you the room, not the
+--- charge.
+---@param value number
+function DefenseComponent:setMaxShield(value)
+    self._maxShield = math.max(0, value or 0)
+    self._currentShield = math.min(self._currentShield, self._maxShield)
+end
+
+---@param value number
+function DefenseComponent:setMaxHealth(value)
+    self._maxHealth = math.max(1, value or 1)
+    self._currentHealth = math.min(self._currentHealth, self._maxHealth)
+end
+
 function DefenseComponent:setArmor(value)
     self._armor = value
 end

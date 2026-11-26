@@ -421,6 +421,16 @@ Config.game = {
         drydockChance  = 0.25, -- the chance the one allowed station also builds hulls
     },
 
+    -- Fitting out a ship (Modules/Constructs/Systems/ShipFittingSystem.lua).
+    -- Weapons go in the hull's mounts, modules in its slots; every one of
+    -- them is an item bought or made (Shared/Definitions/FittingDefs.lua).
+    -- Refitting is free, but only at a station, out of its hangar.
+    fitting = {
+        moduleSlots   = 4,    -- slots the player's gunship hull has
+        -- What a new game's ship comes fitted with, by fitting name
+        startingModules = { "Mining Laser", "Shield Capacitor" },
+    },
+
     -- The player's own industry (Modules/Economy/Managers/PlayerFactories.lua):
     -- a hangar at every station used, and lines rented from the station's own
     -- floor. A rented line takes its inputs from the hangar and puts the
