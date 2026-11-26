@@ -23,11 +23,17 @@ local LASER_BY_FACTION = {
 }
 
 --- An ArmedShipBuilder recipe for a gunship of `faction`.
+---
+--- With a `hull` (`Shared/Definitions/HullDefs.lua`) the recipe takes that
+--- hull's weapon sockets and capacitor instead of the built-in gunship ones,
+--- which is how the player flies something other than the starting ship. The
+--- NPCs pass none and get the gunship as before.
 ---@param seed integer
 ---@param faction string
 ---@param stats { maxHealth: number, maxShield: number, shieldRegen: number }
+---@param hull HullDefinition|nil
 ---@return table recipe
-function GunshipRecipe.build(seed, faction, stats)
+function GunshipRecipe.build(seed, faction, stats, hull)
     local laser = LASER_BY_FACTION[faction] or LASER_BY_FACTION.pirate
     return {
         seed = seed,
@@ -48,7 +54,7 @@ function GunshipRecipe.build(seed, faction, stats)
                 generation = {
                     id = Enums.ShipGeneration.LayeredCapital,
                     mountDecks = {
-                        sockets = {
+                        sockets = hull and hull.sockets or {
                             -- Main guns: forward, either side
                             {
                                 pairId = Weapon.MountPairId.ForeOuter,
@@ -123,9 +129,11 @@ function GunshipRecipe.build(seed, faction, stats)
                 {
                     id = "laser_small_medium",
                     groupId = Weapon.CapacitorGroup.Laser,
-                    supportedSizeClasses = { MountSizeClass.SM, MountSizeClass.M },
-                    maxCharge = 30.0,
-                    chargeRate = 20.0,
+                    -- A bay weapon draws from the same bank on these hulls
+                    supportedSizeClasses = { MountSizeClass.SM, MountSizeClass.M,
+                                             MountSizeClass.L, MountSizeClass.XL },
+                    maxCharge = hull and hull.capacitor.maxCharge or 30.0,
+                    chargeRate = hull and hull.capacitor.chargeRate or 20.0,
                 },
             },
             policies = {

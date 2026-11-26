@@ -29,12 +29,13 @@ function PlayerLoadout:reset(moduleSlots)
     self.moduleSlots = moduleSlots or 0
 end
 
+--- Change how many slots the hull has. Modules in slots the new hull does
+--- not have are kept in the record rather than thrown away: `restore` is
+--- what hands them back, so they end up in the hangar or the hold instead of
+--- disappearing with the old frame.
 ---@param count integer
 function PlayerLoadout:setModuleSlots(count)
     self.moduleSlots = math.max(0, math.floor(count or 0))
-    for slot in pairs(self.modules) do
-        if slot > self.moduleSlots then self.modules[slot] = nil end
-    end
 end
 
 --- Give the player a fitting without buying it (what a new game's ship comes
@@ -77,8 +78,9 @@ end
 ---@param moduleSlots integer the hull's module slots
 ---@param spare StockComponent|nil where fittings with nowhere to go are put
 ---@return integer returned how many fittings were handed back
+---@return integer lost how many of those `spare` had no room for
 function PlayerLoadout:restore(ship, turrets, moduleSlots, spare)
-    if not ship then return 0 end
+    if not ship then return 0, 0 end
     local loadout = ship:get(ConstructComponents.Loadout)
     if not loadout then
         loadout = ship:add(ConstructComponents.Loadout(moduleSlots))
@@ -86,7 +88,13 @@ function PlayerLoadout:restore(ship, turrets, moduleSlots, spare)
     loadout:setModuleSlots(moduleSlots)
     ShipFittingSystem:setMounts(ship, turrets)
 
-    local returned = 0
+    local returned, lost = 0, 0
+    --- A fitting the new hull cannot take: into the store, or counted lost.
+    local function handBack(def)
+        returned = returned + 1
+        if not spare or spare:add(def.itemId, 1) < 1 then lost = lost + 1 end
+    end
+
     local mounts = {}
     for _, mount in ipairs(ShipFittingSystem:mounts(ship)) do
         mounts[mount.mountId] = mount
@@ -98,8 +106,7 @@ function PlayerLoadout:restore(ship, turrets, moduleSlots, spare)
         if def and mount and ShipFittingSystem:weaponFits(def, mount.sizeClass) then
             loadout:setWeapon(mountId, def)
         elseif def then
-            if spare then spare:add(def.itemId, 1) end
-            returned = returned + 1
+            handBack(def)
         end
     end
     for slot, id in pairs(self.modules) do
@@ -107,14 +114,13 @@ function PlayerLoadout:restore(ship, turrets, moduleSlots, spare)
         if def and slot <= moduleSlots then
             loadout:setModule(slot, def)
         elseif def then
-            if spare then spare:add(def.itemId, 1) end
-            returned = returned + 1
+            handBack(def)
         end
     end
 
     ShipFittingSystem:apply(ship)
     self:record(ship)
-    return returned
+    return returned, lost
 end
 
 --- The fit in words, for the HUD and the refit screen.

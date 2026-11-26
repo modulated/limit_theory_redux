@@ -42,8 +42,10 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          order books (they are the other side of the player's orders).
    - [ ] Workers are only hands: never paid, never hired, their cargo irrelevant. Wages and a
          labour market would make a station's crew a real cost.
-   - [ ] Equipment and hulls that can be fitted and flown, not just bought (the next thing worth
-         building: it is what makes crafting matter).
+   - [x] Equipment and hulls that can be fitted and flown, not just bought (0.2.0: weapons go in
+         mounts, modules in slots, actives on the number keys, hulls bought and switched into at a
+         station, and every part has a recipe). Left over: modules that extend market reach
+         (`market.remoteJumps` is still a flat 3), and fittings as loot from a kill.
    - [ ] Biomass has no source, so the hydrocarbon chain runs on imports.
    - [ ] Saving the hold, the wallet, station stock and production progress.
    - [ ] Balance: tune with `luajit tools/economy-sim.lua --seeds 8 --prospector --trader`
@@ -55,18 +57,22 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    Transport, Think; actions MoveTo, Wait, Attack, Flee, LeaveSystem); the player flies an
    armed gunship. Still to do:
    - [ ] Confirm the gunship recipe builds and the fights play well (untested at the time).
-   - [ ] Manual fire and target lock for the player (turrets only fire automatically).
+   - [ ] Manual fire and target lock for the player (turrets only fire automatically, whatever is
+         fitted in their mounts).
    - [ ] CriminalThink's black-market jobs (needs the economy).
-   - [ ] Prospecting scanner: rocks already carry their ore and remaining yield
-         (`Shared/Helpers/AsteroidOre.lua`, `AsteroidOre.ofEntity`); nothing reads it yet, so the
-         HUD names the ore as soon as a rock is in reach. See [doc/items.md](doc/items.md).
+   - [ ] Prospecting scanner: the Survey Scanner module reads a rock (`AsteroidOre.ofEntity`) on a
+         key, but the HUD still names the ore as soon as a rock is in reach, so the module tells
+         you nothing new. The HUD should go quiet without one, and the scanner should reach
+         further than the mining laser. See [doc/items.md](doc/items.md).
    - [ ] Legacy's dust clouds (only the flecks are ported; the clouds need their texture
          pass and shader converted).
    - [ ] Reputation from more than kills and hits (escorting, trading) once there is more
          to do; the player can't attack neutral ships yet, so standing mostly rises.
-   - [ ] Credits only come from bounties and go on hull repairs: trading, mining sales and
-         ship upgrades would give them more uses (the economy).
-   - [ ] Armor: DefenseComponent has an armor value no damage path reads yet.
+   - [ ] Credits only come from bounties, trading and mining sales; they go on hull repairs,
+         factory leases, fittings and hulls. Insurance, fuel and ammunition are the obvious sinks
+         still missing.
+   - [ ] Armor: DefenseComponent has an armor value no damage path reads yet, so Armour Plating's
+         armour does nothing (its hull and thrust changes do).
    - [ ] Jobs chosen by payout and threat, as Legacy's Think did, once there is an economy.
    - [ ] Respawn or a way back after the player's ship is destroyed (now: GAME OVER).
 8. **Scenario list.** The New Game test-seed list is a stopgap

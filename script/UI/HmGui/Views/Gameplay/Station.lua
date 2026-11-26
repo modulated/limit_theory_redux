@@ -16,6 +16,8 @@ local PlayerLoadout = require("Modules.Constructs.Managers.PlayerLoadout")
 local ShipFittingSystem = require("Modules.Constructs.Systems.ShipFittingSystem")
 local AbilitySystem = require("Modules.Constructs.Systems.AbilitySystem")
 local Fittings = require("Shared.Registries.Fittings")
+local PlayerShipyard = require("Modules.Constructs.Managers.PlayerShipyard")
+local Hulls = require("Shared.Registries.Hulls")
 
 -- The screen the player sees while docked: what the station has and what it
 -- pays, what the hold is carrying, what its factory floor is making, and the
@@ -787,6 +789,33 @@ local function refit(s)
         end
         return list
     end
+
+    -- Which hull this is, and what else could be flown
+    local hull = PlayerShipyard:current()
+    rows[#rows + 1] = text(hull
+            and string.format("HULL                %s   ·   %s", hull.displayName, Hulls.describe(hull))
+            or "HULL                unknown",
+        "Unageo-Medium", math.floor(13 * s), ACCENT)
+    local others = PlayerShipyard:available(hangar)
+    for _, row in ipairs(others) do
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(26 * s),
+            cells = { Grid.Fixed(200 * s), Grid.Fixed(520 * s), Grid.Fixed(170 * s) },
+            contents = {
+                text(string.format("%s (x%d)", row.hull.displayName, row.units),
+                    "Unageo-Regular", size, GREY),
+                text(Hulls.describe(row.hull), "Unageo-Regular", size, DIM),
+                wideButton("Fly this hull", s, 150, true, false, function()
+                    LimitTheoryRedux:switchHull(row.hull)
+                end),
+            }
+        }
+    end
+    if #others == 0 then
+        rows[#rows + 1] = text("No other hull in this hangar. Buy one on the market, or have a drydock build it.",
+            "Unageo-Regular", size, DIM)
+    end
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
 
     -- What the ship comes to with what is on it now
     local stats = loadout.stats or {}

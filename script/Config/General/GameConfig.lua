@@ -426,7 +426,8 @@ Config.game = {
     -- them is an item bought or made (Shared/Definitions/FittingDefs.lua).
     -- Refitting is free, but only at a station, out of its hangar.
     fitting = {
-        moduleSlots   = 4,    -- slots the player's gunship hull has
+        startingHull  = "Small Hull", -- the hull a new game flies (Shared/Definitions/HullDefs.lua)
+        moduleSlots   = 4,    -- fallback when no hull is being flown
         -- What a new game's ship comes fitted with, by fitting name
         startingModules = { "Mining Laser", "Shield Capacitor" },
     },

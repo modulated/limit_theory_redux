@@ -71,6 +71,13 @@ function InitSystem()
         -- Load Config Files
         loadConfigFiles(configDir)
 
+        -- Fill the data registries (items, recipes, fittings, hulls): see
+        -- Shared/Definitions/__init__.lua for why this is explicit
+        local defsOk, defsErr = pcall(require, "Shared.Definitions")
+        if not defsOk then
+            Log.Error("Failed to load the game's definitions: %s", tostring(defsErr))
+        end
+
         -- Load Types
         for _, fname in ipairs(io.listdirex(Config.paths.types)) do
             dofile(Config.paths.types .. fname)

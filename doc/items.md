@@ -5,14 +5,16 @@ item that is defined, which of them can be mined, which can be traded, and the p
 that turn one into another. It is meant to be edited: the tables are the design surface, and the
 Status sections say how much of each is actually wired up.
 
-Status summary (2026-11): it all runs. 58 items with permanent ids; every belt and ring has a
+Status summary (2026-11): it all runs. 67 items with permanent ids; every belt and ring has a
 composition and mining reads it; a rock knows what it holds; stations hold stock, price it by how
 short they are, run the production chains against it, and trade with the player on a docked screen;
 every station has an order book where prices are whatever
 someone will pay, and the player can take the best order or place one of their own; the player has
 a hold, a mining laser, credits, a hangar at every station and lines they can rent there; NPC
-workers are the hands the factory floors run on. Legacy's economy is deleted. What is
-missing is listed in the last section — chiefly NPC traders that actually haul, equipment that can be fitted, and
+workers are the hands the factory floors run on. Legacy's economy is deleted. Since 0.2.0 the
+equipment is no longer decoration: weapons go in a hull's mounts, modules in its slots, some of
+them fire on a key, and a hull itself is a thing you buy and switch into at a station (section 8).
+What is missing is listed in the last section — chiefly NPC traders that actually haul, and
 saving.
 
 ## 1. Where it lives
@@ -38,7 +40,8 @@ saving.
 | The docked station screen | `script/UI/HmGui/Views/Gameplay/Station.lua` |
 | The player's hangar and rented lines | `script/Modules/Economy/Managers/PlayerFactories.lua` |
 | A station's crew | `script/Modules/Economy/Components/WorkforceComponent.lua`, `Modules/NPC/Jobs/Work.lua` |
-| Mining and trade tuning | `Config.game.mining`, `Config.game.trade`, `Config.game.production`, `Config.game.factory`, `Config.game.cargo` |
+| **The hulls and the fittings** | `script/Shared/Definitions/HullDefs.lua`, `FittingDefs.lua` (section 8) |
+| Mining and trade tuning | `Config.game.mining`, `Config.game.trade`, `Config.game.production`, `Config.game.factory`, `Config.game.cargo`, `Config.game.fitting` |
 
 ### Item definition
 
@@ -139,17 +142,25 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 | Ship Engine, Thruster | 600 | 20 | 12000 | 7200 |
 | Ship Engine, Impeller | 1500 | 18 | 27000 | 4000 |
 | Ship Weapon, Pulse Turret | 100 | 10 | 1000 | 2800 |
-| Ship Weapon, Beam Turret | 120 | 10 | 1200 | 650 |
-| Ship Weapon, Launcher Turret | 90 | 8 | 720 | 550 |
+| Ship Weapon, Beam Turret | 120 | 10 | 1200 | 3600 |
+| Ship Weapon, Launcher Turret | 90 | 8 | 720 | 3200 |
 | Ship Weapon, Pulse Bay | 1000 | 9 | 9000 | 3000 |
-| Ship Weapon, Beam Bay | 1200 | 9 | 10800 | 3500 |
-| Ship Weapon, Cannon Bay | 2500 | 10 | 25000 | 5000 |
+| Ship Weapon, Beam Bay | 1200 | 9 | 10800 | 14000 |
+| Ship Weapon, Cannon Bay | 2500 | 10 | 25000 | 9000 |
 | Ship Weapon, Launcher Bay | 800 | 7 | 5600 | 2500 |
+| Shield Capacitor | 120 | 13 | 1560 | 1500 |
+| Armour Plating | 400 | 3 | 1200 | 900 |
+| Cargo Pod | 250 | 4 | 1000 | 1100 |
+| Manoeuvring Thrusters | 150 | 12 | 1800 | 1400 |
+| Shield Booster | 90 | 20 | 1800 | 1800 |
+| Afterburner | 180 | 16 | 2880 | 2200 |
+| Hull Repair Pulse | 200 | 15 | 3000 | 2600 |
+| Mining Laser | 160 | 14 | 2240 | 1700 |
+| Survey Scanner | 70 | 18 | 1260 | 2000 |
 
-These are economy *goods*, with no link yet to the weapons the ships actually fit
-(`script/Shared/Definitions/WeaponDefs.lua`, `Shared/Registries/WeaponRegistry.lua`) or to the
-procedural modules in `Shared/Content/ProceduralCatalog.lua`. Fitting an "Equipment" item to a hull
-is not implemented.
+Every one of these is a *fitting* as well as a good: see section 8. The weapon prices follow the
+mount size classes — a medium turret costs a few thousand, an L or XL bay weapon a multiple of
+that — so a hull with heavy mounts is worth flying to.
 
 ### Constructs (hulls and stations)
 
@@ -162,6 +173,9 @@ is not implemented.
 | Ship Hull, Large | 237250 | 45 | 10676250 | 200000 |
 | Ship Hull, Very Large | 518000 | 42 | 21756000 | 500000 |
 | Space Station, Small | 1550000 | 40 | 62000000 | 1000000 |
+
+The first four hulls are flyable (`Shared/Definitions/HullDefs.lua`): buy one, and a station's
+shipyard will put you in it. Large, Very Large and the station itself are still goods only.
 
 ### Waste
 
@@ -444,27 +458,71 @@ next station, and the prospector mines a full hold and sells it where it pays
 best. Nothing about prices, stock, production or imports is modelled: that is
 the game's own code.
 
-## 8. Gaps and implementation order
+## 8. Fitting: what a ship carries
+
+A ship is a **hull** with **fittings** in it. Both are items, so both are bought, built or looted
+like anything else, and the whole of the above economy is what supplies them.
+
+| What | File |
+|------|------|
+| The hulls that can be flown | `script/Shared/Definitions/HullDefs.lua` -> `Shared/Registries/Hulls.lua` |
+| The parts that go in them | `script/Shared/Definitions/FittingDefs.lua` -> `Shared/Registries/Fittings.lua` |
+| Working a fit out and applying it | `script/Modules/Constructs/Systems/ShipFittingSystem.lua` |
+| Modules that fire on a key | `script/Modules/Constructs/Systems/AbilitySystem.lua` |
+| The player's fit and hull, across rebuilds | `Modules/Constructs/Managers/PlayerLoadout.lua`, `PlayerShipyard.lua` |
+| The screen you refit on | `script/UI/HmGui/Views/Gameplay/Station.lua` (the Refit tab) |
+
+**A hull** decides three things: its weapon mounts (how many, and what size class each takes), how
+many module slots it has, and the hull and shield it starts from.
+
+| Hull | Mounts | Slots | Hull | Shield | Price |
+|------|--------|-------|------|--------|-------|
+| Solo Hull | 2xM 2xSM | 3 | 420 | 80 | 24000 |
+| Small Hull | 4xM 2xSM | 4 | 700 | 160 | 30000 |
+| Compact Hull | 2xL 4xM 2xSM | 5 | 1200 | 300 | 70000 |
+| Medium Hull | 4xL 4xM 2xSM | 6 | 2200 | 600 | 100000 |
+
+**A fitting** is either a weapon, which goes in a mount of its own size class or larger, or a
+module, which goes in a slot. A module either changes a stat or does something on command:
+
+- *Passive*: Shield Capacitor, Armour Plating, Cargo Pod, Manoeuvring Thrusters, Ship Sensor, Ship
+  Computer, Thruster Engine, Impeller. They add to a stat and then scale it, in that order, so two
+  of a thing stack sensibly.
+- *Active*: Shield Booster, Afterburner, Hull Repair Pulse, Survey Scanner — bound to the number
+  keys 1-4, each with its own cooldown, shown as a HUD row. A module that cannot do anything (a
+  full shield, an undamaged hull) refuses and costs no cooldown.
+- *Held*: the Mining Laser. Without one fitted the mining key says so and nothing happens, which is
+  the one place a fitting gates a verb outright.
+
+**Refitting** happens docked, out of that station's hangar, for free: the Refit tab lists the mounts
+and slots, and what in the hangar will go in them. A part fitted comes out of the hangar; a part
+removed goes back into it.
+
+**Switching hulls** is a trade: the hull you are flying goes into the hangar and the one you are
+taking comes out, so there is always exactly one in hand. The ship is rebuilt around the new frame
+and the fit comes across by mount id, mount for mount and slot for slot. Anything the new hull has
+no room for — a bay weapon on a frame with no heavy mount, a fifth module on a four-slot hull — is
+handed back to the hangar and said so.
+
+## 9. Gaps and implementation order
 
 Done: the item registry with permanent ids, the feedstock items, ore from each field's own
 composition, rocks that know what they hold, station stock and prices, production with a crew of
 NPC workers, rebalanced recipes, the player's hold, player mining, the docked station screen, a
-hangar and rentable factory lines at every station, and the deletion of Legacy's economy.
+hangar and rentable factory lines at every station, the deletion of Legacy's economy, and
+(0.2.0) fittings, modules with abilities and buyable hulls — every part has a recipe, so the
+whole catalogue can be bought or built.
 
 - [ ] **Biomass has no source.** The Hydrocarbon Refinery (and so plastics, and so chips) runs on
       imports alone. It wants a farm or a station recipe, or a mineable source.
 - [ ] **NPC traders should haul goods**, not wait 6–12 s at a stop: buy where a thing is cheap,
       sell where it is dear, which is what would make prices differ between stations for a reason.
       `Jobs/Transport.lua` and `StationTradeSystem` already have the pieces.
-- [ ] **Equipment and hulls are inert**: an Equipment item is a good with a price, with no link to
-      `WeaponRegistry` or the procedural module catalog, so a bought turret cannot be fitted. A
-      drydock's hull cannot be flown either. This is the next thing worth building: it is what
-      makes crafting matter.
 - [ ] **Workers are only hands.** A worker shuttle's cargo is irrelevant, it is never paid, and a
       station does not hire. Pay, wages and a labour market would make the crew a real cost.
-- [ ] **A prospecting scanner**: rocks carry their ore and remaining yield
-      (`AsteroidOre.ofEntity`); nothing reads it yet, so the ore is on the HUD as soon as a rock is
-      in reach.
+- [ ] **Prospecting is half done**: the Survey Scanner module reads the rock in reach
+      (`AsteroidOre.ofEntity`), but the ore is still on the HUD as soon as a rock is in reach, so
+      the scanner tells you nothing you could not already see. The HUD should go quiet without one.
 - [ ] **Saving.** The hold, the wallet, every station's stock and every production line's progress
       are the state a saved game needs (see item ids, section 1).
 - [ ] **Balance.** `Config.game.trade` and `Config.game.production` were set by eye: the target

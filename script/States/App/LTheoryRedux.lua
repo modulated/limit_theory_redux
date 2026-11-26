@@ -77,6 +77,8 @@ local GunshipRecipe = require('Modules.NPC.Managers.GunshipRecipe')
 local PlayerLoadout = require('Modules.Constructs.Managers.PlayerLoadout')
 local ShipFittingSystem = require('Modules.Constructs.Systems.ShipFittingSystem')
 local AbilitySystem = require('Modules.Constructs.Systems.AbilitySystem')
+local PlayerShipyard = require('Modules.Constructs.Managers.PlayerShipyard')
+local Hulls = require('Shared.Definitions.HullDefs')
 local Fittings = require('Shared.Registries.Fittings')
 local ArmedShipBuilder = require('Modules.Constructs.Managers.ArmedShipBuilder')
 local WeaponBattery = require('Modules.Constructs.Systems.WeaponBattery')
@@ -825,6 +827,40 @@ function LimitTheoryRedux:recordMarketIntel()
     end
 end
 
+--- Fly a different hull: the one in hand goes into this station's hangar and
+--- the new one comes out of it, then the ship is rebuilt around it. The fit
+--- comes across as far as the new hull has room for it; the rest goes into
+--- the hold (PlayerLoadout:restore says how much).
+---@param hull HullDefinition
+---@return boolean switched
+function LimitTheoryRedux:switchHull(hull)
+    local dock = self.docked
+    if not dock then
+        self:notify("Hulls are swapped at a station.", { 1.0, 0.7, 0.3 })
+        return false
+    end
+    -- What is on the ship now is what comes across, whoever fitted it
+    PlayerLoadout:record(self.playerShip)
+    local hangar = dock.key and PlayerFactories:hangar(dock.key)
+    local previous = PlayerShipyard:current()
+    local ok, reason = PlayerShipyard:switch(hull, hangar)
+    if not ok then
+        self:notify("Cannot take that hull: " .. (reason or "no"), { 1.0, 0.4, 0.3 })
+        return false
+    end
+
+    -- Rebuild the ship where it is docked, in the new frame
+    local body = self.playerShip and self.playerShip:get(PhysicsComponents.RigidBody)
+    local rb = body and body:getRigidBody()
+    local position = rb and rb:getPos() or Position(dock.position.x, dock.position.y, dock.position.z)
+    self:respawnPlayerShip(Position(position.x, position.y, position.z), nil)
+    -- Docked again: the new ship is inside the station, as the old one was
+    self:dockPlayer(dock)
+    self:notify(string.format("Now flying the %s (was the %s)", hull.displayName,
+        previous and previous.displayName or "none"), { 0.6, 0.9, 1.0 })
+    return true
+end
+
 --- Fire the active module in a slot (the number keys). A slot with nothing
 --- in it, or a passive module, says so rather than doing nothing silently.
 ---@param slot integer
@@ -1040,7 +1076,8 @@ function LimitTheoryRedux:resetGalaxy()
     self:connectMarket()
     -- The ship a new game starts in: empty slots but for what it comes with
     AbilitySystem:reset()
-    PlayerLoadout:reset(Config.game.fitting.moduleSlots)
+    PlayerShipyard:reset(Config.game.fitting.startingHull)
+    PlayerLoadout:reset(PlayerShipyard:moduleSlots())
     for _, name in ipairs(Config.game.fitting.startingModules) do
         local def = Fittings:getByName(name)
         if def then
@@ -1449,11 +1486,20 @@ function LimitTheoryRedux:createPlayerShip(position, shipType, hullIdx, seed)
         flightCtrl.torqueScale = turnScale
         -- The fit comes back onto the new hull: its guns, its modules and the
         -- stats they come to (PlayerLoadout outlives the ship entity)
-        local returned = PlayerLoadout:restore(self.playerShip, gunship.turrets,
-            Config.game.fitting.moduleSlots, PlayerCargo:get())
-        if returned > 0 then
-            self:notify(string.format("%d fitting(s) would not fit this hull; they are in the hold.",
-                returned), { 1.0, 0.7, 0.3 })
+        -- Anything the new hull has no room for goes into the station's
+        -- hangar when there is one, and into the hold otherwise
+        local spare = self.docked and self.docked.key and PlayerFactories:hangar(self.docked.key)
+            or PlayerCargo:get()
+        local returned, lost = PlayerLoadout:restore(self.playerShip, gunship.turrets,
+            PlayerShipyard:moduleSlots(), spare)
+        if returned > lost then
+            self:notify(string.format("%d fitting(s) would not fit this hull; they are in %s.",
+                returned - lost, spare == PlayerCargo:get() and "the hold" or "the hangar"),
+                { 1.0, 0.7, 0.3 })
+        end
+        if lost > 0 then
+            self:notify(string.format("No room for %d unfitted part(s) -- they are gone.", lost),
+                { 1.0, 0.4, 0.3 })
         end
         self:applyFitToShip()
         self.playerBattery = self.weaponCombat:addBattery(WeaponBattery(gunship, {
@@ -1474,12 +1520,16 @@ end
 ---@return table|nil construction
 function LimitTheoryRedux:buildPlayerGunship(position, seed)
     local cfg = Config.game.playerGunship
+    -- The hull being flown decides the mounts, the capacitor, the stats and
+    -- the size; the fit decides everything else (PlayerShipyard, HullDefs)
+    local hull = PlayerShipyard:current()
+    local stats = hull and PlayerShipyard:stats() or cfg
     local ok, result = pcall(function()
-        return ArmedShipBuilder:build(GunshipRecipe.build(seed, Factions.Player, cfg), {
+        return ArmedShipBuilder:build(GunshipRecipe.build(seed, Factions.Player, stats, hull), {
             constructManager = self.constructManager,
             shipConfig = {
                 position = position,
-                scale = cfg.scale,
+                scale = PlayerShipyard:scale(cfg.scale),
                 isKinematic = false,
             },
         })

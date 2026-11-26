@@ -93,11 +93,11 @@ ItemGroup {
         ItemDefinition { id = 31, name = "Ship Engine, Thruster", mass = 600, energyDensity = 20, startEquilibriumPrice = 7200 },
         ItemDefinition { id = 32, name = "Ship Engine, Impeller", mass = 1500, energyDensity = 18, startEquilibriumPrice = 4000 },
         ItemDefinition { id = 33, name = "Ship Weapon, Pulse Turret", mass = 100, energyDensity = 10, startEquilibriumPrice = 2800 },
-        ItemDefinition { id = 34, name = "Ship Weapon, Beam Turret", mass = 120, energyDensity = 10, startEquilibriumPrice = 650 },
-        ItemDefinition { id = 35, name = "Ship Weapon, Launcher Turret", mass = 90, energyDensity = 8, startEquilibriumPrice = 550 },
+        ItemDefinition { id = 34, name = "Ship Weapon, Beam Turret", mass = 120, energyDensity = 10, startEquilibriumPrice = 3600 },
+        ItemDefinition { id = 35, name = "Ship Weapon, Launcher Turret", mass = 90, energyDensity = 8, startEquilibriumPrice = 3200 },
         ItemDefinition { id = 36, name = "Ship Weapon, Pulse Bay", mass = 1000, energyDensity = 9, startEquilibriumPrice = 3000 },
-        ItemDefinition { id = 37, name = "Ship Weapon, Beam Bay", mass = 1200, energyDensity = 9, startEquilibriumPrice = 3500 },
-        ItemDefinition { id = 38, name = "Ship Weapon, Cannon Bay", mass = 2500, energyDensity = 10, startEquilibriumPrice = 5000 },
+        ItemDefinition { id = 37, name = "Ship Weapon, Beam Bay", mass = 1200, energyDensity = 9, startEquilibriumPrice = 14000 },
+        ItemDefinition { id = 38, name = "Ship Weapon, Cannon Bay", mass = 2500, energyDensity = 10, startEquilibriumPrice = 9000 },
         ItemDefinition { id = 39, name = "Ship Weapon, Launcher Bay", mass = 800, energyDensity = 7, startEquilibriumPrice = 2500 },
         -- Modules a ship can be fitted with (Shared/Definitions/FittingDefs.lua).
         -- Each is a good like any other: bought on a market or made in a
