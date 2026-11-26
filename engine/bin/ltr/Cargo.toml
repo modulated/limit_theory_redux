@@ -63,6 +63,17 @@ as_ptr_cast_mut = "warn"
 cast_ptr_alignment = "warn"
 fn_to_numeric_cast_any = "warn"
 
+# `cargo test` would otherwise build a test harness for this binary, and that
+# harness links libphx the way the real binary does (the `#[link]` in
+# main.rs). It cannot: Cargo only uplifts the dylib next to the binary for a
+# real build, so the test executable's link step has nowhere to find it, and
+# the ltr binary has no tests to run anyway. The engine's tests live in phx.
+[[bin]]
+name = "ltr"
+path = "src/main.rs"
+test = false
+bench = false
+
 [features]
 # Forward the internal and phx stats-server feature so `cargo run -p ltr --features stats-server` works.
 stats-server = ["internal/stats-server", "phx/stats-server"]
