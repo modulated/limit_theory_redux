@@ -5,7 +5,7 @@ item that is defined, which of them can be mined, which can be traded, and the p
 that turn one into another. It is meant to be edited: the tables are the design surface, and the
 Status sections say how much of each is actually wired up.
 
-Status summary (2026-11): it all runs. 67 items with permanent ids; every belt and ring has a
+Status summary (2026-11): it all runs. 68 items with permanent ids; every belt and ring has a
 composition and mining reads it; a rock knows what it holds; stations hold stock, price it by how
 short they are, run the production chains against it, and trade with the player on a docked screen;
 every station has an order book where prices are whatever
@@ -157,6 +157,7 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 | Hull Repair Pulse | 200 | 15 | 3000 | 2600 |
 | Mining Laser | 160 | 14 | 2240 | 1700 |
 | Survey Scanner | 70 | 18 | 1260 | 2000 |
+| Market Datalink | 60 | 21 | 1260 | 3400 |
 
 Every one of these is a *fitting* as well as a good: see section 8. The weapon prices follow the
 mount size classes — a medium turret costs a few thousand, an L or XL bay weapon a multiple of
@@ -486,13 +487,25 @@ many module slots it has, and the hull and shield it starts from.
 module, which goes in a slot. A module either changes a stat or does something on command:
 
 - *Passive*: Shield Capacitor, Armour Plating, Cargo Pod, Manoeuvring Thrusters, Ship Sensor, Ship
-  Computer, Thruster Engine, Impeller. They add to a stat and then scale it, in that order, so two
-  of a thing stack sensibly.
+  Computer, Thruster Engine, Impeller, Market Datalink. They add to a stat and then scale it, in
+  that order, so two of a thing stack sensibly.
 - *Active*: Shield Booster, Afterburner, Hull Repair Pulse, Survey Scanner — bound to the number
   keys 1-4, each with its own cooldown, shown as a HUD row. A module that cannot do anything (a
   full shield, an undamaged hull) refuses and costs no cooldown.
 - *Held*: the Mining Laser. Without one fitted the mining key says so and nothing happens, which is
   the one place a fitting gates a verb outright.
+
+Two of them change what the player can *know* rather than what the ship can do:
+
+- The **Market Datalink** adds 2 to `marketReach`, the jumps out whose order books can still be
+  read. The base is `Config.game.market.remoteJumps` (3), so one datalink sees 5 jumps and two see
+  7; the Intel tab's heading follows it. This is the module-upgradeable market reach the order book
+  was built for.
+- The **Survey Scanner** is prospecting. A rock is "an unsurveyed rock" until the scanner reads it
+  — the HUD will not name the ore, though you can still mine it blind — and the scanner reads at
+  2.5x the laser's reach, so it finds rocks before you are in cutting range. A unit in the hold
+  identifies the rock too: cut it and you have seen what comes out. What is read stays read for
+  that rock.
 
 **Refitting** happens docked, out of that station's hangar, for free: the Refit tab lists the mounts
 and slots, and what in the hangar will go in them. A part fitted comes out of the hangar; a part
@@ -520,9 +533,10 @@ whole catalogue can be bought or built.
       `Jobs/Transport.lua` and `StationTradeSystem` already have the pieces.
 - [ ] **Workers are only hands.** A worker shuttle's cargo is irrelevant, it is never paid, and a
       station does not hire. Pay, wages and a labour market would make the crew a real cost.
-- [ ] **Prospecting is half done**: the Survey Scanner module reads the rock in reach
-      (`AsteroidOre.ofEntity`), but the ore is still on the HUD as soon as a rock is in reach, so
-      the scanner tells you nothing you could not already see. The HUD should go quiet without one.
+- [ ] **Prospecting stops at the rock.** A rock's ore is hidden until a Survey Scanner reads it,
+      but a belt's *composition* is still public on the system map, so a prospector can tell which
+      belt is worth sweeping without owning a scanner. Whether that is a feature or a hole is a
+      design call; a surveyed-rock marker in the world would also help more than a HUD line.
 - [ ] **Saving.** The hold, the wallet, every station's stock and every production line's progress
       are the state a saved game needs (see item ids, section 1).
 - [ ] **Balance.** `Config.game.trade` and `Config.game.production` were set by eye: the target

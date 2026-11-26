@@ -66,6 +66,9 @@ function ShipFittingSystem:computeStats(ship)
         [Stat.Turn] = 1,
         [Stat.ScanRange] = 1,
         [Stat.MiningRate] = 1,
+        -- The books a trader can read from here: the configured reach, which
+        -- a datalink module adds to
+        [Stat.MarketReach] = Config.game.market and Config.game.market.remoteJumps or 0,
     }
 
     -- Every fitting's adds first, then every scale, so the order modules were

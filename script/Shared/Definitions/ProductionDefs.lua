@@ -753,6 +753,23 @@ local defs = {
         },
     },
     ProductionDefinition {
+        id = 47,
+        name = "Market Datalink Factory",
+        class = Class.Factory,
+        duration = 660.0,
+        inputs = {
+            { item = Items.Miscellaneous.EnergyCell, count = 4 },
+            { item = Items.RefinedMaterials.TransparentAluminum, count = 1 },
+            { item = Items.RefinedMaterials.Gold, count = 2 },
+            { item = Items.RefinedMaterials.Silicon, count = 2 },
+            { item = Items.Data.InfolyticChip, count = 3 },
+        },
+        outputs = {
+            { item = Items.Equipment.MarketDatalink, count = 1 },
+            { item = Items.Waste.Waste, count = 40 },
+        },
+    },
+    ProductionDefinition {
         id = 46,
         name = "Impeller Engine Factory",
         class = Class.Factory,
@@ -775,4 +792,4 @@ for _, def in ipairs(defs) do Productions:add(def) end
 
 return Productions
 
--- The next free production id: 47
+-- The next free production id: 48

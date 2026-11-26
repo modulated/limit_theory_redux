@@ -44,8 +44,8 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          labour market would make a station's crew a real cost.
    - [x] Equipment and hulls that can be fitted and flown, not just bought (0.2.0: weapons go in
          mounts, modules in slots, actives on the number keys, hulls bought and switched into at a
-         station, and every part has a recipe). Left over: modules that extend market reach
-         (`market.remoteJumps` is still a flat 3), and fittings as loot from a kill.
+         station, every part has a recipe, and a Market Datalink module widens how many jumps of
+         order books can be read). Left over: fittings as loot from a kill.
    - [ ] Biomass has no source, so the hydrocarbon chain runs on imports.
    - [ ] Saving the hold, the wallet, station stock and production progress.
    - [ ] Balance: tune with `luajit tools/economy-sim.lua --seeds 8 --prospector --trader`
@@ -60,10 +60,10 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    - [ ] Manual fire and target lock for the player (turrets only fire automatically, whatever is
          fitted in their mounts).
    - [ ] CriminalThink's black-market jobs (needs the economy).
-   - [ ] Prospecting scanner: the Survey Scanner module reads a rock (`AsteroidOre.ofEntity`) on a
-         key, but the HUD still names the ore as soon as a rock is in reach, so the module tells
-         you nothing new. The HUD should go quiet without one, and the scanner should reach
-         further than the mining laser. See [doc/items.md](doc/items.md).
+   - [x] Prospecting scanner (0.2.0): a rock is unnamed until the Survey Scanner reads it, which it
+         does at 2.5x the laser's reach; mining a unit out identifies it too. Left over: a belt's
+         composition is still public on the system map, and a surveyed rock has no marker in the
+         world. See [doc/items.md](doc/items.md).
    - [ ] Legacy's dust clouds (only the flecks are ported; the clouds need their texture
          pass and shader converted).
    - [ ] Reputation from more than kills and hits (escorting, trading) once there is more

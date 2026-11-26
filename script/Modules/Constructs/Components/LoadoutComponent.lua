@@ -102,7 +102,7 @@ end
 ---@return FittingDefinition|nil
 function LoadoutComponent:findAbility(abilityKey)
     for _, row in ipairs(self:listAbilities()) do
-        if row.fitting.ability.key == abilityKey then return row.fitting end
+        if row.fitting.ability.key == abilityKey then return row.fitting, row.slot end
     end
     return nil
 end

@@ -630,8 +630,9 @@ end
 --- The rock the player's ship could mine now: the nearest spawned asteroid
 --- within range of the ship, with something left in it.
 ---@param ignoreLaser boolean|nil true to find a rock even with nothing to cut it with
+---@param reachScale number|nil further than the laser can cut (a scanner reads at range)
 ---@return table|nil info { entity, field, asteroid, pos, scale, rock }
-function LimitTheoryRedux:mineableRock(ignoreLaser)
+function LimitTheoryRedux:mineableRock(ignoreLaser, reachScale)
     if self.docked or not self.playerShip or not self.npcs or not self.npcs.mining then return nil end
     -- A rock is just a rock without something to cut it with
     if not ignoreLaser and not self:fittedAbility("miningLaser") then return nil end
@@ -644,7 +645,8 @@ function LimitTheoryRedux:mineableRock(ignoreLaser)
     for _, info in ipairs(AsteroidFieldSystem:getSpawnedEntities()) do
         if info.field and info.asteroid then
             -- A better sensor reaches further (Survey Scanner, Ship Sensor)
-            local reach = info.scale + cfg.playerRange * self:fitStat("scanRange", 1)
+            local reach = info.scale
+                + cfg.playerRange * self:fitStat("scanRange", 1) * (reachScale or 1)
             local d = pos:distance(info.pos)
             if d <= reach and (not bestDist or d < bestDist) then
                 best, bestDist = info, d
@@ -723,6 +725,12 @@ function LimitTheoryRedux:updateMining(dt)
             info.rock.yield = info.rock.yield + 1
             holdFull()
             break
+        end
+        -- Whatever the scanner said or did not say, a unit in the hold is
+        -- the rock identified
+        if not self:knowsRock(info) then
+            self:markSurveyed(info)
+            self:notify(string.format("The rock is %s.", info.rock.item), { 0.5, 1.0, 0.7 })
         end
     end
 end
@@ -894,6 +902,10 @@ function LimitTheoryRedux:applyFitToShip()
     if not loadout then return end
     local added = loadout:getStat("cargoMass", 0)
     PlayerCargo:setCapacity(Config.game.cargo.holdCapacity + added)
+    -- How far out the order books can be read is a fitted thing too: a
+    -- datalink in a module slot buys a wider view of the market
+    MarketIntel:setRange(math.floor(loadout:getStat("marketReach",
+        Config.game.market.remoteJumps)))
 end
 
 --- What the fit says about a stat, or the default when nothing is fitted.
@@ -907,13 +919,32 @@ function LimitTheoryRedux:fitStat(stat, fallback)
     return loadout:getStat(stat, fallback)
 end
 
+--- Whether the player knows what a rock holds. A rock is just a rock until
+--- a Survey Scanner reads it, or until the laser has cut a unit out of it
+--- and the hold says what came up.
+---@param info table|nil the rock, from `mineableRock`
+---@return boolean
+function LimitTheoryRedux:knowsRock(info)
+    if not info or not info.rock then return false end
+    return (self.surveyedRocks or {})[info.rock] == true
+end
+
+--- Note that a rock's contents are known (a survey, or a unit mined out).
+---@param info table|nil
+function LimitTheoryRedux:markSurveyed(info)
+    if not info or not info.rock then return end
+    self.surveyedRocks = self.surveyedRocks or {}
+    self.surveyedRocks[info.rock] = true
+end
+
 --- The module the player has fitted for an ability, or nil.
 ---@param abilityKey string
----@return FittingDefinition|nil
+---@return FittingDefinition|nil fitting, integer|nil slot the key it is on
 function LimitTheoryRedux:fittedAbility(abilityKey)
     local loadout = self.playerShip and self.playerShip:isValid()
         and self.playerShip:get(ConstructComponents.Loadout)
-    return loadout and loadout:findAbility(abilityKey) or nil
+    if not loadout then return nil end
+    return loadout:findAbility(abilityKey)
 end
 
 --- The player's rented lines at this system's stations, after the stations'
@@ -1074,6 +1105,8 @@ function LimitTheoryRedux:resetGalaxy()
     PlayerFactories:reset()
     MarketIntel:reset()
     self:connectMarket()
+    -- A new galaxy's rocks are all unread
+    self.surveyedRocks = {}
     -- The ship a new game starts in: empty slots but for what it comes with
     AbilitySystem:reset()
     PlayerShipyard:reset(Config.game.fitting.startingHull)
@@ -1970,13 +2003,28 @@ function LimitTheoryRedux:drawNavigation()
         end
         if rock then
             local mining = GeneralActions.Mine:isDown()
-            table.insert(lines, {
-                text = mining
-                    and string.format("Mining %s  ·  %d left in the rock  ·  hold %s",
-                        rock.rock.item, math.floor(rock.rock.yield), PlayerCargo:describeLoad())
-                    or string.format("E: mine %s (%d left)", rock.rock.item, math.floor(rock.rock.yield)),
-                color = mining and { 0.5, 1.0, 0.7 } or { 0.6, 0.9, 1.0 },
-            })
+            -- An unread rock is just a rock: a Survey Scanner says what is in
+            -- it, and so does cutting a unit out of it
+            if self:knowsRock(rock) then
+                table.insert(lines, {
+                    text = mining
+                        and string.format("Mining %s  ·  %d left in the rock  ·  hold %s",
+                            rock.rock.item, math.floor(rock.rock.yield), PlayerCargo:describeLoad())
+                        or string.format("E: mine %s (%d left)", rock.rock.item, math.floor(rock.rock.yield)),
+                    color = mining and { 0.5, 1.0, 0.7 } or { 0.6, 0.9, 1.0 },
+                })
+            else
+                local scanner, scannerSlot = self:fittedAbility("surveyScan")
+                table.insert(lines, {
+                    text = mining and string.format("Mining an unsurveyed rock  ·  hold %s",
+                            PlayerCargo:describeLoad())
+                        or (scanner
+                            and string.format("E: mine an unsurveyed rock  ·  %d: survey it",
+                                scannerSlot or 1)
+                            or "E: mine an unsurveyed rock  ·  a Survey Scanner would say what is in it"),
+                    color = mining and { 0.5, 1.0, 0.7 } or { 0.7, 0.75, 0.8 },
+                })
+            end
         end
     end
     if self.cloak and self:isTravelGame() then

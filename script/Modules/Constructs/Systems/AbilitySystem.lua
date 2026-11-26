@@ -85,11 +85,14 @@ HANDLERS.repairPulse = function(ship, fitting, game)
     return true
 end
 
---- Survey scanner: reads the rock in reach, and says what is in it.
+--- Survey scanner: reads the rock in reach, and says what is in it. It reads
+--- further than the laser cuts, and what it reads stays known.
 HANDLERS.surveyScan = function(ship, fitting, game)
-    local info = game.mineableRock and game:mineableRock(true) or nil
+    local reach = fitting.ability.magnitude or 2.5
+    local info = game.mineableRock and game:mineableRock(true, reach) or nil
     if not info then return false, "nothing in scanner range" end
     local AsteroidOre = require("Shared.Helpers.AsteroidOre")
+    if game.markSurveyed then game:markSurveyed(info) end
     game:notify(string.format("Survey: %s", AsteroidOre.describeEntity(info.entity)),
         { 0.5, 1.0, 0.7 })
     return true

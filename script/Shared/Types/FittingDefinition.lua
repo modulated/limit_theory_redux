@@ -51,6 +51,7 @@ FittingDefinition.Stat = {
     Turn        = "turn",        -- scale
     ScanRange   = "scanRange",   -- scale: how far the scanner and the labels reach
     MiningRate  = "miningRate",  -- scale: seconds a unit takes, divided by this
+    MarketReach = "marketReach", -- add: jumps away whose order books can be read
 }
 
 ---@param args table

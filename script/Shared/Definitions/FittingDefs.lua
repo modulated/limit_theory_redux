@@ -216,9 +216,19 @@ register(FittingDefinition {
     slot = Slot.Module,
     itemName = "SurveyScanner",
     effects = { scale = { [Stat.ScanRange] = 1.25 } },
-    ability = { key = "surveyScan", cooldown = 8.0 },
+    -- `magnitude` is how much further than the laser it reads
+    ability = { key = "surveyScan", cooldown = 8.0, magnitude = 2.5 },
 }, Items.Equipment.SurveyScanner)
+
+register(FittingDefinition {
+    id = 19,
+    name = "Market Datalink",
+    description = "Reads the order books of systems further out than a ship's own feed reaches.",
+    slot = Slot.Module,
+    itemName = "MarketDatalink",
+    effects = { add = { [Stat.MarketReach] = 2 } },
+}, Items.Equipment.MarketDatalink)
 
 return Fittings
 
--- The next free fitting id: 19
+-- The next free fitting id: 20

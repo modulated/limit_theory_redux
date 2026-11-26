@@ -110,7 +110,8 @@ ItemGroup {
         ItemDefinition { id = 64, name = "Manoeuvring Thrusters", mass = 150, energyDensity = 10, startEquilibriumPrice = 1400 },
         ItemDefinition { id = 65, name = "Hull Repair Pulse", mass = 200, energyDensity = 15, startEquilibriumPrice = 2600 },
         ItemDefinition { id = 66, name = "Mining Laser", mass = 160, energyDensity = 11, startEquilibriumPrice = 1700 },
-        ItemDefinition { id = 67, name = "Survey Scanner", mass = 70, energyDensity = 18, startEquilibriumPrice = 2000 }
+        ItemDefinition { id = 67, name = "Survey Scanner", mass = 70, energyDensity = 18, startEquilibriumPrice = 2000 },
+        ItemDefinition { id = 68, name = "Market Datalink", mass = 60, energyDensity = 21, startEquilibriumPrice = 3400 }
     }
 }
 
@@ -225,6 +226,7 @@ ItemGroup {
 ---@field HullRepairPulse ItemDefinition
 ---@field MiningLaser ItemDefinition
 ---@field SurveyScanner ItemDefinition
+---@field MarketDatalink ItemDefinition
 
 ---@class ItemsConstructs
 ---@field ShipHullSolo ItemDefinition
@@ -244,4 +246,4 @@ ItemGroup {
 ---@field EnergyCell ItemDefinition
 ---@field RadioactiveIsotopes ItemDefinition
 
--- The next free item id: 68
+-- The next free item id: 69
