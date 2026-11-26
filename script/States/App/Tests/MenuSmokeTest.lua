@@ -1,13 +1,14 @@
 --[[
 Menu smoke test: boots the real game (LTheoryRedux) and opens every menu
 screen for a few frames: the main menu screens with each Settings tab, then a
-new game with its HUD, the pause menu and the Controls screen. It catches a
-screen that throws while it is built or drawn, like a setting that no longer
-exists.
+new game with its HUD, the pause menu, the Controls screen and the game over
+screen (the player's ship at no health). It catches a screen that throws while
+it is built or drawn, like a setting that no longer exists.
 
 Then every scenario in New Game's Scenario list (Config/Scenarios) is started
 from the main menu and regenerated once (B), so a scenario that throws while
-it is built, run, drawn or rebuilt fails the test too.
+it is built, run, drawn or rebuilt fails the test too. The first one starts
+from the game over screen, through the main menu as its button does.
 
 Run it from the repository root after a build:
 
@@ -24,14 +25,15 @@ writes the player's user.ini (leaving the Settings screen saves it).
 
 It needs a GPU and a window, so CI does not run it.
 
-Not covered: the Ship_Creation and System_Map views of the Gameplay page, which
-still use Legacy objects and are not wired into the new game yet.
+Not covered: the System_Map view of the Gameplay page, and the Station view
+(the docked station's market), which need a game with a station to dock at.
 ]]
 
 local Game = require('States.App.LTheoryRedux')
 local UIPageMainMenu = require('UI.HmGui.Pages.MainMenu')
 local SettingsView = require('UI.HmGui.Views.MainMenu.Settings')
 local Scenarios = require('Config.Scenarios')
+local CoreComponents = require('Modules.Core.Components')
 
 local FRAMES_PER_SCREEN = 5
 local GAME_SEED = 1
@@ -70,6 +72,10 @@ end
 screen('Game > HUD', function() Game:startGame(GAME_SEED) end)
 screen('Game > Pause menu', function() Game:openPauseMenu() end)
 screen('Game > Controls', function() Game:openControls() end)
+screen('Game > Game over', function()
+    Game:closePauseMenu()
+    Game.playerShip:get(CoreComponents.Health):setCurrentHealth(0)
+end)
 
 -- From the main menu, as a player would (a frame or more apart: tearing a
 -- big star system down and building the next one in one frame needs GPU

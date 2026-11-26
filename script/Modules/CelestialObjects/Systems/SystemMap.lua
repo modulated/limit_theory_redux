@@ -4,6 +4,8 @@ local SpatialComponents     = require("Modules.Spatial.Components")
 local CelestialComponents   = require("Modules.CelestialObjects.Components")
 local UniverseScaleConfig   = require("Config.Gen.UniverseScaleConfig")
 local DrawEx                = require("UI.DrawEx")
+local MapLabels             = require("UI.MapLabels")
+local MapFrame              = require("UI.MapFrame")
 local Pipelines             = require("Render.Pipelines")
 
 -- Scratch color for the shapes below (the batcher copies it at the call).
@@ -49,7 +51,8 @@ end
 ---@param state table
 ---@param rootEntity Entity
 ---@param shipEntity Entity|nil
-function SystemMap:collectEntities(state, rootEntity, shipEntity)
+---@param npcEntries table[]|nil the NPC ships ({entity, label, color}), refreshed every call
+function SystemMap:collectEntities(state, rootEntity, shipEntity, npcEntries)
     -- Full tree walk only on first call or explicit invalidation
     if not state._entityListBuilt then
         state.entities = {}
@@ -73,6 +76,39 @@ function SystemMap:collectEntities(state, rootEntity, shipEntity)
             end
         end
         state._entityListBuilt = true
+        state._staticCount = #state.entities
+        state._npcEntries = {}
+    end
+
+    -- NPC ships come and go: after the static entries, refreshed every call.
+    -- Each ship keeps its entry table, so a selection of it holds; a
+    -- selected ship that is gone is deselected.
+    for i = #state.entities, (state._staticCount or #state.entities) + 1, -1 do
+        state.entities[i] = nil
+    end
+    local live = {}
+    for _, npc in ipairs(npcEntries or {}) do
+        local entry = state._npcEntries[npc.entity]
+        if not entry then
+            entry = { entity = npc.entity, isNpc = true, size = 4, labelPriority = 30 }
+            state._npcEntries[npc.entity] = entry
+        end
+        local rbCmp = npc.entity:get(PhysicsComponents.RigidBody)
+        local body = rbCmp and rbCmp:getRigidBody()
+        if body then
+            entry.label = npc.label
+            entry.color = npc.color
+            entry.pos = body:getPos()
+            entry.scale = body:getBoundingRadius()
+            live[npc.entity] = entry
+            table.insert(state.entities, entry)
+        end
+    end
+    for entity in pairs(state._npcEntries) do
+        if not live[entity] then state._npcEntries[entity] = nil end
+    end
+    if state.selected and state.selected.isNpc and not live[state.selected.entity] then
+        state.selected = nil
     end
 
     -- Cheap per-frame position update (no tree walk)
@@ -149,6 +185,11 @@ function SystemMap:_walk(state, entity, parentPos, parentEntity)
         elseif name:find("SpaceStationEntity") then
             label = "Station"
             color = { 1.0, 0.5, 0.1 }
+            pointSize = 4
+        elseif name:find("JumpGateEntity") then
+            local nameCmp = entity:get(CoreComponents.Name)
+            label = nameCmp and nameCmp:getName() or "Jump Gate"
+            color = { 0.35, 0.85, 1.0 }
             pointSize = 4
         elseif name:find("AsteroidBeltEntity") then
             label = "Asteroid Belt"
@@ -410,9 +451,8 @@ function SystemMap:draw(state, x, y, sx, sy)
     -- Background (use SimpleRect — DrawEx.Rect uses additive blend which can't darken)
     DrawEx.SimpleRect(x, y, sx, sy, Color(0.02, 0.02, 0.03, 0.97))
 
-    -- Title
-    DrawEx.TextAlpha('Unageo-Medium', "System Map [M to close] | Scroll=Zoom | RMB=Pan | LMB=Select", 12,
-        x + 10, y + 10, 600, 16, 1.0, 1.0, 1.0, 0.8, 0.0, 0.5)
+    -- (Title, controls: MapFrame, drawn over the map by the game state)
+    local labels = MapLabels.begin()
 
     -- Draw orbit rings using the ring shader with correctly sized quad
     for _, entry in ipairs(state.entities) do
@@ -558,7 +598,15 @@ function SystemMap:draw(state, x, y, sx, sy)
     end
 
     -- Draw entities
+    local shipX, shipY
     for _, entry in ipairs(state.entities) do
+        -- The player's ship: a marker over everything, after the loop
+        if entry.entity == state.shipEntity then
+            shipX = cx + (entry.pos.x + state.panX) * state.zoom
+            shipY = cy + (entry.pos.z + state.panY) * state.zoom
+            goto next_map_entity
+        end
+
         -- Hide moons unless zoomed in close to their parent planet
         if entry.isMoon and entry.parentPos then
             local parentScreenDist = entry.orbitRadius * state.zoom
@@ -577,12 +625,13 @@ function SystemMap:draw(state, x, y, sx, sy)
                     ocx = cx + state.panX * state.zoom
                     ocy = cy + state.panY * state.zoom
                 end
-                local labelX = ocx
-                local labelY = ocy - beltScreenR - 8
                 local c = entry.color
-                DrawEx.TextAlpha('Unageo-Medium', entry.label, 10,
-                    labelX - 40, labelY - 6, 120, 14,
-                    c[1], c[2], c[3], 0.7, 0.5, 0.5)
+                MapLabels.add(labels, {
+                    text = entry.label, x = ocx, y = ocy - beltScreenR, anchor = 2,
+                    priority = MapLabels.priorityOf(entry.entity),
+                    always = state.selected ~= nil and state.selected.entity == entry.entity,
+                    color = { c[1], c[2], c[3], 0.7 },
+                })
             end
             goto next_map_entity
         end
@@ -607,13 +656,21 @@ function SystemMap:draw(state, x, y, sx, sy)
                     { r = 1.0, g = 0.3, b = 0.3, a = 1.0 }, true)
             end
 
-            -- Draw label
-            DrawEx.TextAlpha('Unageo-Medium', entry.label, 10,
-                screenX + ps + 4, screenY - 6, 120, 14,
-                c[1], c[2], c[3], 0.9, 0.0, 0.5)
+            -- Label: placed with the others after the loop, clear of them
+            local isSelected = state.selected ~= nil and state.selected.entity == entry.entity
+            MapLabels.add(labels, {
+                text = entry.label, x = screenX, y = screenY, anchor = ps / 2 + (isSelected and 6 or 0),
+                priority = entry.labelPriority or MapLabels.priorityOf(entry.entity),
+                always = isSelected,
+                color = { c[1], c[2], c[3], 0.9 },
+            })
         end
         ::next_map_entity::
     end
+    if shipX then
+        MapLabels.playerMarker(labels, shipX, shipY, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
+    end
+    MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 
     -- Draw autopilot nav: target marker + intercept marker + lines
     -- Target marker (yellow crosshair on actual target)
@@ -712,7 +769,7 @@ function SystemMap:draw(state, x, y, sx, sy)
 
     -- Draw selected entity info panel
     if state.selected then
-        self:drawSelectedInfo(state, x + sx - 250, y + 40, 240)
+        self:drawSelectedInfo(state, x + sx - 250, y + MapFrame.barHeight + 12, 240)
     end
 
     -- Draw zoom level

@@ -23,6 +23,8 @@ function create_app_bundle {
         CFBundleSignature = ltrr;
         CFBundleExecutable = ltr;
         CFBundleIconFile = "ltr.icns";
+        LSMinimumSystemVersion = "$MACOSX_DEPLOYMENT_TARGET";
+        NSHighResolutionCapable = YES;
     }
 EOF
 
@@ -38,6 +40,12 @@ EOF
     echo "Copying dynamic libraries..."
     cp "${target_dir}/${libprefix}phx${libsuffix}" "$destination/Limit Theory Redux.app/Contents/MacOS/${libprefix}phx${libsuffix}"
 
-    echo "Stripping binary..."
-    strip -u -r "$destination/Limit Theory Redux.app/Contents/MacOS/ltr"
+    # No separate strip step: the release profile already strips symbols, and
+    # editing a linked arm64 binary afterwards can invalidate the ad-hoc
+    # signature the linker gave it; Apple Silicon refuses to run unsigned code.
+    #
+    # Sign the whole bundle ad hoc (no developer identity) so the executable,
+    # libphx.dylib and the bundle's resources form one valid signature.
+    echo "Signing app bundle (ad hoc)..."
+    codesign --force --deep --sign - "$destination/Limit Theory Redux.app"
 }

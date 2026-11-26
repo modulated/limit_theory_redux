@@ -1,4 +1,5 @@
 #![allow(clippy::missing_safety_doc)] // This file will be removed after refactoring
+#![allow(unsafe_code)] // TODO: remove (C-style allocation for the Lua side)
 
 #[inline]
 pub unsafe extern "C" fn mem_alloc(size: usize) -> *mut libc::c_void {
@@ -7,7 +8,7 @@ pub unsafe extern "C" fn mem_alloc(size: usize) -> *mut libc::c_void {
 
 #[inline]
 pub unsafe extern "C" fn mem_free(ptr: *const libc::c_void) {
-    unsafe { libc::free(ptr as *mut _) };
+    unsafe { libc::free(ptr.cast_mut()) };
 }
 
 #[inline]

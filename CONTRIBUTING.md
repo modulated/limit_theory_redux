@@ -66,12 +66,11 @@ You may want to install a GUI for Git, such as GitHub for Desktop: https://deskt
 Optionally, if you would like to made changes to the libphx engine, you will also need:
 
 - Visual Studio Community: https://visualstudio.microsoft.com/vs/
-- LLVM: https://releases.llvm.org/download.html (download the latest Windows installer by going to the GitHub releases page, and downloading LLVM-xx.x.x-win64.exe)
 - Rust: https://www.rust-lang.org/tools/install (use rustup-init.exe, then type 1 and press Enter in the terminal window)
 
-Everything other than Visual Studio can be installed using [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) if you're on Windows 10 1709 or later:
+Rust can also be installed using [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) if you're on Windows 10 1709 or later:
 
-- `winget install LLVM.LLVM Rustlang.Rustup`
+- `winget install Rustlang.Rustup`
 
 ### macOS
 
@@ -133,7 +132,16 @@ From a terminal in the directory of the checked-out repository, run:
 
 - `./build.sh`
 
-This will build the engine code and place it in the `bin` directory. `build.sh` is a helper script that does two things: runs `cargo build` then copies the binaries out of the `target` directory into `bin`. You can also run `./build.sh` with the `--debug` flag to disable optimizations and incorporate debug symbols, and `--run-tests` to run unit tests.
+On Windows without Git Bash, `build.ps1` does the same from PowerShell and takes the same flags:
+
+- `.\build.ps1` (or `powershell -ExecutionPolicy Bypass -File .\build.ps1` if Windows refuses to run scripts)
+
+This will build the engine code and place it in the `bin` directory. `build.sh` is a helper script that does two things: runs `cargo build` then copies the binaries out of the `target` directory into `bin`. It takes these flags:
+
+- `--debug`: disable optimizations for the engine and incorporate debug symbols (dependencies stay optimized).
+- `--fast`: an optimized build that compiles much faster than the default, by using thin LTO and parallel code generation. It runs nearly as fast as the default build; use it for play-testing, and the default for anything you ship.
+- `--run-tests`: also run clippy and the unit tests. Optimized builds test in the `ci-test` profile (optimized, without LTO), so tests don't repeat the slow shipping build.
+- `--bundle`: on macOS, also assemble `bin/Limit Theory Redux.app`, signed ad hoc.
 
 ## Running a Lua App
 
@@ -164,7 +172,7 @@ After changing the UI or anything the menus use (settings, `GameState`, the rend
 - Windows: `./bin/ltr.exe MenuSmokeTest`
 - macOS/Linux: `./bin/ltr MenuSmokeTest`
 
-It starts the game, opens every menu screen (each Settings tab, the HUD, the pause menu and the Controls screen) for a few frames, starts every scenario from the main menu and regenerates it once (B), and exits with code 0 and `MenuSmokeTest: passed`. A screen that throws a script error stops it with exit code 1; the last `MenuSmokeTest: checking` line in the log names the screen. It uses its own settings folder, so your settings are left alone. It needs a GPU and a window, so CI does not run it.
+It starts the game, opens every menu screen (each Settings tab, the HUD, the pause menu, the Controls screen and the game over screen) for a few frames, starts every scenario from the main menu and regenerates it once (B), and exits with code 0 and `MenuSmokeTest: passed`. A screen that throws a script error stops it with exit code 1; the last `MenuSmokeTest: checking` line in the log names the screen. It uses its own settings folder, so your settings are left alone. It needs a GPU and a window, so CI does not run it.
 
 ## Quickly iterate on engine changes
 
@@ -172,9 +180,48 @@ As we use the `cargo` ecosystem, if you're iterating on engine code, it might be
 
 - `cargo run`
 
-This will essentially run `cargo build && ./target/debug/ltr` in one step. You can pass `--release` to `cargo run` to enable optimizations. If you'd like to launch with a specific script, you can pass it as an argument to `cargo run`:
+This will essentially run `cargo build && ./target/debug/ltr` in one step. You can pass `--profile release-fast` to `cargo run` for an optimized build that compiles quickly, or `--release` for the full shipping optimizations (much slower to compile). If you'd like to launch with a specific script, you can pass it as an argument to `cargo run`:
 
 - `cargo run -- <script name without extension>`
+
+### Build profiles
+
+| Profile | Command | Use |
+|---|---|---|
+| `dev` | `cargo build` | Engine code unoptimized with full debug info; dependencies optimized. |
+| `release-fast` | `cargo build --profile release-fast` | Optimized, thin LTO, incremental. Local play-testing and profiling. |
+| `release` | `cargo build --release` | Fat LTO, one codegen unit, stripped. What CI ships. |
+| `ci-test` | `cargo test --profile ci-test` | Optimized tests and clippy without LTO (`./build.sh --run-tests`). |
+
+### Faster builds
+
+- **Windows:** Windows Defender scanning slows builds a lot: put the repository on a [Dev Drive](https://learn.microsoft.com/en-us/windows/dev-drive/), or exclude its `target` folder from real-time protection. (Linking with `rust-lld` breaks LuaJIT's lookup of C runtime functions, so Windows keeps MSVC's linker.)
+- **Linux:** `rust-lld` is already the default linker on x86_64. [mold](https://github.com/rui314/mold) is a little faster again if you want it locally (`mold -run cargo build`).
+- **macOS:** Apple's linker is already fast. Builds target macOS 11 or later (`MACOSX_DEPLOYMENT_TARGET` in `build.sh`).
+
+### CPU-specific builds
+
+Release builds target a baseline x86-64 CPU so they run everywhere. You can build for your own CPU, which can make the game itself a little faster (the physics engine uses SIMD); it does not make compiling faster. Only use such a build on your own machine:
+
+- `RUSTFLAGS="-C target-cpu=native" cargo build --profile release-fast`
+
+Changing `RUSTFLAGS` rebuilds every crate, so set it the same way each time (for example, in your shell profile) or builds will keep starting from scratch.
+
+## Tuning the economy
+
+`luajit tools/economy-sim.lua` runs the game's economy headless — the real
+config, item and production registries and trade and production systems, with
+stations, miners and an optional trader and prospector — and reports prices,
+production, where the goods came from and what an hour of mining or hauling
+pays. `--seeds 8` shows the spread across systems. Use it rather than the game
+to set anything in `Config.game.{trade,production,mining,cargo}`; see
+[doc/items.md](doc/items.md).
+
+## Lints
+
+`./build.sh --run-tests` runs `cargo clippy -- -D warnings`, so a clippy warning fails CI. Beyond clippy's default groups, the workspace enables a set of correctness lints (pointer casts that can change type or alignment, hash-map iteration order, leftover `todo!`/`dbg!`, lock and resource misuse, and more): see `[workspace.lints]` in the root `Cargo.toml`, which also lists the lints left out and why. Every crate inherits them with `[lints] workspace = true`, except `ltr`, which keeps a copy (its `Cargo.toml` explains why): change both together.
+
+To silence a lint at one place, use `#[allow(clippy::name)]` with a comment on why it is right there.
 
 ## Formatting
 

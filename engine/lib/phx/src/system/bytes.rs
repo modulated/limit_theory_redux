@@ -20,7 +20,7 @@ impl Bytes {
     /// WARNING: This only works if T is plain-old-data i.e. has no pointers!
     pub fn read<T>(&mut self, data: &mut [T]) {
         let byte_len = std::mem::size_of_val(data);
-        let ptr = data.as_mut_ptr() as *mut u8;
+        let ptr = data.as_mut_ptr().cast::<u8>();
         // SAFETY: T is POD (no pointers), so interpreting the buffer as bytes
         // for the full byte length is valid.
         #[allow(unsafe_code)]
@@ -30,7 +30,7 @@ impl Bytes {
     /// WARNING: This only works if T is plain-old-data i.e. has no pointers!
     pub fn write<T>(&mut self, data: &[T]) {
         let byte_len = std::mem::size_of_val(data);
-        let ptr = data.as_ptr() as *const u8;
+        let ptr = data.as_ptr().cast::<u8>();
         // SAFETY: T is POD (no pointers), so interpreting the buffer as bytes
         // for the full byte length is valid.
         #[allow(unsafe_code)]
@@ -112,7 +112,10 @@ impl Bytes {
     pub fn save(&self, path: &str) {
         let mut file = File::new(path)
             .unwrap_or_else(|| panic!("Bytes_Save: Failed to open file '{path}' for writing"));
-        let _ = file.file.write_all(self.cursor.get_ref().as_slice());
+        // A failed write used to go unnoticed
+        if let Err(e) = file.file.write_all(self.cursor.get_ref().as_slice()) {
+            tracing::error!("Bytes_Save: Failed to write '{path}': {e}");
+        }
     }
 
     pub fn get_cursor(&self) -> u32 {
@@ -129,7 +132,12 @@ impl Bytes {
 
     #[bind(name = "Read")]
     pub fn read_bytes(&mut self, data: &mut [u8]) {
-        let _ = self.cursor.read_exact(data);
+        // Reading past the end used to leave `data` as it was, silently;
+        // now it reads as zeros (like the read_* numbers' defaults), logged
+        if let Err(e) = self.cursor.read_exact(data) {
+            tracing::warn!("Bytes_Read: {} bytes past the end: {e}", data.len());
+            data.fill(0);
+        }
     }
 
     pub fn read_u8(&mut self) -> u8 {

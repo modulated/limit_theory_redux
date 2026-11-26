@@ -7,9 +7,9 @@ local Gameplay = UICore.Page {
 local UIRouter = require("UI.HmGui.UICore.UIRouter")
 ---@type ResponsiveSize
 local ResponsiveSize = require("Types.ResponsiveSize")
+local CoreComponents = require("Modules.Core.Components")
+local CursorManager = require("Input.CursorManager")
 
-local ShipCreationView = require("UI.HmGui.Views.Gameplay.ShipCreation")
-Gameplay:addViewToPage(ShipCreationView)
 local InGameView = require("UI.HmGui.Views.Gameplay.InGame")
 Gameplay:addViewToPage(InGameView)
 local PausedView = require("UI.HmGui.Views.Gameplay.Paused")
@@ -18,16 +18,32 @@ local ControlsView = require("UI.HmGui.Views.Gameplay.Controls")
 Gameplay:addViewToPage(ControlsView)
 local SystemMapView = require("UI.HmGui.Views.Gameplay.SystemMap")
 Gameplay:addViewToPage(SystemMapView)
+local StationView = require("UI.HmGui.Views.Gameplay.Station")
+Gameplay:addViewToPage(StationView)
 
 local deathTextVisible = false
 
+---@return boolean destroyed the player's ship exists and has no health left
+local function isPlayerShipDestroyed()
+    local ship = LimitTheoryRedux.playerShip
+    if not ship or not ship:isValid() then
+        return false
+    end
+    local health = ship:get(CoreComponents.Health)
+    return health ~= nil and health:isDestroyed()
+end
+
 function Gameplay:onInput() end
 
+-- Checked every frame rather than latched: the player's ship can be replaced
+-- by a new one while the page stays open.
 function Gameplay:onUpdate(dt)
-    if not deathTextVisible and GameState.player.currentShip and GameState.player.currentShip:isDestroyed() then
-        deathTextVisible = true
-        Input:setCursorVisible(true)
+    local destroyed = isPlayerShipDestroyed()
+    if destroyed and not deathTextVisible then
+        -- Visible and not grabbed: a locked cursor can't reach the button
+        CursorManager:free()
     end
+    deathTextVisible = destroyed
 end
 
 function Gameplay:onPageOpen()
@@ -69,7 +85,7 @@ local deathText = UIComponent.Container {
             margin = { 0, 40 },
             font = { name = "Unageo-Medium", size = 24 },
             align = { AlignHorizontal.Center, AlignVertical.Center },
-            callback = function() LimitTheoryRedux:initMainMenu() end
+            callback = function() LimitTheoryRedux:returnToMainMenu() end
         },
     }
 }

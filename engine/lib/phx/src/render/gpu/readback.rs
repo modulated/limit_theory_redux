@@ -182,7 +182,7 @@ pub fn bytes_to_vec<T: Clone + Default>(bytes: &[u8], count: usize) -> Vec<T> {
     let byte_len = (count * std::mem::size_of::<T>()).min(bytes.len());
     #[allow(unsafe_code)] // plain data, bounded by both buffers
     unsafe {
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), data.as_mut_ptr() as *mut u8, byte_len);
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), data.as_mut_ptr().cast::<u8>(), byte_len);
     }
     data
 }

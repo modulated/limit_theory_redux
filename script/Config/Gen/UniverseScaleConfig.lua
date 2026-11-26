@@ -161,36 +161,63 @@ function UniverseScaleConfig:debugSize(label, gameUnits, objectType)
     print("-------------------------")
 end
 
---- Format a game-unit distance as a human-readable real-world string
----@param gameUnits number Distance in game units
+--- `n` with about three significant figures, digits grouped in thousands:
+--- 1.25, 12.5, 125, 1,250, 12,500.
+---@param n number
 ---@return string
-function UniverseScaleConfig:formatDistance(gameUnits)
-    local realMeters = gameUnits / self.globalScale
-    if realMeters > self.units.AU_TO_METERS * 0.01 then
-        return string.format("%.2f AU", realMeters / self.units.AU_TO_METERS)
-    elseif realMeters > 1e9 then
-        return string.format("%.1f Mkm", realMeters / 1e9)
-    elseif realMeters > 1e6 then
-        return string.format("%.0f km", realMeters / 1e3)
-    elseif realMeters > 1000 then
-        return string.format("%.1f km", realMeters / 1e3)
+local function figures(n)
+    local text
+    if n < 10 then
+        text = string.format("%.2f", n)
+    elseif n < 100 then
+        text = string.format("%.1f", n)
     else
-        return string.format("%.0f m", realMeters)
+        text = string.format("%.0f", n)
     end
+    local int, frac = text:match("^(%d+)(.*)$")
+    if not int then return text end
+    int = int:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+    return int .. frac
 end
 
---- Format a game-unit speed as a human-readable real-world string
----@param gameUnitsPerSec number Speed in game units per second
+local SPEED_OF_LIGHT = 299792458 -- m/s
+
+---A distance in the unit that reads best, with about three significant
+---figures: m, km, thousands and millions of km, AU, then light years
+---("850 m", "4,820 km", "125k km", "1.25M km", "5.20 AU", "2.50 ly").
+---@param gameUnits gameunit
+---@return string
+function UniverseScaleConfig:formatDistance(gameUnits)
+    local m = math.abs(gameUnits) / self.globalScale
+    local km = m / 1000
+    local au = m / self.units.AU_TO_METERS
+    if m < 1000 then
+        return string.format("%.0f m", m)
+    elseif km < 10000 then
+        return figures(km) .. " km"
+    elseif km < 1e6 then
+        return figures(km / 1000) .. "k km"
+    elseif au < 0.1 then
+        return figures(km / 1e6) .. "M km"
+    elseif au < 10000 then
+        return figures(au) .. " AU"
+    end
+    return figures(m / self.units.LIGHT_YEAR_TO_METERS) .. " ly"
+end
+
+---A speed in the unit that reads best: m/s, km/s, then multiples of the
+---speed of light from a tenth of it on ("850 m/s", "8.80 km/s",
+---"1,250 km/s", "1.17 c").
+---@param gameUnitsPerSec number
 ---@return string
 function UniverseScaleConfig:formatSpeed(gameUnitsPerSec)
-    local realMps = gameUnitsPerSec / self.globalScale
-    if realMps > 1e6 then
-        return string.format("%.1f Mm/s", realMps / 1e6)
-    elseif realMps > 1000 then
-        return string.format("%.1f km/s", realMps / 1000)
-    else
-        return string.format("%.0f m/s", realMps)
+    local mps = math.abs(gameUnitsPerSec) / self.globalScale
+    if mps < 1000 then
+        return string.format("%.0f m/s", mps)
+    elseif mps < 0.1 * SPEED_OF_LIGHT then
+        return figures(mps / 1000) .. " km/s"
     end
+    return figures(mps / SPEED_OF_LIGHT) .. " c"
 end
 
 return UniverseScaleConfig

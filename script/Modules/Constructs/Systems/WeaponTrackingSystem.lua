@@ -92,7 +92,13 @@ local function getBodyAngularVelocity(body)
     return Vec3f(0, 0, 0)
 end
 
-local function getTrackingConfig(weapon, turret, component)
+-- The merged tracking config of a mount, kept per turret: it is the same
+-- every frame (the weapon and the fitted modules do not change between
+-- refits), and merging it per mount per frame was six table walks and a
+-- fresh table each time. Weak keys: turrets come and go with their ships.
+local trackingConfigCache = setmetatable({}, { __mode = "k" })
+
+local function buildTrackingConfig(weapon, turret, component)
     local config = {}
     for key, value in pairs(weapon.tracking or {}) do
         config[key] = value
@@ -122,6 +128,33 @@ local function getTrackingConfig(weapon, turret, component)
     config.turnRateFloor = config.turnRateFloor or 0.0005
     config.turnRateLimit = config.turnRateLimit or 8.0
     config.predictionDamping = config.predictionDamping or 0.35
+    return config
+end
+
+--- The mount's tracking config, built once and reused while the weapon and
+--- the fitted modules are the same tables.
+local function getTrackingConfig(weapon, turret, component)
+    local cached = trackingConfigCache[turret]
+    if cached
+        and cached.weapon == weapon
+        and cached.component == component
+        and cached.moduleRef == turret.trackingModuleRef
+        and cached.module == turret.trackingModule
+        and cached.moduleStats == turret.trackingModuleStats
+        and cached.componentStats == component.moduleStats
+    then
+        return cached.config
+    end
+    local config = buildTrackingConfig(weapon, turret, component)
+    trackingConfigCache[turret] = {
+        weapon = weapon,
+        component = component,
+        moduleRef = turret.trackingModuleRef,
+        module = turret.trackingModule,
+        moduleStats = turret.trackingModuleStats,
+        componentStats = component.moduleStats,
+        config = config,
+    }
     return config
 end
 

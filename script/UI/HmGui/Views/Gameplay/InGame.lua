@@ -155,6 +155,8 @@ end
 -- and a short message on every camera switch.
 
 local CAMERA_NAMES = { FirstPerson = "First person", Chase = "Chase", Orbit = "Orbit", Free = "Free", RTS = "RTS" }
+-- How the mouse works in the cameras that don't fly the ship
+local CAMERA_HINTS = { Orbit = "hold right mouse to orbit", Free = "right mouse toggles mouse look" }
 local SWITCH_MESSAGE_TIME, SWITCH_FADE_TIME = 2.0, 0.5 -- seconds
 
 local lastCameraMode, switchMessageLeft = nil, 0
@@ -168,7 +170,9 @@ local function updateCamera(player, dt)
 
     local name = CAMERA_NAMES[player:getModeName()] or player:getModeName()
     if not player:isPiloting() then
-        hud.cameraText = string.format("%s CAMERA  ·  ship not controlled  ·  C to switch", name:upper())
+        local hint = CAMERA_HINTS[player:getModeName()]
+        hud.cameraText = string.format("%s CAMERA  ·  ship not controlled  ·  %sC to switch", name:upper(),
+            hint and (hint .. "  ·  ") or "")
         hud.cameraAlpha = 1
     elseif switchMessageLeft > 0 then
         switchMessageLeft = math.max(0, switchMessageLeft - dt)

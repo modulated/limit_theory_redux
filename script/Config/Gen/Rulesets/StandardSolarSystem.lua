@@ -415,20 +415,23 @@ local Ruleset = {
             },
             composition = {
                 type = Enums.Gen.Rule.ByType,
+                parentKey = "ringType",
                 types = {
                     [Enums.Gen.AsteroidRingTypes.Rocky] = {
-                        { id = Items.RawMaterials.SilicateOre.id,  weight = 0.5 },
-                        { id = Items.RawMaterials.IronOre.id,      weight = 0.3 },
-                        { id = Items.RawMaterials.AluminumOre.id,  weight = 0.15 },
-                        { id = Items.RawMaterials.BerylliumOre.id, weight = 0.05 }
+                        { id = Items.RawMaterials.SilicateOre.id,      weight = 0.45 },
+                        { id = Items.RawMaterials.IronOre.id,          weight = 0.28 },
+                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.12 },
+                        { id = Items.RawMaterials.AluminumOre.id,      weight = 0.1 },
+                        { id = Items.RawMaterials.BerylliumOre.id,     weight = 0.05 }
                     },
                     [Enums.Gen.AsteroidRingTypes.Icy] = {
-                        { id = Items.Consumables.WaterIce.id,     weight = 0.6 },
-                        { id = Items.RawMaterials.SilicateOre.id, weight = 0.2 },
-                        { id = Items.Gases.Hydrogen.id,           weight = 0.1 },
-                        { id = Items.Gases.Helium.id,             weight = 0.05 },
-                        { id = Items.Gases.Nitrogen.id,           weight = 0.03 },
-                        { id = Items.Gases.Oxygen.id,             weight = 0.02 }
+                        { id = Items.Consumables.WaterIce.id,         weight = 0.55 },
+                        { id = Items.RawMaterials.SilicateOre.id,     weight = 0.2 },
+                        { id = Items.Gases.Hydrogen.id,               weight = 0.1 },
+                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.05 },
+                        { id = Items.Gases.Helium.id,                 weight = 0.05 },
+                        { id = Items.Gases.Nitrogen.id,               weight = 0.03 },
+                        { id = Items.Gases.Oxygen.id,                 weight = 0.02 }
                     }
                 }
             }
@@ -547,17 +550,20 @@ local Ruleset = {
             },
             composition = {
                 type = Enums.Gen.Rule.ByType,
+                parentKey = "beltType",
                 types = {
                     [Enums.Gen.AsteroidRingTypes.Rocky] = {
-                        { id = Items.RawMaterials.SilicateOre.id, weight = 0.5 },
-                        { id = Items.RawMaterials.IronOre.id,     weight = 0.4 },
+                        { id = Items.RawMaterials.SilicateOre.id,      weight = 0.5 },
+                        { id = Items.RawMaterials.IronOre.id,          weight = 0.4 },
+                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.1 },
                         --{ id = Items.RawMaterials.NickelOre.id,   weight = 0.1 }
                     },
                     [Enums.Gen.AsteroidRingTypes.Icy] = {
-                        { id = Items.Consumables.WaterIce.id,     weight = 0.7 },
-                        { id = Items.Gases.Hydrogen.id,           weight = 0.15 },
-                        { id = Items.Gases.Helium.id,             weight = 0.1 },
-                        { id = Items.RawMaterials.SilicateOre.id, weight = 0.05 }
+                        { id = Items.Consumables.WaterIce.id,         weight = 0.65 },
+                        { id = Items.Gases.Hydrogen.id,               weight = 0.15 },
+                        { id = Items.Gases.Helium.id,                 weight = 0.1 },
+                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.05 },
+                        { id = Items.RawMaterials.SilicateOre.id,     weight = 0.05 }
                     }
                 }
             }

@@ -20,6 +20,7 @@ return {
 ---@field value? any
 ---@field values? { value: any, weight: number }[]
 ---@field fn? fun(rng: RNG, rule: Rule, context: GenerationContext): any
+---@field parentKey? string for a ByType rule: the context key holding the type to look up (e.g. "beltType")
 ---@field condition? Condition
 ---@field default? any
 

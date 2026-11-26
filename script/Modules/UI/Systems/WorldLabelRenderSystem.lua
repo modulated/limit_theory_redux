@@ -70,8 +70,10 @@ function WorldLabelRenderSystem:draw(labeledEntities, moonDistThreshold)
         if px >= -100 and px <= resX + 100 and py >= -50 and py <= resY + 50 then
             local distStr = " [" .. UniverseScaleConfig:formatDistance(dist) .. "]"
             local text = label .. distStr
+            -- An entry may have its own colour {r, g, b} (an NPC's faction)
+            local c = entry.color
             DrawEx.TextAdditive('Unageo-Medium', text, 12, px - 50, py - 8, 200, 16,
-                1.0, 1.0, 0.5, 0.9, 0.5, 0.5)
+                c and c[1] or 1.0, c and c[2] or 1.0, c and c[3] or 0.5, 0.9, 0.5, 0.5)
         end
 
         ::next_label::

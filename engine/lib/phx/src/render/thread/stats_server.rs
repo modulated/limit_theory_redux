@@ -164,6 +164,8 @@ pub fn run_stats_server(port: u16, sink: StatsSink) {
 
     // Polling-friendly: requests are rare (browser polls at 2 Hz), so a short
     // non-blocking loop keeps the thread responsive without busy-spinning.
+    // It runs for the life of the process (the thread is detached).
+    #[allow(clippy::infinite_loop)]
     loop {
         match server.recv_timeout(Duration::from_millis(200)) {
             Ok(Some(request)) => {

@@ -1,4 +1,6 @@
 local CoreComponents      = require("Modules.Core.Components")
+local MapLabels           = require("UI.MapLabels")
+local MapFrame            = require("UI.MapFrame")
 local PhysicsComponents   = require("Modules.Physics.Components")
 local SpatialComponents   = require("Modules.Spatial.Components")
 local UniverseScaleConfig = require("Config.Gen.UniverseScaleConfig")
@@ -73,12 +75,32 @@ function SystemMap3D:setSkybox(state, skyboxEntity)
     state.skyboxEntity = skyboxEntity
 end
 
-function SystemMap3D:collectEntities(state, rootEntity, shipEntity)
+---@param npcEntries table[]|nil the NPC ships ({entity, label, color})
+function SystemMap3D:collectEntities(state, rootEntity, shipEntity, npcEntries)
     state.entities = {}
     state.shipEntity = shipEntity
     state._planetIdx = 0
     state.maxOrbit = 1
     self:_walk(state, rootEntity, nil)
+
+    -- NPC ships: a label each, below the bodies' in priority
+    local live = {}
+    for _, npc in ipairs(npcEntries or {}) do
+        local rbCmp = npc.entity:get(PhysicsComponents.RigidBody)
+        local body = rbCmp and rbCmp:getRigidBody()
+        if body then
+            live[npc.entity] = true
+            table.insert(state.entities, {
+                entity = npc.entity, label = npc.label, pos = body:getPos(),
+                scale = body:getBoundingRadius(), orbitRadius = 0, inclination = 0,
+                isMoon = false, parentPos = nil, trailWidth = 0, isNpc = true, labelPriority = 30,
+                color = Color(npc.color[1], npc.color[2], npc.color[3], 0.8),
+            })
+        end
+    end
+    if state.selected and state.selected.isNpc and not live[state.selected.entity] then
+        state.selected = nil
+    end
 
     if shipEntity then
         local rbCmp = shipEntity:get(PhysicsComponents.RigidBody)
@@ -116,6 +138,10 @@ function SystemMap3D:_walk(state, entity, parentPos)
         label = "Moon"; color = Color(0.5, 0.5, 0.6, 0.4); isMoon = true; trailWidth = 0.5
     elseif name:find("SpaceStationEntity") then
         label = "Station"; color = Color(1.0, 0.5, 0.1, 0.4); trailWidth = 0.3
+    elseif name:find("JumpGateEntity") then
+        local nameCmp = entity:get(CoreComponents.Name)
+        label = nameCmp and nameCmp:getName() or "Jump Gate"
+        color = Color(0.35, 0.85, 1.0, 0.6); trailWidth = 0
     elseif name:find("AsteroidBeltEntity") then
         label = "Asteroid Belt"; color = Color(0.7, 0.5, 0.3, 0.3); trailWidth = 0
     elseif name:find("AsteroidRingEntity") then
@@ -461,7 +487,10 @@ function SystemMap3D:renderOverlay(state, x, y, sx, sy)
     end
     state.trailDirty = false
 
-    -- Labels
+    -- Labels: placed after the loop, clear of each other. The player's
+    -- ship gets a marker instead (always shown, clamped to the screen).
+    local labels = MapLabels.begin()
+    local shipX, shipY
     for _, entry in ipairs(state.entities) do
         if entry.isMoon and state.radius > 0.02 then goto next_lbl end
 
@@ -479,23 +508,33 @@ function SystemMap3D:renderOverlay(state, x, y, sx, sy)
         local screenX = x + (cp.x / cp.w + 1) * 0.5 * sx
         local screenY = y + (1 - cp.y / cp.w) * 0.5 * sy
 
+        if entry.entity == state.shipEntity then
+            shipX, shipY = screenX, screenY
+            goto next_lbl
+        end
+
         if screenX > x and screenX < x + sx and screenY > y and screenY < y + sy then
             local c = entry.color
-            local isSelected = state.selected and state.selected.entity == entry.entity
-            DrawEx.TextAdditive('Unageo-Medium', entry.label, 11,
-                screenX + 10, screenY - 6, 160, 14,
-                c.r, c.g, c.b, isSelected and 1.0 or 0.8, 0.0, 0.5)
+            local isSelected = state.selected ~= nil and state.selected.entity == entry.entity
+            MapLabels.add(labels, {
+                text = entry.label, x = screenX, y = screenY, anchor = 6, size = 11,
+                priority = entry.labelPriority or MapLabels.priorityOf(entry.entity),
+                always = isSelected,
+                color = { c.r, c.g, c.b, isSelected and 1.0 or 0.8 },
+            })
         end
         ::next_lbl::
     end
+    if shipX then
+        MapLabels.playerMarker(labels, shipX, shipY, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
+    end
+    MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 
-    DrawEx.TextAdditive('Unageo-Medium',
-        "3D System Map [M to cycle] | RMB=Rotate | Scroll=Zoom", 12,
-        x + 10, y + 10, 600, 16, 0.6, 0.7, 1.0, 0.9, 0.0, 0.5)
+    -- (Title, controls: MapFrame, drawn over the map by the game state)
 
     -- Selected info
     if state.selected then
-        self:drawSelectedInfo(state, x + sx - 250, y + 40, 240)
+        self:drawSelectedInfo(state, x + sx - 250, y + MapFrame.barHeight + 12, 240)
     end
 end
 

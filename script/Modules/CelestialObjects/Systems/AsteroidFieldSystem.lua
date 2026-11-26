@@ -7,6 +7,8 @@ local RenderComp        = require("Modules.Rendering.Components").Render
 local Materials         = require("Shared.Registries.Materials")
 local CameraManager     = require("Modules.Cameras.Managers.CameraManager")
 local AsteroidMeshPool  = require("Modules.CelestialObjects.Systems.AsteroidMeshPool")
+local EconomyComponents = require("Modules.Economy.Components")
+local AsteroidOre       = require("Shared.Helpers.AsteroidOre")
 
 --- AsteroidFieldSystem — spawns/despawns asteroid entities based on player distance.
 --- Nearby asteroids become real entities (physics, selectable, mineable).
@@ -221,6 +223,13 @@ function AsteroidFieldSystem:update(dt, beltEntities, physicsWorld, refEntity)
                     spawned[idx] = nil
                     totalSpawned = totalSpawned - 1
                     a.spawned = false
+                else
+                    -- What is left of the rock, in case miners have been
+                    -- working it since it was spawned
+                    local quantityCmp = entity:get(EconomyComponents.Quantity)
+                    if quantityCmp then
+                        quantityCmp:setQuantity(AsteroidOre.unitsLeft(beltEntity, a))
+                    end
                 end
                 -- Position updates handled by updatePositions() every frame
             end
@@ -264,10 +273,17 @@ function AsteroidFieldSystem:update(dt, beltEntities, physicsWorld, refEntity)
             local worldY = beltPosY + a.py
             local worldZ = beltPosZ + a.pz
 
+            -- What the rock holds, so it can be asked (a prospecting scanner
+            -- reads these components): the same answer MiningField gives for
+            -- this asteroid of this field.
+            local ore, units = AsteroidOre.forAsteroid(beltEntity, a)
+
             local entity = Entity.Create("AsteroidEntity",
                 CoreComponents.Seed(a.rotSeed),
                 CoreComponents.Type("Asteroid"),
-                PhysicsComponents.Transform()
+                PhysicsComponents.Transform(),
+                EconomyComponents.Item(ore.id),
+                EconomyComponents.Quantity(units)
             )
 
             local transform = entity:get(PhysicsComponents.Transform)
@@ -354,6 +370,11 @@ function AsteroidFieldSystem:getSpawnedEntities()
                         label = "Asteroid " .. idx,
                         pos = Position(bx + a.px, by + a.py, bz + a.pz),
                         scale = a.scale,
+                        -- Which rock of which field it is: what it holds and
+                        -- what is left of it are asked of these (AsteroidOre,
+                        -- MiningField:trackAsteroid)
+                        field = beltEntity,
+                        asteroid = a,
                     })
                 end
             end

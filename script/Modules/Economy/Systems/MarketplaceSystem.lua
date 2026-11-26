@@ -252,7 +252,7 @@ function MarketplaceSystem:processPendingTrades()
             --todo: proper transactions here
 
             Log.Debug("[Transaction] %s bought %d x %s from %s for %d each (total: %d)",
-                Entity(trade.buyer), trade.quantity, Items:getDefinition(trade.itemType).name,
+                Entity(trade.buyer), trade.quantity, Items:getDefinition(trade.itemType).displayName,
                 Entity(trade.seller), trade.price, trade.price * trade.quantity)
 
             local marketplaceId = tostring(trade.marketplace)
@@ -273,7 +273,7 @@ function MarketplaceSystem:processPendingTrades()
                     self.pullTimeoutData[marketplaceId][trade.itemType] = timeoutData
                     Log.Debug(
                         "[MarketplaceSystem] Large movement detected for %s: price=%d, deviation=%.2f%% from shiftingEq=%.2f, pull timeout started",
-                        Items:getDefinition(trade.itemType).name, trade.price, deviation * 100, shiftingEq)
+                        Items:getDefinition(trade.itemType).displayName, trade.price, deviation * 100, shiftingEq)
                 end
             end
 
@@ -464,7 +464,7 @@ function MarketplaceSystem:calculateEmergentPrice(marketplace, itemType, bids, a
             end
             if self.logThrottle == nil or self.logThrottle:getElapsed() >= logInterval then
                 Log.Debug("[MarketplaceSystem] Pull disabled for %s (timeout remaining: %.1fs)",
-                    Items:getDefinition(itemType).name, timeoutRemaining)
+                    Items:getDefinition(itemType).displayName, timeoutRemaining)
                 self.logThrottle = TimeStamp.Now()
             end
         elseif secondsSinceMovement < self.pullTimeout + self.timeoutCooldown then
@@ -480,7 +480,7 @@ function MarketplaceSystem:calculateEmergentPrice(marketplace, itemType, bids, a
             end
             if self.logThrottle == nil or self.logThrottle:getElapsed() >= logInterval then
                 Log.Debug("[MarketplaceSystem] Exponential pull for %s: pullFactor=%.3f (time since timeout: %.1fs)",
-                    Items:getDefinition(itemType).name, pullFactor, timeSinceTimeout)
+                    Items:getDefinition(itemType).displayName, pullFactor, timeSinceTimeout)
                 self.logThrottle = TimeStamp.Now()
             end
         end

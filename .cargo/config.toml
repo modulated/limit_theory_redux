@@ -1,9 +1,11 @@
-[profile.release]
-lto = true        # remove dead code, reduce size
-strip = true      # reve debug symbols from the binary
-opt-level = 3     # all optimizations
-codegen-units = 1 # increase optimization
-panic = "abort"   # abort on panic - removes panic unwinding code
-
 [term]
 color = "always"
+
+# Windows links with MSVC's link.exe (the default). rust-lld was tried and
+# broke the game at startup: LuaJIT finds C runtime functions (ffi.C, used by
+# engine/lib/phx/script/lfs_ffi.lua) through the module that holds the C
+# runtime's `_fmode`, and in the rust-lld build that lookup failed
+# ("cannot resolve symbol '_findfirst64'").
+#
+# Linux (x86_64) links with rust-lld by default since Rust 1.90, and macOS
+# uses Apple's ld, which is fast; neither needs an override.

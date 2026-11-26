@@ -6,8 +6,62 @@ authors.workspace = true
 license.workspace = true
 edition.workspace = true
 
-[lints]
-workspace = true
+# The workspace's lints, copied (keep in sync with [workspace.lints] in the
+# root Cargo.toml): a package that inherits them can't add a lint of its own,
+# and ltr needs one. It depends on phx only so that Cargo builds libphx first;
+# it links the library itself (see the `#[link]` in main.rs) and must not use
+# a Rust item from phx, which would link the whole engine into ltr statically.
+# So Cargo's unused_dependencies lint is off here.
+[lints.cargo]
+unused_dependencies = "allow"
+
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"    # an unsafe fn's body is not one big unsafe block
+meta_variable_misuse = "warn"      # macro_rules! variables used wrongly
+unit_bindings = "warn"             # `let x = f();` where f returns ()
+non_ascii_idents = "deny"
+
+[lints.clippy]
+# Unfinished or debugging code left in
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+# Values that are wrong or lost
+lossy_float_literal = "warn"
+suspicious_xor_used_as_pow = "warn"
+mixed_read_write_in_expression = "warn"
+checked_conversions = "warn"
+implicit_saturating_sub = "warn"
+unchecked_time_subtraction = "warn"
+match_wild_err_arm = "warn"
+fallible_impl_from = "warn"
+unwrap_in_result = "warn"
+path_buf_push_overwrite = "warn"
+same_name_method = "warn"
+debug_assert_with_mut_call = "warn"
+# Determinism: hash map iteration order changes from run to run
+iter_over_hash_type = "warn"
+# Resources and locks
+mem_forget = "warn"
+empty_drop = "warn"
+significant_drop_in_scrutinee = "warn"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+rc_mutex = "warn"
+large_stack_arrays = "warn"
+infinite_loop = "warn"
+exit = "warn"
+# Borrows that claim more than they use
+mut_mut = "warn"
+needless_pass_by_ref_mut = "warn"
+# Pointer casts that can change type, mutability or alignment unnoticed
+ptr_as_ptr = "warn"
+ptr_cast_constness = "warn"
+borrow_as_ptr = "warn"
+as_ptr_cast_mut = "warn"
+cast_ptr_alignment = "warn"
+fn_to_numeric_cast_any = "warn"
 
 [features]
 # Forward the internal and phx stats-server feature so `cargo run -p ltr --features stats-server` works.

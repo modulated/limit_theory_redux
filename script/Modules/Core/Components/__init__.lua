@@ -6,4 +6,5 @@ return {
     Type = require('Modules.Core.Components.TypeComponent'),
     Empty = require('Modules.Core.Components.EmptyComponent'),
     Health = require('Modules.Core.Components.HealthComponent'),
+    Name = require('Modules.Core.Components.NameComponent'),
 }

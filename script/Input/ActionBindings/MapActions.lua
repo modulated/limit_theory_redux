@@ -5,7 +5,7 @@ local Control = require('Input.Control')
 local MapActions = {
     ---@type ActionBinding
     Select = ActionBinding({
-        label = "Select", group = "Map",
+        label = "Select (galaxy map: plot route)", group = "Map",
         mouse = { Control.Single(Button.MouseLeft) },
     }),
 

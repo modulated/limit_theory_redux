@@ -131,6 +131,7 @@ impl TaskQueue {
             error!("Cannot stop Echo worker. {err}");
         });
 
+        #[allow(clippy::iter_over_hash_type)] // every worker stops; the order doesn't matter
         for (_, worker) in self.lua_workers.drain() {
             worker.stop().unwrap_or_else(|err| {
                 error!("Cannot stop worker: {}. {err}", worker.name());

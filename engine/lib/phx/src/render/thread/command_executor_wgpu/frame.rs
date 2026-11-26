@@ -395,6 +395,7 @@ impl WgpuCommandExecutor {
         self.stats.frame_count += 1;
         let c = std::mem::take(&mut self.frame_counters);
         let (mut textures, mut meshes, mut texture_bytes) = (0u64, 0u64, 0u64);
+        #[allow(clippy::iter_over_hash_type)] // sums; the order doesn't matter
         for r in self.resources.values() {
             match r {
                 WgpuResource::Texture { desc, .. } => {
@@ -466,7 +467,7 @@ impl WgpuCommandExecutor {
 
     /// `PacingFence`: answer once the GPU has finished everything submitted
     /// so far (the render thread polls the device for the callback).
-    pub(super) fn cmd_pacing_fence(&mut self, fence_id: u64) -> CommandReply {
+    pub(super) fn cmd_pacing_fence(&self, fence_id: u64) -> CommandReply {
         let Some(tx) = self.pacing_tx.clone() else {
             return CommandReply::PacingFence(fence_id);
         };

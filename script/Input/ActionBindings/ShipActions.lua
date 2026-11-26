@@ -32,14 +32,14 @@ local ShipActions = {
 
     ---@type ActionBinding
     Yaw = ActionBinding({
-        label = "Steer left / right", group = "Flight",
+        label = "Steer left / right (chase: to cursor)", group = "Flight",
         mouse = { Control.MouseX() },
         gamepad = { Control.GamepadAxis(Button.GamepadRightStickX) },
     }),
 
     ---@type ActionBinding
     Pitch = ActionBinding({
-        label = "Steer up / down", group = "Flight",
+        label = "Steer up / down (chase: to cursor)", group = "Flight",
         mouse = { Control.MouseY():invert() },
         gamepad = { Control.GamepadAxis(Button.GamepadRightStickY):invert() },
     }),

@@ -182,7 +182,9 @@ impl Tex2D {
         if let Some(buffer) =
             ImageBuffer::<Rgba<u8>, _>::from_raw(size.x as u32, size.y as u32, data)
         {
-            let _ = buffer.save(path);
+            if let Err(e) = buffer.save(path) {
+                tracing::error!("Tex2D_Save: Failed to save '{path}': {e}");
+            }
         }
     }
 

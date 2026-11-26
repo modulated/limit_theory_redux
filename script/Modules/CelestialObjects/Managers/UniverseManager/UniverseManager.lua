@@ -482,6 +482,9 @@ function UniverseManager:_generatePlanet(rng, cfg, context)
 
     local asteroidRingType = RuleEvaluator.evaluate(pRNG, cfg.asteroidRings.aspects.type, context, "asteroidRings.aspects.type")
     if asteroidRingType and asteroidRingType ~= Enums.Gen.AsteroidRingTypes.None then
+        -- The ring's own composition rule is ByType over this (parentKey
+        -- "ringType"), so it has to be in the context before the ring is built
+        context:set("ringType", asteroidRingType)
         -- Set parent position to planet for ring placement
         local savedParentPos = context:get("parentPosition")
         context:set("parentPosition", planetAbsPos)
@@ -618,8 +621,14 @@ function UniverseManager:_generateAsteroidBelt(rng, cfg, context)
     local density = RuleEvaluator.evaluate(bRNG, cfg.asteroidBelts.aspects.density, context, "asteroidBelts.aspects.density") or 0.5
     context:set("beltDensity", density)
 
-    local composition = RuleEvaluator.evaluate(bRNG, cfg.asteroidBelts.aspects.composition, context, "asteroidBelts.aspects.composition") or
-        { type = Enums.Gen.AsteroidRingTypes.Rocky }
+    -- The belt's type (rocky or icy) decides what it is made of: the
+    -- composition rule is ByType over it (parentKey "beltType").
+    local beltType = cfg.asteroidBelts.aspects.type
+        and RuleEvaluator.evaluate(bRNG, cfg.asteroidBelts.aspects.type, context, "asteroidBelts.aspects.type")
+        or Enums.Gen.AsteroidRingTypes.Rocky
+    context:set("beltType", beltType)
+
+    local composition = RuleEvaluator.evaluate(bRNG, cfg.asteroidBelts.aspects.composition, context, "asteroidBelts.aspects.composition")
     context:set("beltComposition", composition)
 
     local widthAU = RuleEvaluator.evaluate(bRNG, cfg.asteroidBelts.aspects.width, context, "asteroidBelts.aspects.width") or 1.0
@@ -632,7 +641,7 @@ function UniverseManager:_generateAsteroidBelt(rng, cfg, context)
     belt:add(SpatialComponents.Orbit(beltOffset))
     Log.Info("Asteroid belt: orbitAU=%.2f, offset=%.0f, pos=(%.0f, %.0f, %.0f)",
         beltOrbitRadius, beltOffset, beltPos.x, beltPos.y, beltPos.z)
-    belt:add(CoreComponents.Type(composition.type))
+    belt:add(CoreComponents.Type(beltType))
     belt:add(CelestialComponents.Composition(composition))
     belt:add(CelestialComponents.Density(density))
     local beltWidthGame = math.min(self.scaleConfig:auToGameUnits(widthAU, "starSystem"), beltOffset * 0.2)
@@ -667,8 +676,8 @@ function UniverseManager:_generateAsteroidRing(rng, cfg, context)
     local density = RuleEvaluator.evaluate(rRNG, cfg.asteroidRings.aspects.density, context, "asteroidRings.aspects.density") or 0.5
     context:set("ringDensity", density)
 
-    local composition = RuleEvaluator.evaluate(rRNG, cfg.asteroidRings.aspects.composition, context, "asteroidRings.aspects.composition") or
-        { type = Enums.Gen.AsteroidRingTypes.Rocky }
+    local ringType = context:get("ringType") or Enums.Gen.AsteroidRingTypes.Rocky
+    local composition = RuleEvaluator.evaluate(rRNG, cfg.asteroidRings.aspects.composition, context, "asteroidRings.aspects.composition")
     context:set("ringComposition", composition)
 
     local widthAU = RuleEvaluator.evaluate(rRNG, cfg.asteroidRings.aspects.width, context, "asteroidRings.aspects.width") or 0.1
@@ -685,7 +694,7 @@ function UniverseManager:_generateAsteroidRing(rng, cfg, context)
     local ringRadius = planetScale * (2.0 + rRNG:getUniform() * 3.0)  -- 2-5x planet radius
     -- Ring entity sits at planet center (no Orbit component — ring radius stored on AsteroidBeltComponent)
     ring:get(PhysicsComponents.Transform):setPos(parentPos)
-    ring:add(CoreComponents.Type(composition.type))
+    ring:add(CoreComponents.Type(ringType))
     ring:add(CelestialComponents.Composition(composition))
     ring:add(CelestialComponents.Density(density))
     local ringWidthGame = math.min(self.scaleConfig:auToGameUnits(widthAU, "planet"), ringRadius * 0.5)

@@ -21,6 +21,7 @@ local ConstructEntities = require("Modules.Constructs.Entities")
 local WeaponSystem = require("Modules.Constructs.Systems.WeaponSystem")
 local WeaponRegistry = require("Shared.Registries.WeaponRegistry")
 local Pulse = require("Legacy.GameObjects.Entities.Effects.Pulse")
+local CombatLog = require("Modules.Constructs.Systems.CombatLog")
 
 -- Where surface target points wander and how far they may face away from the
 -- shooter (see WeaponSystem:sampleTargetPoint).
@@ -57,6 +58,7 @@ end
 ---@class WeaponBatteryOptions
 ---@field name string|nil shown in logs and overlays (default: "battery")
 ---@field team string|nil contacts of this Targetable team are not engaged
+---@field hostileTeams string[]|nil when set, only contacts of these Targetable teams are engaged (factions)
 ---@field aiActive boolean|nil the weapon AI picks targets and fires (default: the control's own setting)
 ---@field targetPoint table|nil {motionAmplitude, motionFrequency, minFacingDot} for surface target points
 ---@field engagementRange number|nil contacts further away are ignored (default: twice the longest weapon range)
@@ -83,6 +85,13 @@ local WeaponBattery = Class("WeaponBattery", function(self, construction, option
     self.name = options.name or "battery"
     self.construction = construction
     self.team = options.team
+    -- Set of the teams this battery engages (nil: every team but its own)
+    if options.hostileTeams then
+        self.hostileTeams = {}
+        for _, team in ipairs(options.hostileTeams) do
+            self.hostileTeams[team] = true
+        end
+    end
     self.ship = construction.ship
     self.shipHandle = construction.shipHandle
     self.shipBody = construction.shipBody
@@ -135,6 +144,17 @@ local WeaponBattery = Class("WeaponBattery", function(self, construction, option
         self:setAIActive(options.aiActive)
     end
 end)
+
+---A hit this battery's weapons landed (called by ProjectileSystem and
+---BeamSystem where they apply damage): into the CombatLog, with this
+---battery's ship as the attacker.
+---@param target Entity
+---@param damage number before shields
+---@param hullDamage number after shields
+---@param killed boolean this hit destroyed the target
+function WeaponBattery:reportDamage(target, damage, hullDamage, killed)
+    CombatLog:report(self.ship, self.team, target, damage, hullDamage, killed)
+end
 
 ---False once the ship is gone (its construct was destroyed).
 ---@return boolean

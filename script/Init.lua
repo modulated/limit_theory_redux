@@ -13,14 +13,21 @@ jit = require('jit')
 lfs = require('lfs_ffi')
 
 --[[
-    Disable JIT on macOS ARM64, as it has significant performance issues.
+    The JIT is on everywhere, macOS ARM64 included.
+
+    It used to be turned off there, over LuaJIT's arm64 trace allocation
+    (issue #285). Interpreting the gameplay scripts costs far more: they are
+    the main thread's largest cost (doc/engine/parallel-recording.md), so
+    the JIT is the default again, on every platform.
+
+    Set LTHEORY_JIT=0 to turn it off (to compare, or to tell a JIT bug from
+    a script bug). If Apple Silicon turns out to still stall with the JIT
+    on, measure it with the profiler before turning it off here again.
 
     Relevant context:
     * https://github.com/LuaJIT/LuaJIT/issues/285
-    * https://github.com/minetest/minetest/issues/14611
-    * https://love2d.org/forums/viewtopic.php?t=94760
 ]]
-if jit and ffi.os == "OSX" and ffi.arch == "arm64" then
+if jit and os.getenv("LTHEORY_JIT") == "0" then
     jit.off()
 end
 

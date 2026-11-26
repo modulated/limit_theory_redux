@@ -224,7 +224,7 @@ impl SceneList {
 
     /// The per-draw values of all items, `DRAW_USER_FLOATS` floats each.
     pub fn users_ptr(&mut self) -> *mut f32 {
-        self.users.as_mut_ptr() as *mut f32
+        self.users.as_mut_ptr().cast::<f32>()
     }
 
     /// Emit the draws of the last `prepare`.

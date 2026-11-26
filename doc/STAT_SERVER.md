@@ -129,7 +129,15 @@ the triple-buffer fence, which is the healthy state.
 ## `/profile.json` — producer (Lua) scopes
 
 The Lua side wraps systems in `Profiler.Begin('Name')` / `Profiler.End()`
-calls. The server returns:
+calls. Two families cover gameplay Lua without any extra setup:
+
+- `Lua.<Subscriber>.<Event>`: every event handler, named after the
+  subscriber's class and the event (`ffi_ext/EventBus.lua`), e.g.
+  `Lua.CameraSystem.PreRender`.
+- `Sim.*`: each step of the sim loop (`LTheoryRedux:onStateSim`), e.g.
+  `Sim.NPCs`, `Sim.Physics`, `Sim.Weapons.Update`.
+
+The server returns:
 
 ```json
 {
