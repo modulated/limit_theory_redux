@@ -1621,6 +1621,17 @@ function LimitTheoryRedux:mapNpcs()
     return self.npcs and self.npcs:mapEntries() or {}
 end
 
+--- The key a generated station's player-side things are filed under (its
+--- hangar, leases and waiting orders): the system and the station's place in
+--- it, which is stable because a system's stations are built from the
+--- system's own seed, in the same order every time.
+---@param index integer
+---@param systemId integer|nil default the current system
+---@return string
+function LimitTheoryRedux:stationKey(index, systemId)
+    return string.format("%d:%d", systemId or self.currentSystemId or 1, index)
+end
+
 --- The NPC ships the current system's hostility calls for.
 function LimitTheoryRedux:populateSystem()
     self.npcs:clear()
@@ -1647,7 +1658,7 @@ function LimitTheoryRedux:populateSystem()
             -- The key the player's hangar and leases are filed under: the
             -- system and the station's place in it, which is stable because
             -- a system's stations are built from the system's own seed
-            local key = string.format("%d:%d", self.currentSystemId or 1, index)
+            local key = self:stationKey(index)
             table.insert(places.docks, {
                 entity = station,
                 label = "Station " .. index,
@@ -1656,6 +1667,8 @@ function LimitTheoryRedux:populateSystem()
                 radius = body:getBoundingRadius(),
                 faction = Config.game.docking.owner,
             })
+            -- The orders the player left here, back in the book
+            MarketSystem:unpark(station, key)
             -- What the player's lines made here while they were away
             for _, event in ipairs(PlayerFactories:catchUp(station, key, self.simTime or 0)) do
                 self:notify(event.text, { 0.6, 0.9, 1.0 })
@@ -1682,6 +1695,7 @@ function LimitTheoryRedux:resetGalaxy()
     self.course = nil
     self.jump = nil
     Reputation:reset()
+    MarketSystem:resetParked()
     -- Which factions the player chose to turn against: asked afresh each game
     self.hostilityAccepted = {}
     PlayerWallet:reset()
@@ -1897,7 +1911,10 @@ function LimitTheoryRedux:destroyScene(keepShip)
         self:removeSceneConstruct(self.sceneConstructs[i])
     end
 
-    for _, station in ipairs(self.stations or {}) do
+    for index, station in ipairs(self.stations or {}) do
+        -- The player's orders here wait for the station to come back (their
+        -- escrow with them), rather than going with its book
+        MarketSystem:park(station, self:stationKey(index))
         local rbCmp = station:get(PhysicsComponents.RigidBody)
         if rbCmp and rbCmp:getRigidBody() then
             self.world:removeRigidBody(rbCmp:getRigidBody())

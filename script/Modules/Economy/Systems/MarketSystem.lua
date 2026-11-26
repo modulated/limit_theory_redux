@@ -386,6 +386,61 @@ function MarketSystem:cancel(station, key, order)
     return true
 end
 
+------------------------------------------------------------------------------
+-- The player's orders while their station is not simulated
+------------------------------------------------------------------------------
+
+--- The player's resting orders at stations that are not in the scene (the
+--- system the player left), by station key, with their escrow intact.
+---
+--- A station's book is a component of the station entity, and the stations
+--- are destroyed with their system on a jump and built again from its seed
+--- on the way back. Without this, every order the player left in a system --
+--- and the credits or goods it held in escrow -- went with it. They wait
+--- here instead, untouched (nothing trades at a station nobody simulates),
+--- and go back in the book when the station does. A saved game keeps them
+--- from here too.
+---@type table<string, MarketOrder[]>
+MarketSystem.parked = {}
+
+--- A new game: nothing waiting anywhere.
+function MarketSystem:resetParked()
+    self.parked = {}
+end
+
+--- Take the player's orders out of a station that is leaving the scene.
+---@param station Entity
+---@param key string the station key (the hangar's)
+---@return integer parked how many
+function MarketSystem:park(station, key)
+    local book = station and station:isValid() and station:get(Economy.OrderBook)
+    if not book or not key then return 0 end
+    local orders = book:removeOwner("player")
+    if #orders == 0 then return 0 end
+    local list = self.parked[key] or {}
+    for _, order in ipairs(orders) do list[#list + 1] = order end
+    self.parked[key] = list
+    return #orders
+end
+
+--- Put the player's waiting orders back in a station that has come back.
+--- They take fresh ids in the new book (ids are per book); everything else,
+--- the escrow and the expiry included, is as it was left.
+---@param station Entity
+---@param key string
+---@return integer restored how many
+function MarketSystem:unpark(station, key)
+    local list = key and self.parked[key]
+    if not list then return 0 end
+    self.parked[key] = nil
+    local book = self:book(station)
+    for _, order in ipairs(list) do
+        order.id = nil
+        book:insert(order)
+    end
+    return #list
+end
+
 --- The player's orders here.
 ---@param station Entity
 ---@return MarketOrder[]
