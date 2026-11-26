@@ -105,23 +105,27 @@ function OrbitCameraController:onInput(dt)
     CameraActions.Zoom:update(dt)
     CameraActions.MouseCapture:update(dt)
 
-    -- Hold right mouse to rotate (CameraActions.Yaw/Pitch are Combo with MouseRight)
-    self:setDragging(CameraActions.MouseCapture:isDown())
+    -- Hold right mouse to rotate (CameraActions.Yaw/Pitch are Combo with
+    -- MouseRight). A right press over a panel is the panel's (the overview's
+    -- context menu): it starts no drag, though a drag begun elsewhere carries
+    -- on across one.
+    local overPanel = GameState.ui.mouseOverPanel
+    self:setDragging(CameraActions.MouseCapture:isDown() and (self.dragging or not overPanel))
 
     -- The Mouse Sensitivity setting scales the mouse; Invert Vertical Look
     -- flips up and down
     local sensitivity = self.mouseSensitivity * UserSettings.mouseSensitivityFactor()
     local invertY = GameState.input.invertPitch and -1 or 1
-    local yawInput = CameraActions.Yaw:get()
-    local pitchInput = CameraActions.Pitch:get()
+    local yawInput = self.dragging and CameraActions.Yaw:get() or 0
+    local pitchInput = self.dragging and CameraActions.Pitch:get() or 0
     if math.abs(yawInput) > 0.001 or math.abs(pitchInput) > 0.001 then
         self.yaw   = self.yaw - yawInput * sensitivity
         self.pitch = self.pitch + pitchInput * invertY * sensitivity
         self.pitch = Math.Clamp(self.pitch, self.minPitch, self.maxPitch)
     end
 
-    -- Zoom
-    local zoom = CameraActions.Zoom:get()
+    -- Zoom (not with the wheel over a panel)
+    local zoom = overPanel and 0 or CameraActions.Zoom:get()
     if math.abs(zoom) > 0.001 then
         local distance
         if self.zoomRatio then
@@ -140,7 +144,10 @@ function OrbitCameraController:onPreRender(dt)
 end
 
 function OrbitCameraController:updateCameraPosition(dt)
-    if not self.target then return end
+    -- A target destroyed this frame (a ship being looked at, shot down):
+    -- hold where the camera is until the game points it somewhere else,
+    -- rather than read the missing body as the system's origin
+    if not self.target or not self.target:isValid() then return end
 
     local zoomLerp = math.min(1.0, 4.0 * dt)
     self.currentDistance = self.currentDistance + (self.distance - self.currentDistance) * zoomLerp

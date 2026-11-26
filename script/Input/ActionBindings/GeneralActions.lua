@@ -53,6 +53,14 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardX) },
     }),
 
+    --- The overview: what is in the system, nearest first. While it is open
+    --- the cursor is free for it and the mouse does not steer.
+    ---@type ActionBinding
+    Overview = ActionBinding({
+        label = "Overview on / off", group = "Map",
+        keyboard = { Control.Single(Button.KeyboardO) },
+    }),
+
     --- The four module slots: a fitted active module fires on its key
     --- (Modules/Constructs/Systems/AbilitySystem.lua)
     ---@type ActionBinding

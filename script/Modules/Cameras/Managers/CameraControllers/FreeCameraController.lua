@@ -52,8 +52,8 @@ function FreeCameraController:onInput(dt)
     local invertX = -1
     local invertY = GameState.input.invertPitch and 1 or -1 -- Invert Vertical Look setting
 
-    -- Toggle mouse capture
-    if CameraActions.MouseCapture:isPressed() then
+    -- Toggle mouse capture (a right click over a panel is the panel's)
+    if CameraActions.MouseCapture:isPressed() and not GameState.ui.mouseOverPanel then
         self.mouseCaptured = not self.mouseCaptured
     end
 

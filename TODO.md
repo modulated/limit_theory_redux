@@ -28,6 +28,11 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
      entity tree, spawn the next one, behind a transit or loading screen.
    - Route planning across systems (Dijkstra/A* over the gate graph, in Lua).
    - A galaxy map, as a third state of `CycleMapMode`.
+   - [x] The overview (O): everything in the system nearest first, filtered by category,
+         asteroids only within `Config.game.overview.asteroidRange`; right click for Look at,
+         Approach, and Dock or Jump (now, or on arrival). Still to do: scrolling rather than a
+         row cap; remembering the filters between games; a Target action once the player can
+         lock targets; Show on map; sorting by name or type as well as distance.
 4. **Obstacle avoidance.** Autopilot flies straight lines and can fly through a planet. Expose
    `Physics::shape_cast`/`shape_overlap` (`engine/lib/phx/src/physics/physics.rs`) to Lua, then
    steer around bodies' bounding spheres. Optional: smooth routes with a 3D Catmull-Rom or

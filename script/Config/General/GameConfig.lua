@@ -493,6 +493,19 @@ Config.game = {
         detection      = 0.2,  -- NPCs see a cloaked ship this fraction as far
     },
 
+    -- The overview (O): what is in the system, nearest first
+    -- (Modules/Navigation/Systems/SystemOverview.lua,
+    -- UI/HmGui/Views/Gameplay/OverviewPanel.lua).
+    overview = {
+        refreshInterval = 0.25, -- seconds between rebuilds of the list
+        -- A belt holds thousands of rocks, so only the nearest are listed:
+        -- those within this many game units (about twenty times the mining
+        -- laser's reach), and no more than `maxAsteroids` of them.
+        asteroidRange   = 10.0,
+        maxAsteroids    = 25,
+        maxRows         = 30,   -- rows the panel shows before "+N more"
+    },
+
     -- The player's armed ship in the travel scenarios (those with stations):
     -- a small gunship whose turrets engage hostile ships by themselves.
     playerGunship = {

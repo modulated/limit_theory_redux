@@ -219,6 +219,14 @@ function PlayerController:setInputBlocked(blocked)
     self.inputBlocked = blocked
 end
 
+--- Whether the mouse steers the ship. Off while the cursor belongs to a
+--- panel (the overview): moving the mouse to click a row should not turn the
+--- ship on the way there. The keyboard still flies it.
+---@param enabled boolean
+function PlayerController:setMouseSteering(enabled)
+    self.mouseSteeringOff = not enabled
+end
+
 --- Update the player controller (call each frame from onSim)
 ---@param dt number Delta time
 function PlayerController:update(dt)
@@ -247,10 +255,11 @@ function PlayerController:update(dt)
     if self:isPiloting() and not AutoPilotSystem:isActive(self.ship) then
         local isFPS = (self.mode == Enums.CameraMode.FirstPerson)
         local drive = self.ship:get(ConstructComponents.TravelDrive)
+        local mouseAim = not self.mouseSteeringOff
         if drive and drive:isActive() then
-            ShipFlightSystem:updateSteeringOnly(dt, self.ship, true, isFPS)
+            ShipFlightSystem:updateSteeringOnly(dt, self.ship, mouseAim, isFPS)
         else
-            ShipFlightSystem:update(dt, self.ship, true, isFPS)
+            ShipFlightSystem:update(dt, self.ship, mouseAim, isFPS)
         end
     end
 end

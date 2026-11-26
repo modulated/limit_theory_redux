@@ -365,4 +365,13 @@ InGame:addContent(scenarioText)
 InGame:addContent(cameraLabel)
 InGame:addContent(pausedText)
 
+-- The overview (O): drawn last, so its context menu sits over everything
+local OverviewPanel = require("UI.HmGui.Views.Gameplay.OverviewPanel")
+InGame:addContent({
+    state = {},
+    render = function()
+        OverviewPanel.render()
+    end
+})
+
 return InGame

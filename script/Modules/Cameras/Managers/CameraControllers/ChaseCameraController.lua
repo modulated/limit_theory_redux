@@ -64,9 +64,9 @@ end
 function ChaseCameraController:onInput(dt)
     if not self.enabled or not Window:isFocused() then return end
 
-    -- Zoom with mouse wheel
+    -- Zoom with mouse wheel (not over a panel)
     local scroll = Input:mouse():value(MouseControl.ScrollY)
-    if math.abs(scroll) > 0.001 then
+    if math.abs(scroll) > 0.001 and not GameState.ui.mouseOverPanel then
         self:modRadius(scroll)
     end
 end

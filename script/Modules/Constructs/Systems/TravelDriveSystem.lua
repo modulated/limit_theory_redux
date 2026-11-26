@@ -83,8 +83,8 @@ function TravelDriveSystem:update(dt, shipEntity)
 
     drive:setCurrentMult(currentMult)
 
-    -- Weapon fire cancels the drive
-    if ShipActions.Fire and ShipActions.Fire:get() > 0.5 then
+    -- Weapon fire cancels the drive (a click on a panel is not fire)
+    if ShipActions.Fire and ShipActions.Fire:get() > 0.5 and not GameState.ui.mouseOverPanel then
         state = drive:getState()
         if state == "active" or state == "charging" then
             drive:setState("decelerating")

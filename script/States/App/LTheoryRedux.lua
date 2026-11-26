@@ -43,6 +43,7 @@ local WorldLabelRenderSystem = require('Modules.UI.Systems.WorldLabelRenderSyste
 local AsteroidFieldSystem = require('Modules.CelestialObjects.Systems.AsteroidFieldSystem')
 local GeneralActions = require('Input.ActionBindings.GeneralActions')
 local CursorManager = require('Input.CursorManager')
+local SystemOverview = require('Modules.Navigation.Systems.SystemOverview')
 local Rulesets = require('Config.Gen.Rulesets')
 local UniverseManager = require('Modules.CelestialObjects.Managers.UniverseManager')
 local SolarSystemVisualizer = require('Modules.CelestialObjects.Managers.SolarSystemVisualizer')
@@ -964,6 +965,217 @@ function LimitTheoryRedux:decommissionShip(ship)
     return true
 end
 
+--- The autopilot's colour in the messages the overview's actions leave.
+local AUTOPILOT_MESSAGE_COLOR = { 0.51, 0.92, 1.0 }
+
+------------------------------------------------------------------------------
+-- The overview: what is in the system, and what to do about it
+-- (Modules/Navigation/Systems/SystemOverview.lua lists it,
+-- UI/HmGui/Views/Gameplay/OverviewPanel.lua draws it)
+------------------------------------------------------------------------------
+
+--- Whether the overview can be up at all: in flight, with no map, no pause
+--- menu and no jump under way. Docked, the station screen has the cursor.
+---@return boolean
+function LimitTheoryRedux:overviewAvailable()
+    return self.playerShip ~= nil and self.playerShip:isValid()
+        and not self.docked and (self.mapMode or 0) == 0
+        and not self.pauseMenuOpen and not self.jump
+end
+
+--- Whether the overview is on the screen now.
+---@return boolean
+function LimitTheoryRedux:overviewShowing()
+    return self.overviewShown == true and self:overviewAvailable()
+end
+
+--- Open or close the overview.
+---@param shown boolean
+function LimitTheoryRedux:setOverview(shown)
+    self.overviewShown = shown and true or false
+    if self.overviewShown then SystemOverview:update(self, 0, true) end
+end
+
+--- Each frame: the cursor and the mouse go to the overview while it shows
+--- and back to the camera when it goes, the list stays current, and the
+--- things the overview started (a look, a dock or a jump on arrival) are
+--- seen through.
+---@param dt number
+function LimitTheoryRedux:updateOverview(dt)
+    local showing = self:overviewShowing()
+    if showing ~= (self.overviewHoldsCursor == true) then
+        self.overviewHoldsCursor = showing
+        if self.player then self.player:setMouseSteering(not showing) end
+        -- Closed in flight: the camera's own cursor comes back. (Closed by
+        -- docking or a map: whatever opened takes the cursor itself.)
+        if not showing and self.player and not self.docked and (self.mapMode or 0) == 0 then
+            self.player:setMode(self.player:getMode())
+        end
+    end
+    if showing then
+        -- Freed every frame, since a camera switch re-grabs it
+        CursorManager:free()
+        SystemOverview:update(self, dt)
+    else
+        GameState.ui.mouseOverPanel = false
+    end
+
+    -- A look at something ends when it goes, or when the camera leaves it.
+    -- Docking and jumping take the camera themselves: the look is just
+    -- forgotten, and the camera left to them.
+    if self.lookingAt then
+        if self.docked or self.jump then
+            self.lookingAt, self.lookReturnMode = nil, nil
+        elseif not self.lookingAt:isValid()
+                or (self.player and self.player:getMode() ~= Enums.CameraMode.Orbit) then
+            self:lookAtShip()
+        end
+    end
+    self:processArrivalAction()
+end
+
+--- The radius to frame an entity by.
+---@param entity Entity
+---@return number
+local function radiusOf(entity)
+    local rbCmp = entity:get(PhysicsComponents.RigidBody)
+    local body = rbCmp and rbCmp:getRigidBody()
+    if body then return body:getBoundingRadius() end
+    local transform = entity:get(PhysicsComponents.Transform)
+    return transform and transform:getScale() or 1
+end
+
+--- Point the orbit camera at something: it circles that, framed by its size,
+--- until the player stops looking (the overview's menu) or switches camera.
+--- The orbit camera is not a piloting one, so the ship flies on its
+--- autopilot or not at all while the player looks.
+---@param entity Entity
+---@param name string|nil for the message
+function LimitTheoryRedux:lookAt(entity, name)
+    if not entity or not entity:isValid() or not self.player then return end
+    if entity == self.playerShip then
+        self:lookAtShip(true)
+        return
+    end
+    -- The camera to go back to: the one the player was in before the first
+    -- look, not a look before this one
+    if not self.lookingAt then self.lookReturnMode = self.player:getMode() end
+    self.lookingAt = entity
+    self:setOrbitFocus(entity, self:orbitDistances(math.max(radiusOf(entity), 1e-3)))
+    if name then
+        self:notify(string.format("Looking at %s  ·  Stop looking from the overview", name),
+            { 0.6, 0.9, 1.0 })
+    end
+end
+
+--- The orbit camera back on the player's own ship.
+---@param returnToCamera boolean|nil also go back to the camera the player
+---  was in before looking (Stop looking); nil when the player has already
+---  switched camera themselves
+function LimitTheoryRedux:lookAtShip(returnToCamera)
+    local mode = self.lookReturnMode
+    self.lookingAt, self.lookReturnMode = nil, nil
+    if not self.player then return end
+    self.player:setOrbitTarget(nil)
+    if returnToCamera and mode and mode ~= self.player:getMode() then
+        self.player:setMode(mode)
+    end
+end
+
+--- Fly to something on the autopilot. It stops short of it by its size.
+---@param entity Entity
+---@param name string|nil for the message
+---@return boolean engaged
+function LimitTheoryRedux:approach(entity, name)
+    if not entity or not entity:isValid() or not self.playerShip then return false end
+    if self.docked then
+        self:notify("Undock first.", { 1.0, 0.7, 0.3 })
+        return false
+    end
+    self.arrivalAction = nil
+    -- A course between systems is left alone: if this is the course's gate
+    -- the jump keeps it, and any other gate drops it (startJump)
+    AutoPilotSystem:engageEntity(self.playerShip, entity)
+    if name then self:notify("Autopilot: approaching " .. name, AUTOPILOT_MESSAGE_COLOR) end
+    return true
+end
+
+--- Dock at a station: now, if it is in range; otherwise fly there and dock
+--- on arrival.
+---@param dock table the station's dock record (npcs.places.docks)
+function LimitTheoryRedux:dockAt(dock)
+    if not dock or not dock.entity:isValid() then return end
+    local inRange, refused = self:dockInRange()
+    if inRange and inRange.entity == dock.entity then
+        self:dockPlayer(dock)
+        return
+    end
+    if refused and refused.entity == dock.entity then
+        self:notify(Factions.name(refused.faction) .. " refuse you docking.", { 1.0, 0.4, 0.3 })
+        return
+    end
+    if self:approach(dock.entity) then
+        self.arrivalAction = { kind = "dock", entity = dock.entity }
+        self:notify(string.format("Autopilot: docking at %s", dock.label), AUTOPILOT_MESSAGE_COLOR)
+    end
+end
+
+--- Jump through a gate: now, if it is in range; otherwise fly there and
+--- jump on arrival.
+---@param gate JumpGatePlacement
+function LimitTheoryRedux:jumpVia(gate)
+    if not gate or not gate.entity:isValid() then return end
+    local near = self:gateInRange()
+    if near and near.entity == gate.entity then
+        self:startJump(near)
+        return
+    end
+    if self:approach(gate.entity) then
+        self.arrivalAction = { kind = "jump", entity = gate.entity }
+        self:notify(string.format("Autopilot: jumping to %s", gate.destination.name),
+            AUTOPILOT_MESSAGE_COLOR)
+    end
+end
+
+--- What the overview asked to happen on arrival: dock or jump the moment
+--- the ship is in range, and let it go if the autopilot stops short (it
+--- arrived somewhere else, or the player took the controls).
+function LimitTheoryRedux:processArrivalAction()
+    local action = self.arrivalAction
+    if not action then return end
+    if self.docked or self.jump or not action.entity:isValid() or not self.playerShip then
+        self.arrivalAction = nil
+        return
+    end
+    if action.kind == "dock" then
+        local dock, refused = self:dockInRange()
+        if dock and dock.entity == action.entity then
+            self.arrivalAction = nil
+            AutoPilotSystem:disengage(self.playerShip)
+            self:dockPlayer(dock)
+            return
+        end
+        if refused and refused.entity == action.entity then
+            self.arrivalAction = nil
+            AutoPilotSystem:disengage(self.playerShip)
+            self:notify(Factions.name(refused.faction) .. " refuse you docking.", { 1.0, 0.4, 0.3 })
+            return
+        end
+    elseif action.kind == "jump" then
+        local gate = self:gateInRange()
+        if gate and gate.entity == action.entity then
+            self.arrivalAction = nil
+            self:startJump(gate)
+            return
+        end
+    end
+    if not AutoPilotSystem:isActive(self.playerShip) then
+        self.arrivalAction = nil
+        self:notify(action.kind == "dock" and "Stopped short of the station: not docking."
+            or "Stopped short of the gate: not jumping.", { 1.0, 0.7, 0.3 })
+    end
+end
+
 --- Fire the active module in a slot (the number keys). A slot with nothing
 --- in it, or a passive module, says so rather than doing nothing silently.
 ---@param slot integer
@@ -1373,6 +1585,9 @@ end
 ---@param keepShip boolean|nil
 function LimitTheoryRedux:destroyScene(keepShip)
     require('Modules.Rendering.Systems.SpeedFeelSystem'):disable()
+    -- The overview's list and anything it set going belong to this system
+    SystemOverview:invalidate()
+    self.lookingAt, self.arrivalAction = nil, nil
     if self.scenario and self.scenario.teardown then
         self.scenario.teardown(self)
     end
@@ -2384,6 +2599,7 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.Jump:update(dt)
     GeneralActions.Dock:update(dt)
     GeneralActions.Cloak:update(dt)
+    GeneralActions.Overview:update(dt)
     GeneralActions.Mine:update(dt)
     GeneralActions.Repair:update(dt)
     for slot, binding in ipairs({ GeneralActions.Module1, GeneralActions.Module2,
@@ -2485,6 +2701,10 @@ function LimitTheoryRedux:onInput(data)
         if gate then self:startJump(gate) end
     end
 
+    if GeneralActions.Overview:isPressed() and self:overviewAvailable() then
+        self:setOverview(not self.overviewShown)
+    end
+
     if GeneralActions.Dock:isPressed() and self:isTravelGame() then
         if self.docked then
             self:undockPlayer()
@@ -2566,6 +2786,8 @@ function LimitTheoryRedux:onStateSim(data)
     -- A ship the refit screen asked for: the rebuild happens here, not inside
     -- the screen's own draw
     self:processShipChange()
+    -- The overview: its list, the cursor it holds, and what it set going
+    self:updateOverview(dt)
     self.simTime = (self.simTime or 0) + dt
     -- The player's shields recharge (DefenseComponent:update had no caller)
     local playerDefense = self.playerShip:get(ConstructComponents.Defense)
