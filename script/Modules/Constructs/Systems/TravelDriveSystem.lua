@@ -1,4 +1,5 @@
 local PhysicsComponents   = require("Modules.Physics.Components")
+local UIMouse = require("Input.UIMouse")
 local ConstructComponents = require("Modules.Constructs.Components")
 local ShipActions         = require("Input.ActionBindings.ShipActions")
 local GravityWellSystem   = require("Modules.Physics.Systems.GravityWellSystem")
@@ -84,7 +85,7 @@ function TravelDriveSystem:update(dt, shipEntity)
     drive:setCurrentMult(currentMult)
 
     -- Weapon fire cancels the drive (a click on a panel is not fire)
-    if ShipActions.Fire and ShipActions.Fire:get() > 0.5 and not GameState.ui.mouseOverPanel then
+    if ShipActions.Fire and ShipActions.Fire:get() > 0.5 and not UIMouse.overPanel then
         state = drive:getState()
         if state == "active" or state == "charging" then
             drive:setState("decelerating")

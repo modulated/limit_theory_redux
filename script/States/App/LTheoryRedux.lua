@@ -9,6 +9,7 @@ LimitTheoryRedux = require('States.Application')
 
 -- Sound / persistence
 local SoundManager = require('Legacy.Systems.SFX.SoundManager')
+local UIMouse = require("Input.UIMouse")
 local MusicPlayer = require('Shared.Audio.MusicPlayer')
 local InitFiles = require('Legacy.Systems.Files.InitFiles')
 local UserSettings = require('Shared.UserSettings')
@@ -1017,7 +1018,7 @@ function LimitTheoryRedux:updateOverview(dt)
         CursorManager:free()
         SystemOverview:update(self, dt)
     else
-        GameState.ui.mouseOverPanel = false
+        UIMouse.overPanel = false
     end
 
     -- A look at something ends when it goes, or when the camera leaves it.
@@ -1032,6 +1033,7 @@ function LimitTheoryRedux:updateOverview(dt)
         end
     end
     self:processArrivalAction()
+    self:updateTargeting()
 end
 
 --- The radius to frame an entity by.
@@ -1053,7 +1055,7 @@ end
 ---@param name string|nil for the message
 function LimitTheoryRedux:lookAt(entity, name)
     if not entity or not entity:isValid() or not self.player then return end
-    if entity == self.playerShip then
+    if SystemOverview.same(entity, self.playerShip) then
         self:lookAtShip(true)
         return
     end
@@ -1106,11 +1108,11 @@ end
 function LimitTheoryRedux:dockAt(dock)
     if not dock or not dock.entity:isValid() then return end
     local inRange, refused = self:dockInRange()
-    if inRange and inRange.entity == dock.entity then
+    if inRange and SystemOverview.same(inRange.entity, dock.entity) then
         self:dockPlayer(dock)
         return
     end
-    if refused and refused.entity == dock.entity then
+    if refused and SystemOverview.same(refused.entity, dock.entity) then
         self:notify(Factions.name(refused.faction) .. " refuse you docking.", { 1.0, 0.4, 0.3 })
         return
     end
@@ -1126,7 +1128,7 @@ end
 function LimitTheoryRedux:jumpVia(gate)
     if not gate or not gate.entity:isValid() then return end
     local near = self:gateInRange()
-    if near and near.entity == gate.entity then
+    if near and SystemOverview.same(near.entity, gate.entity) then
         self:startJump(near)
         return
     end
@@ -1149,13 +1151,13 @@ function LimitTheoryRedux:processArrivalAction()
     end
     if action.kind == "dock" then
         local dock, refused = self:dockInRange()
-        if dock and dock.entity == action.entity then
+        if dock and SystemOverview.same(dock.entity, action.entity) then
             self.arrivalAction = nil
             AutoPilotSystem:disengage(self.playerShip)
             self:dockPlayer(dock)
             return
         end
-        if refused and refused.entity == action.entity then
+        if refused and SystemOverview.same(refused.entity, action.entity) then
             self.arrivalAction = nil
             AutoPilotSystem:disengage(self.playerShip)
             self:notify(Factions.name(refused.faction) .. " refuse you docking.", { 1.0, 0.4, 0.3 })
@@ -1163,7 +1165,7 @@ function LimitTheoryRedux:processArrivalAction()
         end
     elseif action.kind == "jump" then
         local gate = self:gateInRange()
-        if gate and gate.entity == action.entity then
+        if gate and SystemOverview.same(gate.entity, action.entity) then
             self.arrivalAction = nil
             self:startJump(gate)
             return
@@ -1174,6 +1176,159 @@ function LimitTheoryRedux:processArrivalAction()
         self:notify(action.kind == "dock" and "Stopped short of the station: not docking."
             or "Stopped short of the gate: not jumping.", { 1.0, 0.7, 0.3 })
     end
+end
+
+------------------------------------------------------------------------------
+-- Targeting: the ship the player has locked, and whether to attack it
+------------------------------------------------------------------------------
+
+--- Lock a ship. The player's turrets put every mount that can reach it on
+--- it, instead of spreading over whatever is near -- if it is a ship they
+--- would engage anyway (one whose faction is hostile). A ship that is not
+--- hostile is only marked and followed on the HUD: shooting it is Attack.
+---@param entity Entity
+---@param name string|nil
+function LimitTheoryRedux:lockTarget(entity, name)
+    if not entity or not entity:isValid() then return end
+    if SystemOverview.same(entity, self.playerShip) then return end
+    self.target = entity
+    self.targetName = name or "target"
+    -- A new lock is not an attack on it, even if the last one was
+    self.attacking = false
+    self:notify(string.format("Target locked: %s", self.targetName), { 1.0, 0.85, 0.35 })
+end
+
+--- Lock a ship and open fire on it, hostile or not. Shooting a ship whose
+--- faction is not hostile costs standing with that faction, hit by hit
+--- (Reputation), and enough of it turns the whole faction against the player.
+---@param entity Entity
+---@param name string|nil
+---@param faction string|nil the ship's faction, for the warning
+function LimitTheoryRedux:attackTarget(entity, name, faction)
+    if not entity or not entity:isValid() then return end
+    self:lockTarget(entity, name)
+    self.attacking = true
+    local who = faction and Factions.name(faction) or "its faction"
+    self:notify(string.format("Attacking %s: every hit costs standing with %s", self.targetName, who),
+        { 1.0, 0.45, 0.35 })
+end
+
+--- Let go of the target.
+function LimitTheoryRedux:clearTarget()
+    if self.target then
+        self:notify("Target released.", { 0.75, 0.8, 0.85 })
+    end
+    self.target, self.targetName, self.attacking = nil, nil, false
+end
+
+--- Whether a given entity is the locked target.
+---@param entity Entity|nil
+---@return boolean
+function LimitTheoryRedux:isTarget(entity)
+    return SystemOverview.same(self.target, entity)
+end
+
+--- Each frame: drop a target that has gone, and tell the turrets about the
+--- one that has not. The battery is rebuilt with the ship (an undock, a
+--- jump, a change of ship), so this is set every frame rather than once.
+function LimitTheoryRedux:updateTargeting()
+    if self.target and (not self.target:isValid() or self.docked or self.jump) then
+        local name = self.targetName
+        local destroyed = not self.target:isValid()
+        self.target, self.targetName, self.attacking = nil, nil, false
+        if destroyed and name then
+            self:notify(string.format("Target lost: %s", name), { 0.75, 0.8, 0.85 })
+        end
+    end
+    local battery = self.playerBattery
+    if battery then
+        battery.focusTargetEntity = self.target
+        battery.attackEntity = self.attacking and self.target or nil
+    end
+end
+
+--- What the HUD says about the target: its name, how far, and how much
+--- shield and hull it has left.
+---@return string|nil text
+---@return table|nil color
+function LimitTheoryRedux:targetReadout()
+    local target = self.target
+    if not target or not target:isValid() or not self.playerShip then return nil end
+    local function place(entity)
+        local rbCmp = entity:get(PhysicsComponents.RigidBody)
+        local body = rbCmp and rbCmp:getRigidBody()
+        return body and body:getPos(), body and body:getBoundingRadius() or 0
+    end
+    local here = place(self.playerShip)
+    local there, radius = place(target)
+    local parts = { (self.attacking and "ATTACKING  " or "TARGET  ") .. (self.targetName or "") }
+    if here and there then
+        local dx, dy, dz = there.x - here.x, there.y - here.y, there.z - here.z
+        local d = math.max(0, math.sqrt(dx * dx + dy * dy + dz * dz) - radius)
+        parts[#parts + 1] = UniverseScaleConfig:formatDistance(d)
+    end
+    local defense = target:get(ConstructComponents.Defense)
+    if defense and defense:getMaxShield() > 0 then
+        parts[#parts + 1] = string.format("shield %d%%",
+            math.floor(100 * defense:getCurrentShield() / defense:getMaxShield() + 0.5))
+    end
+    local health = target:get(CoreComponents.Health)
+    if health and health:getMaxHealth() > 0 then
+        parts[#parts + 1] = string.format("hull %d%%",
+            math.floor(100 * health:getCurrentHealth() / health:getMaxHealth() + 0.5))
+    end
+    return table.concat(parts, "  ·  "),
+        self.attacking and { 1.0, 0.45, 0.35 } or { 1.0, 0.85, 0.35 }
+end
+
+------------------------------------------------------------------------------
+-- The system map, from elsewhere
+------------------------------------------------------------------------------
+
+--- Open the 2D system map, its list of things rebuilt. (The M key's first
+--- step, and Show on map.)
+function LimitTheoryRedux:openSystemMap()
+    SystemMap3D:deactivate(self.map3DState)
+    self.mapMode = 1
+    self.mapState.enabled = true
+    self.map3DState.enabled = false
+    self.galaxyMapState.enabled = false
+    self.mapState._entityListBuilt = false
+    self.mapState._dotCache = nil
+    SystemMap:collectEntities(self.mapState, self.universe, self.playerShip, self:mapNpcs())
+    CursorManager:free()
+end
+
+--- Open the system map with something selected: the map follows the
+--- selection, so it is centred and its details are up, and the autopilot
+--- key there flies to it as usual.
+---@param entity Entity
+---@param name string|nil
+function LimitTheoryRedux:showOnMap(entity, name)
+    if not entity or not entity:isValid() or not self.mapState then return end
+    self:openSystemMap()
+    -- The map's own entry for it when it has one (planets, stations, gates,
+    -- ships); an asteroid streamed in around the ship is not in the map's
+    -- list, so it gets an entry of its own to follow
+    for _, entry in ipairs(self.mapState.entities or {}) do
+        if SystemOverview.same(entry.entity, entity) then
+            self.mapState.selected = entry
+            return
+        end
+    end
+    local rbCmp = entity:get(PhysicsComponents.RigidBody)
+    local body = rbCmp and rbCmp:getRigidBody()
+    local transform = entity:get(PhysicsComponents.Transform)
+    local pos = body and body:getPos() or (transform and transform:getPos())
+    if not pos then return end
+    self.mapState.selected = {
+        entity = entity,
+        label = name or "Selected",
+        pos = pos,
+        scale = body and body:getBoundingRadius() or 0,
+        color = { 0.8, 0.7, 0.5 },
+        size = 3,
+    }
 end
 
 --- Fire the active module in a slot (the number keys). A slot with nothing
@@ -1588,6 +1743,7 @@ function LimitTheoryRedux:destroyScene(keepShip)
     -- The overview's list and anything it set going belong to this system
     SystemOverview:invalidate()
     self.lookingAt, self.arrivalAction = nil, nil
+    self.target, self.targetName, self.attacking = nil, nil, false
     if self.scenario and self.scenario.teardown then
         self.scenario.teardown(self)
     end
@@ -2329,6 +2485,9 @@ function LimitTheoryRedux:drawNavigation()
     if self.mapMode ~= 0 or self.hudHidden or self.pauseMenuOpen then return end
     local lines = {}
     table.insert(lines, { text = string.format("%s  ·  %s", name, level.name), color = c })
+    -- The locked target, under the system line: who, how far, how hurt
+    local targetText, targetColor = self:targetReadout()
+    if targetText then table.insert(lines, { text = targetText, color = targetColor }) end
     if self.docked then
         local missing, cost = self:hullRepairQuote()
         local repair = missing > 0 and string.format("R: repair hull (%s)", PlayerWallet.format(cost))
@@ -2618,10 +2777,7 @@ function LimitTheoryRedux:onInput(data)
         self.galaxyMapState.enabled = (self.mapMode == 3)
 
         if self.mapMode == 1 then
-            self.mapState._entityListBuilt = false
-            self.mapState._dotCache = nil
-            SystemMap:collectEntities(self.mapState, self.universe, self.playerShip, self:mapNpcs())
-            CursorManager:free()
+            self:openSystemMap()
         elseif self.mapMode == 2 then
             SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip, self:mapNpcs())
             SystemMap3D:activate(self.map3DState)

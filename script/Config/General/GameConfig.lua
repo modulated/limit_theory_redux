@@ -503,7 +503,7 @@ Config.game = {
         -- laser's reach), and no more than `maxAsteroids` of them.
         asteroidRange   = 10.0,
         maxAsteroids    = 25,
-        maxRows         = 30,   -- rows the panel shows before "+N more"
+        maxRows         = 18,   -- rows in view at once; the wheel scrolls the rest
     },
 
     -- The player's armed ship in the travel scenarios (those with stations):

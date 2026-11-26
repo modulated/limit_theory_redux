@@ -1251,10 +1251,12 @@ function WeaponSystem:chooseBestTarget(
         or priorities[Enums.Weapon.CombatRole.Line]
 
     -- Focus override: external systems can command this mount onto a
-    -- specific contact; validity and range are still enforced.
+    -- specific contact; validity and range are still enforced. Compared by
+    -- id: the registry hands out a fresh Entity handle each walk, so the
+    -- candidate's handle is never the one the caller holds.
     if focusTargetEntity then
         for _, candidate in ipairs(candidates) do
-            if candidate.entity == focusTargetEntity
+            if candidate.entity and candidate.entity.id == focusTargetEntity.id
                 and candidate.enabled ~= false
                 and candidate.position
             then

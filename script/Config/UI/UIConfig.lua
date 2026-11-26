@@ -13,6 +13,12 @@ Config.ui.general = {
     hudScale                         = 1.0,  -- the in-game UI's size (Settings > Interface > UI Scale)
 
     drawHud                          = true, -- HUD shown when a game starts (V toggles it in game)
+
+    -- The overview (O): the categories it lists, comma separated, and the
+    -- column it sorts by (distance, name or type)
+    overviewFilters                  = "celestial,station,gate,ship,asteroid",
+    overviewSort                     = "distance",
+    overviewSortDescending           = false,
     showIndicatorNames               = true, -- name labels next to planets, stations and asteroids
 
     rangeDistances = {3000.0, 6000.0, 10000.0}, -- maximum distances within which objects appear on tactical map

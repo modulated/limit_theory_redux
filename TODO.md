@@ -28,11 +28,11 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
      entity tree, spawn the next one, behind a transit or loading screen.
    - Route planning across systems (Dijkstra/A* over the gate graph, in Lua).
    - A galaxy map, as a third state of `CycleMapMode`.
-   - [x] The overview (O): everything in the system nearest first, filtered by category,
-         asteroids only within `Config.game.overview.asteroidRange`; right click for Look at,
-         Approach, and Dock or Jump (now, or on arrival). Still to do: scrolling rather than a
-         row cap; remembering the filters between games; a Target action once the player can
-         lock targets; Show on map; sorting by name or type as well as distance.
+   - [x] The overview (O): everything in the system, filtered by category (asteroids only
+         within `Config.game.overview.asteroidRange`), sorted by any column, scrolled with the
+         wheel, filters and sort remembered in user.ini; right click for Target, Attack, Look at,
+         Approach, Dock or Jump (now, or on arrival) and Show on map. Still to do: dragging the
+         scroll bar; a key to target the nearest hostile; naming systems' belts.
 4. **Obstacle avoidance.** Autopilot flies straight lines and can fly through a planet. Expose
    `Physics::shape_cast`/`shape_overlap` (`engine/lib/phx/src/physics/physics.rs`) to Lua, then
    steer around bodies' bounding spheres. Optional: smooth routes with a 3D Catmull-Rom or
@@ -65,8 +65,9 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    Transport, Think; actions MoveTo, Wait, Attack, Flee, LeaveSystem); the player flies an
    armed gunship. Still to do:
    - [ ] Confirm the gunship recipe builds and the fights play well (untested at the time).
-   - [ ] Manual fire and target lock for the player (turrets only fire automatically, whatever is
-         fitted in their mounts).
+   - [ ] Manual fire for the player. Target lock exists (the overview's Target: every mount that
+         can reach it takes it; Attack turns them on a ship that is not hostile), but the turrets
+         still choose when to fire.
    - [ ] CriminalThink's black-market jobs (needs the economy).
    - [x] Prospecting scanner (0.2.0): a rock is unnamed until the Survey Scanner reads it, which it
          does at 2.5x the laser's reach; mining a unit out identifies it too. Left over: a belt's
@@ -76,7 +77,8 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          replaced this fork's port of Legacy's flecks; the clouds need their texture pass and
          shader converted).
    - [ ] Reputation from more than kills and hits (escorting, trading) once there is more
-         to do; the player can't attack neutral ships yet, so standing mostly rises.
+         to do. The player can now attack a neutral ship (the overview's Attack), which costs
+         standing hit by hit; nothing yet warns before a faction turns hostile.
    - [ ] Credits only come from bounties, trading and mining sales; they go on hull repairs,
          factory leases, fittings and hulls. Insurance, fuel and ammunition are the obvious sinks
          still missing.

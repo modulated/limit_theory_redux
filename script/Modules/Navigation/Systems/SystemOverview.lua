@@ -37,6 +37,10 @@ local SystemOverview = {
     counts = {},
     ---@type Entity|nil the row the player last clicked
     selected = nil,
+    ---@type string the column the list is sorted by ("distance", "name", "type")
+    sortKey = "distance",
+    sortDescending = false,
+    settingsLoaded = false,
     refreshTimer = 0,
     ---@private the celestials, walked once per system
     statics = nil,
@@ -53,6 +57,7 @@ local SystemOverview = {
 ---@field radius number
 ---@field color table|nil { r, g, b } for the name, where it has one (ships: faction)
 ---@field hostile boolean|nil a ship whose faction is hostile to the player
+---@field faction string|nil a ship's faction
 ---@field dock table|nil for a station: its dock record
 ---@field gate JumpGatePlacement|nil for a gate
 
@@ -68,6 +73,20 @@ SystemOverview.CATEGORY_NAMES = {
     asteroid = "Asteroids",
 }
 
+--- The columns the list can be sorted by.
+SystemOverview.SORTS = { name = true, type = true, distance = true }
+
+--- Whether two handles are the same entity. Handles are not unique: the
+--- registry hands out a fresh `Entity(id)` wrapper each time it is walked,
+--- and Entity has no `__eq`, so `==` between handles from different places
+--- is false for the same ship.
+---@param a Entity|nil
+---@param b Entity|nil
+---@return boolean
+function SystemOverview.same(a, b)
+    return a ~= nil and b ~= nil and a.id == b.id
+end
+
 --- Forget the system: the next refresh walks the new one.
 function SystemOverview:invalidate()
     self.statics = nil
@@ -78,11 +97,90 @@ function SystemOverview:invalidate()
     self.refreshTimer = 0
 end
 
+------------------------------------------------------------------------------
+-- The player's choices, remembered in user.ini (GameState.ui.overview*)
+------------------------------------------------------------------------------
+
+--- Read the filters and the sort from the settings. Called on first use,
+--- after user.ini has been read.
+function SystemOverview:loadSettings()
+    local ui = GameState.ui
+    local shown = {}
+    for name in string.gmatch(ui.overviewFilters or "", "[%a]+") do shown[name] = true end
+    for _, category in ipairs(self.CATEGORIES) do
+        self.filters[category] = shown[category] == true
+    end
+    self.sortKey = self.SORTS[ui.overviewSort] and ui.overviewSort or "distance"
+    self.sortDescending = ui.overviewSortDescending == true
+    self.settingsLoaded = true
+end
+
+--- Write the filters and the sort back to the settings (user.ini has them
+--- the next time it is saved: leaving the game, or the Settings screen).
+function SystemOverview:saveSettings()
+    local shown = {}
+    for _, category in ipairs(self.CATEGORIES) do
+        if self.filters[category] then shown[#shown + 1] = category end
+    end
+    GameState.ui.overviewFilters = table.concat(shown, ",")
+    GameState.ui.overviewSort = self.sortKey
+    GameState.ui.overviewSortDescending = self.sortDescending
+end
+
+---@private
+function SystemOverview:ensureSettings()
+    if not self.settingsLoaded then self:loadSettings() end
+end
+
 ---@param category string
 ---@param on boolean|nil nil flips it
 function SystemOverview:setFilter(category, on)
+    self:ensureSettings()
     if on == nil then on = not self.filters[category] end
     self.filters[category] = on
+    self:saveSettings()
+end
+
+--- Sort by a column: the same column again reverses it, a new one starts
+--- ascending (nearest, A to Z, or the category order).
+---@param key string "name", "type" or "distance"
+function SystemOverview:setSort(key)
+    if not self.SORTS[key] then return end
+    self:ensureSettings()
+    if self.sortKey == key then
+        self.sortDescending = not self.sortDescending
+    else
+        self.sortKey, self.sortDescending = key, false
+    end
+    self:saveSettings()
+end
+
+--- The category order, for sorting by type, and within the celestials the
+--- order a chart reads them in: the star, then planets, moons, rings, belts.
+local CATEGORY_RANK = { celestial = 1, station = 2, gate = 3, ship = 4, asteroid = 5 }
+local KIND_RANK = { Star = 1, Planet = 2, Moon = 3, Ring = 4, Belt = 5 }
+
+--- The comparison for a sort: ties always fall back to distance, so the
+--- order is stable as the ship moves.
+---@param key string
+---@param descending boolean
+---@return fun(a: OverviewEntry, b: OverviewEntry): boolean
+local function comparator(key, descending)
+    local function less(a, b)
+        if key == "name" then
+            local an, bn = a.name:lower(), b.name:lower()
+            if an ~= bn then return an < bn end
+        elseif key == "type" then
+            local ar, br = CATEGORY_RANK[a.category] or 9, CATEGORY_RANK[b.category] or 9
+            if ar ~= br then return ar < br end
+            local ak, bk = KIND_RANK[a.kind] or 9, KIND_RANK[b.kind] or 9
+            if ak ~= bk then return ak < bk end
+            if a.kind ~= b.kind then return a.kind < b.kind end
+        end
+        return a.distance < b.distance
+    end
+    if not descending then return less end
+    return function(a, b) return less(b, a) end
 end
 
 ------------------------------------------------------------------------------
@@ -136,31 +234,65 @@ local function celestialKind(entity)
     return nil
 end
 
---- Walk the system's tree for its celestials.
+local ROMAN = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
+                "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX" }
+
+---@param n integer
+---@return string
+local function roman(n)
+    return ROMAN[n] or tostring(n)
+end
+
+--- Walk the system's tree for its celestials, and name them.
+---
+--- A celestial's Name component is its entity type ("PlanetEntity": it is
+--- what the system map classifies by), so it is no name to show. They are
+--- named the way star charts do it instead: the star after its system, the
+--- planets after the system with a numeral in the order they were made
+--- (Vega I, Vega II), their moons after the planet with a letter (Vega II a),
+--- rings after their planet, belts numbered.
 ---@param root Entity
+---@param systemName string|nil the star system's name; nil outside a galaxy
 ---@return table[] { entity, name, kind }
-local function walkCelestials(root)
+local function walkCelestials(root, systemName)
     local found = {}
     local counters = {}
-    local function walk(entity)
+    local function walk(entity, parentName)
         if not entity or not entity:isValid() then return end
         local kind = celestialKind(entity)
+        local name = nil
         if kind then
             counters[kind] = (counters[kind] or 0) + 1
-            local nameCmp = entity:get(CoreComponents.Name)
-            local name = nameCmp and nameCmp:getName()
-            if not name or name == "" then
-                -- No name of its own: numbered by kind, as the map does
-                name = kind == "Star" and "Star" or string.format("%s %d", kind, counters[kind])
+            local n = counters[kind]
+            if kind == "Star" then
+                name = systemName or "Star"
+            elseif kind == "Planet" then
+                name = systemName and string.format("%s %s", systemName, roman(n))
+                    or string.format("Planet %d", n)
+            elseif kind == "Moon" then
+                -- Lettered per planet, not across the system
+                counters.moonOf = counters.moonOf or {}
+                local key = parentName or "?"
+                counters.moonOf[key] = (counters.moonOf[key] or 0) + 1
+                local letter = string.char(string.byte("a") + counters.moonOf[key] - 1)
+                name = parentName and string.format("%s %s", parentName, letter)
+                    or string.format("Moon %d", n)
+            elseif kind == "Ring" then
+                name = parentName and (parentName .. " Ring") or string.format("Ring %d", n)
+            else
+                name = string.format("Belt %d", n)
             end
             found[#found + 1] = { entity = entity, name = name, kind = kind }
         end
         local children = entity:get(CoreComponents.Children)
         if children then
-            for child in children:iterChildren() do walk(child) end
+            -- A planet's children are named after it; anything else passes
+            -- on the name it was given
+            local passOn = (kind == "Planet" or kind == "Moon") and name or parentName
+            for child in children:iterChildren() do walk(child, passOn) end
         end
     end
-    walk(root)
+    walk(root, nil)
     return found
 end
 
@@ -203,8 +335,10 @@ function SystemOverview:refresh(game)
 
     -- Celestials: walked once, measured every refresh
     local root = game.universe
-    if root and (self.staticsRoot ~= root or not self.statics) then
-        self.statics = walkCelestials(root)
+    if root and (not SystemOverview.same(self.staticsRoot, root) or not self.statics) then
+        local system = game.galaxy and game.galaxy.systems and game.currentSystemId
+            and game.galaxy.systems[game.currentSystemId]
+        self.statics = walkCelestials(root, system and system.name or nil)
         self.staticsRoot = root
     end
     for _, body in ipairs(self.statics or {}) do
@@ -234,7 +368,8 @@ function SystemOverview:refresh(game)
         local pos, radius = placeOf(npc.entity)
         local hostile = npc.faction and Factions.isHostile(npc.faction, Factions.Player) or false
         add({ entity = npc.entity, name = npc.label or "Ship", kind = "Ship",
-            category = "ship", radius = radius, color = npc.color, hostile = hostile }, pos)
+            category = "ship", radius = radius, color = npc.color, hostile = hostile,
+            faction = npc.faction }, pos)
     end
 
     -- Asteroids: the nearest few, within reach of being worth listing
@@ -262,6 +397,7 @@ function SystemOverview:refresh(game)
             category = "asteroid", radius = info.scale or 0 }, info.pos)
     end
 
+    -- Nearest first here; the panel's own sort is applied in `visible`
     table.sort(entries, function(a, b) return a.distance < b.distance end)
     self.entries, self.counts = entries, counts
 
@@ -269,20 +405,19 @@ function SystemOverview:refresh(game)
     if self.selected and not self.selected:isValid() then self.selected = nil end
 end
 
---- What the panel lists: the entries whose category is switched on, nearest
---- first, no more than `limit` of them.
----@param limit integer|nil
----@return OverviewEntry[] shown
----@return integer hidden how many more matched than were shown
-function SystemOverview:visible(limit)
-    local shown, matched = {}, 0
+--- What the panel lists: the entries whose category is switched on, in the
+--- player's sort order. The panel scrolls through it.
+---@return OverviewEntry[]
+function SystemOverview:visible()
+    self:ensureSettings()
+    local shown = {}
     for _, entry in ipairs(self.entries) do
         if self.filters[entry.category] and entry.entity:isValid() then
-            matched = matched + 1
-            if not limit or #shown < limit then shown[#shown + 1] = entry end
+            shown[#shown + 1] = entry
         end
     end
-    return shown, matched - #shown
+    table.sort(shown, comparator(self.sortKey or "distance", self.sortDescending == true))
+    return shown
 end
 
 return SystemOverview

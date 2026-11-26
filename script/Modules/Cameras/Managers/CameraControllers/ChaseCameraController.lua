@@ -1,6 +1,7 @@
 local CameraController = require("Modules.Cameras.Managers").CameraController
 local PhysicsComponents = require("Modules.Physics.Components")
 
+local UIMouse = require("Input.UIMouse")
 --- NaN is the only value that is not equal to itself; infinities compare
 --- out of range.
 ---@param v number
@@ -66,7 +67,7 @@ function ChaseCameraController:onInput(dt)
 
     -- Zoom with mouse wheel (not over a panel)
     local scroll = Input:mouse():value(MouseControl.ScrollY)
-    if math.abs(scroll) > 0.001 and not GameState.ui.mouseOverPanel then
+    if math.abs(scroll) > 0.001 and not UIMouse.overPanel then
         self:modRadius(scroll)
     end
 end

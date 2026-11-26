@@ -195,6 +195,9 @@ local function selectCandidates(battery, live)
     local origin = battery.shipBody:getPos()
     local rangeSquared = battery.engagementRange * battery.engagementRange
     local shipId = battery.ship.id
+    -- A contact the battery was told to attack whatever its team (the
+    -- player attacking a ship that is not hostile: WeaponBattery.attackEntity)
+    local attackId = battery.attackEntity and battery.attackEntity.id
     for _, record in ipairs(live) do
         local engages
         if battery.hostileTeams then
@@ -202,6 +205,7 @@ local function selectCandidates(battery, live)
         else
             engages = battery.team == nil or record.team ~= battery.team
         end
+        if attackId and record.id == attackId then engages = true end
         if record.id ~= shipId and engages then
             local dx = record.position.x - origin.x
             local dy = record.position.y - origin.y

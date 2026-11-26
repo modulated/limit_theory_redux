@@ -81,10 +81,11 @@ GameState.ui = {
     hudScale                         = Config.ui.general.hudScale,
 
     drawHud                          = Config.ui.general.drawHud,
-    -- The cursor is over an in-game panel (the overview) this frame: its
-    -- clicks are the panel's, so the cameras, steering and the fire button
-    -- leave them alone. Set by the panel as it draws.
-    mouseOverPanel                   = false,
+    -- The overview (O): which categories it lists and how it sorts them,
+    -- remembered with the other settings in user.ini
+    overviewFilters                  = Config.ui.general.overviewFilters,
+    overviewSort                     = Config.ui.general.overviewSort,
+    overviewSortDescending           = Config.ui.general.overviewSortDescending,
     showIndicatorNames               = Config.ui.general.showIndicatorNames,
 
     -- Trackers

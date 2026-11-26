@@ -1,26 +1,30 @@
+local UIMouse = require("Input.UIMouse")
 local SystemOverview = require("Modules.Navigation.Systems.SystemOverview")
 local ConstructComponents = require("Modules.Constructs.Components")
 local UniverseScaleConfig = require("Config.Gen.UniverseScaleConfig")
 
--- The overview: what is in the star system, nearest first, on the right of
--- the screen (O opens and closes it). Drawn by the in-game view
--- (InGame.lua); the list is SystemOverview's and the actions are the
--- game's (LimitTheoryRedux:lookAt, approach, dockAt, jumpVia).
+-- The overview: what is in the star system, on the right of the screen (O
+-- opens and closes it). Drawn by the in-game view (InGame.lua); the list is
+-- SystemOverview's and the actions are the game's (LimitTheoryRedux:lookAt,
+-- approach, dockAt, jumpVia, lockTarget, attackTarget, showOnMap).
 --
 --   left click     select a row
 --   double click   approach it on the autopilot
---   right click    the context menu: Look at, Approach, Dock or Jump, and
---                  undoing a look or an autopilot that is already on it
+--   right click    the context menu
+--   wheel          scroll the list
+--   column heads   sort by that column; again to reverse it
+--   filter buttons show or hide a category
 --
--- While it is up the cursor is free and the mouse does not steer
--- (LimitTheoryRedux:updateOverview). The panel tells the cameras when the
--- cursor is over it (GameState.ui.mouseOverPanel), so a right click on a row
--- opens the menu rather than starting an orbit drag, the wheel does not zoom,
--- and a left click is not the fire button.
+-- The filters and the sort are remembered (GameState.ui.overview*, saved in
+-- user.ini). While the panel is up the cursor is free and the mouse does not
+-- steer (LimitTheoryRedux:updateOverview), and the panel tells the cameras
+-- when the cursor is over it (UIMouse.overPanel), so a right click on a row
+-- opens the menu rather than starting an orbit drag, the wheel scrolls the
+-- list rather than zooming, and a left click is not the fire button.
 --
 -- Immediate-mode HmGui: the panel asks FocusType.Scroll whether the cursor is
 -- anywhere over it (nothing inside it asks for Scroll, so it gets the answer
--- for its whole area), while its rows and the menu's items ask
+-- for its whole area), while its rows, buttons and menu items ask
 -- FocusType.Mouse, which goes to the innermost asker.
 
 local OverviewPanel = {}
@@ -29,13 +33,17 @@ local WHITE = Color(1.00, 1.00, 1.00, 1.00)
 local GREY = Color(0.75, 0.77, 0.80, 1.00)
 local DIM = Color(0.51, 0.54, 0.59, 1.00)
 local ACCENT = Color(0.10, 0.60, 1.00, 1.00)
+local GOLD = Color(1.00, 0.85, 0.35, 1.00)
 local PANEL_BG = Color(0.02, 0.04, 0.07, 0.78)
 local PANEL_BORDER = Color(0.10, 0.60, 1.00, 0.35)
 local ROW_HOVER = Color(0.10, 0.30, 0.50, 0.55)
 local ROW_SELECTED = Color(0.10, 0.45, 0.75, 0.45)
+local ROW_TARGET = Color(0.55, 0.40, 0.05, 0.40)
 local CHIP_ON = Color(0.10, 0.30, 0.50, 1.00)
 local CHIP_OFF = Color(0.06, 0.09, 0.13, 1.00)
 local MENU_BG = Color(0.03, 0.05, 0.09, 0.96)
+local BAR_BG = Color(0.10, 0.60, 1.00, 0.12)
+local BAR_KNOB = Color(0.10, 0.60, 1.00, 0.70)
 local NO_COLOR = Color(0, 0, 0, 0)
 
 --- Each category's colour for the name column (ships use their faction's).
@@ -48,11 +56,13 @@ local CATEGORY_COLORS = {
 }
 local HOSTILE = Color(1.00, 0.38, 0.32, 1.00)
 
---- Column widths and the panel's size, in HUD pixels (1080p).
+--- Sizes in HUD pixels (1080p): the panel, its columns, its rows.
 local WIDTH = 440
-local COL_NAME, COL_KIND, COL_DIST = 230, 84, 96
+local COL_NAME, COL_KIND, COL_DIST = 224, 84, 96
+local BAR_WIDTH = 5
 local ROW_HEIGHT = 21
 local DOUBLE_CLICK = 0.35 -- seconds
+local WHEEL_ROWS = 3      -- rows a notch of the wheel scrolls
 
 --- The HUD's scale, as the rest of the in-game view has it.
 ---@return number
@@ -71,6 +81,10 @@ end
 local menu = nil
 --- The last left click, for spotting a double click.
 local lastClick = { entity = nil, time = -1 }
+--- The first row shown (0 = the top of the list).
+local scroll = 0
+
+local same = SystemOverview.same
 
 ---@param value string
 ---@param limit integer
@@ -119,6 +133,14 @@ local function cell(value, width, color, size, align)
     Gui:endContainer()
 end
 
+--- An empty box: a gap, or a bar.
+local function box(width, height, color)
+    Gui:beginStackContainer()
+    Gui:setFixedSize(width, math.max(0, height))
+    Gui:setBackgroundColor(color or NO_COLOR)
+    Gui:endContainer()
+end
+
 ------------------------------------------------------------------------------
 -- The context menu
 ------------------------------------------------------------------------------
@@ -129,35 +151,52 @@ end
 local function actionsFor(entry)
     local game = LimitTheoryRedux
     local items = {}
-    local function add(label, enabled, run)
+    local function add(label, run, enabled)
         items[#items + 1] = { label = label, enabled = enabled ~= false, run = run }
     end
 
-    if game.lookingAt == entry.entity then
-        add("Stop looking", true, function() game:lookAtShip(true) end)
-    else
-        add("Look at", true, function() game:lookAt(entry.entity, entry.name) end)
+    -- Ships: lock, attack, release
+    if entry.category == "ship" then
+        if game:isTarget(entry.entity) then
+            if not game.attacking and not entry.hostile then
+                add("Attack", function() game:attackTarget(entry.entity, entry.name, entry.faction) end)
+            end
+            add("Release target", function() game:clearTarget() end)
+        else
+            add("Target", function() game:lockTarget(entry.entity, entry.name) end)
+            if not entry.hostile then
+                add("Attack", function() game:attackTarget(entry.entity, entry.name, entry.faction) end)
+            end
+        end
     end
 
-    if autopilotTarget() == entry.entity then
-        add("Stop autopilot", true, function()
+    if same(game.lookingAt, entry.entity) then
+        add("Stop looking", function() game:lookAtShip(true) end)
+    else
+        add("Look at", function() game:lookAt(entry.entity, entry.name) end)
+    end
+
+    if same(autopilotTarget(), entry.entity) then
+        add("Stop autopilot", function()
             local AutoPilotSystem = require("Modules.Constructs.Systems.AutoPilotSystem")
             AutoPilotSystem:disengage(game.playerShip)
             game.arrivalAction = nil
         end)
     else
-        add("Approach", true, function() game:approach(entry.entity, entry.name) end)
+        add("Approach", function() game:approach(entry.entity, entry.name) end)
     end
 
     if entry.dock then
         local inRange = game:dockInRange()
-        local here = inRange and inRange.entity == entry.entity
-        add(here and "Dock" or "Approach and dock", true, function() game:dockAt(entry.dock) end)
+        local here = inRange and same(inRange.entity, entry.entity)
+        add(here and "Dock" or "Approach and dock", function() game:dockAt(entry.dock) end)
     elseif entry.gate then
         local near = game:gateInRange()
-        local here = near and near.entity == entry.entity
-        add(here and "Jump" or "Approach and jump", true, function() game:jumpVia(entry.gate) end)
+        local here = near and same(near.entity, entry.entity)
+        add(here and "Jump" or "Approach and jump", function() game:jumpVia(entry.gate) end)
     end
+
+    add("Show on map", function() game:showOnMap(entry.entity, entry.name) end)
     return items
 end
 
@@ -173,11 +212,10 @@ local function drawMenu(s)
     end
 
     local items = actionsFor(entry)
-    local over = false
     Gui:beginLayerAtPos(Vec2f(menu.x, menu.y))
     Gui:beginVerticalContainer()
     Gui:setScale(s)
-    over = Gui:isMouseOver(FocusType.Scroll)
+    local over = Gui:isMouseOver(FocusType.Scroll)
     Gui:setBackgroundColor(MENU_BG)
     Gui:setBorderWidth(1)
     Gui:setBorderColor(PANEL_BORDER)
@@ -231,9 +269,32 @@ local function drawFilters()
         Gui:endContainer()
         if hover and Input:mouse():isPressed(MouseControl.Left) then
             SystemOverview:setFilter(category)
+            scroll = 0
         end
     end
     Gui:endContainer()
+end
+
+--- A column heading that sorts by its column when clicked.
+---@param label string
+---@param key string
+---@param width number
+---@param align integer|nil
+local function heading(label, key, width, align)
+    local active = SystemOverview.sortKey == key
+    local arrow = active and (SystemOverview.sortDescending and " v" or " ^") or ""
+    Gui:beginStackContainer()
+    Gui:setFixedWidth(width)
+    Gui:setChildrenAlignment(align or AlignHorizontal.Left, AlignVertical.Center)
+    local hover = Gui:isMouseOver(FocusType.Mouse)
+    Gui:setBackgroundColor(hover and ROW_HOVER or NO_COLOR)
+    Gui:text(label .. arrow, font(12), active and WHITE or DIM)
+    Gui:setAlignment(align or AlignHorizontal.Left, AlignVertical.Center)
+    Gui:endContainer()
+    if hover and Input:mouse():isPressed(MouseControl.Left) then
+        SystemOverview:setSort(key)
+        scroll = 0
+    end
 end
 
 --- One row; returns the click it took, if any ("left" / "right").
@@ -246,12 +307,21 @@ local function drawRow(entry, apTarget)
     Gui:setFixedHeight(ROW_HEIGHT)
     Gui:setChildrenAlignment(AlignHorizontal.Left, AlignVertical.Center)
     local hover = Gui:isMouseOver(FocusType.Mouse)
-    local selected = SystemOverview.selected == entry.entity
-    Gui:setBackgroundColor((hover and ROW_HOVER) or (selected and ROW_SELECTED) or NO_COLOR)
+    local selected = same(SystemOverview.selected, entry.entity)
+    local targeted = game:isTarget(entry.entity)
+    Gui:setBackgroundColor((hover and ROW_HOVER) or (targeted and ROW_TARGET)
+        or (selected and ROW_SELECTED) or NO_COLOR)
 
-    -- What the player has pointed at it: the autopilot, the camera
-    local marker = (apTarget == entry.entity and "> ") or (game.lookingAt == entry.entity and "o ") or "  "
-    cell(marker .. clip(entry.name, 30), COL_NAME, colorOf(entry), 14)
+    -- What the player has pointed at it: weapons, the autopilot, the camera
+    local marker = "  "
+    if targeted then
+        marker = game.attacking and "X " or "+ "
+    elseif same(apTarget, entry.entity) then
+        marker = "> "
+    elseif same(game.lookingAt, entry.entity) then
+        marker = "o "
+    end
+    cell(marker .. clip(entry.name, 30), COL_NAME, targeted and GOLD or colorOf(entry), 14)
     cell(entry.kind, COL_KIND, GREY, 13)
     cell(UniverseScaleConfig:formatDistance(entry.distance), COL_DIST, WHITE, 14, AlignHorizontal.Right)
     Gui:endContainer()
@@ -263,18 +333,51 @@ local function drawRow(entry, apTarget)
     return nil
 end
 
+--- The scroll bar beside the rows: a track the height of the rows shown,
+--- and a knob whose size and place are the share of the list in view.
+---@param total integer
+---@param rows integer
+local function drawScrollbar(total, rows)
+    local trackHeight = rows * ROW_HEIGHT
+    Gui:beginVerticalContainer()
+    Gui:setFixedSize(BAR_WIDTH, trackHeight)
+    Gui:setBackgroundColor(total > rows and BAR_BG or NO_COLOR)
+    if total > rows then
+        local knob = math.max(12, math.floor(trackHeight * rows / total))
+        local top = math.floor((trackHeight - knob) * scroll / math.max(1, total - rows))
+        box(BAR_WIDTH, top, nil)
+        box(BAR_WIDTH, knob, BAR_KNOB)
+    end
+    Gui:endContainer()
+end
+
 --- The whole panel, and the menu over it.
 function OverviewPanel.render()
     local game = LimitTheoryRedux
     if not (game and game.overviewShowing and game:overviewShowing()) then
         menu = nil
-        GameState.ui.mouseOverPanel = false
+        UIMouse.overPanel = false
         return
     end
 
     local s = hudScale()
     local cfg = Config.game.overview
-    local shown, hidden = SystemOverview:visible(cfg.maxRows or 30)
+    local list = SystemOverview:visible()
+    local rows = math.max(1, cfg.maxRows or 18)
+    local total = #list
+    -- The wheel scrolls the list while the cursor is over the panel (last
+    -- frame's answer: the panel has not been laid out yet this frame)
+    if UIMouse.overPanel and not menu then
+        local wheel = Input:mouse():value(MouseControl.ScrollY)
+        if math.abs(wheel) > 0.001 then
+            -- Notches, rounded away from zero symmetrically (floor(x - 0.5)
+            -- would make one notch down two)
+            local notches = wheel > 0 and math.floor(wheel + 0.5) or -math.floor(-wheel + 0.5)
+            if notches == 0 then notches = wheel > 0 and 1 or -1 end
+            scroll = scroll - notches * WHEEL_ROWS
+        end
+    end
+    scroll = math.max(0, math.min(scroll, math.max(0, total - rows)))
     local apTarget = autopilotTarget()
     local clickedEntry, clickKind = nil, nil
 
@@ -303,34 +406,49 @@ function OverviewPanel.render()
 
     drawFilters()
 
-    -- Column headings
+    -- Column headings: click to sort
     Gui:beginHorizontalContainer()
-    cell("  Name", COL_NAME, DIM, 12)
-    cell("Type", COL_KIND, DIM, 12)
-    cell("Distance", COL_DIST, DIM, 12, AlignHorizontal.Right)
+    heading("  Name", "name", COL_NAME)
+    heading("Type", "type", COL_KIND)
+    heading("Distance", "distance", COL_DIST, AlignHorizontal.Right)
     Gui:endContainer()
 
-    for _, entry in ipairs(shown) do
+    -- The rows in view, with the scroll bar beside them
+    Gui:beginHorizontalContainer()
+    Gui:beginVerticalContainer()
+    Gui:setFixedWidth(COL_NAME + COL_KIND + COL_DIST)
+    for i = scroll + 1, math.min(total, scroll + rows) do
+        local entry = list[i]
         local click = drawRow(entry, apTarget)
         if click then clickedEntry, clickKind = entry, click end
     end
-    if #shown == 0 then
-        cell("Nothing here matches the filters.", WIDTH - 16, DIM, 13)
+    if total == 0 then
+        cell("Nothing here matches the filters.", COL_NAME + COL_KIND + COL_DIST, DIM, 13)
     end
-    if hidden > 0 then
-        cell(string.format("+%d more: filter some out, or fly closer", hidden), WIDTH - 16, DIM, 12)
+    Gui:endContainer()
+    box(4, 1, nil)
+    drawScrollbar(total, rows)
+    Gui:endContainer()
+
+    -- Where the list is, and what it leaves out
+    local footer
+    if total > rows then
+        footer = string.format("%d-%d of %d  ·  wheel to scroll", scroll + 1, math.min(total, scroll + rows), total)
+    else
+        footer = string.format("%d listed", total)
     end
-    if (SystemOverview.filters.asteroid) then
-        cell(string.format("Asteroids within %s", UniverseScaleConfig:formatDistance(cfg.asteroidRange or 10)),
-            WIDTH - 16, DIM, 11)
+    if SystemOverview.filters.asteroid then
+        footer = footer .. string.format("  ·  asteroids within %s",
+            UniverseScaleConfig:formatDistance(cfg.asteroidRange or 10))
     end
+    cell(footer, WIDTH - 16, DIM, 11)
 
     Gui:endContainer()
     Gui:endContainer()
 
     -- The menu, over everything
     local overMenu = drawMenu(s)
-    GameState.ui.mouseOverPanel = overPanel or overMenu
+    UIMouse.overPanel = overPanel or overMenu
 
     -- Clicks: a press outside an open menu closes it; on a row it selects,
     -- doubles to approach, or opens the menu there
@@ -345,7 +463,7 @@ function OverviewPanel.render()
             menu = { entry = clickedEntry, x = pos.x + 4, y = pos.y + 4 }
         else
             local t = now()
-            if lastClick.entity == clickedEntry.entity and t - lastClick.time < DOUBLE_CLICK then
+            if same(lastClick.entity, clickedEntry.entity) and t - lastClick.time < DOUBLE_CLICK then
                 lastClick.entity, lastClick.time = nil, -1
                 game:approach(clickedEntry.entity, clickedEntry.name)
             else

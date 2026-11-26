@@ -122,6 +122,13 @@ local WeaponBattery = Class("WeaponBattery", function(self, construction, option
     self.lightEffects = {}
     self.lastShotOrder = {}
     self.targetCandidates = {}
+    ---@type Entity|nil the contact the mounts should all take when they can
+    --- (the player's locked target); passed to WeaponSystem:chooseBestTarget
+    self.focusTargetEntity = nil
+    ---@type Entity|nil a contact to engage whatever its team (the player's
+    --- Attack on a ship that is not hostile); WeaponCombatSystem adds it to
+    --- the candidates
+    self.attackEntity = nil
 
     -- Per-mount combat role, for spreading the mounts over the contacts
     self.weaponRoleByMount = {}

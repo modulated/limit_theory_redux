@@ -1,5 +1,6 @@
 local CameraController  = require("Modules.Cameras.Managers").CameraController
 local PhysicsComponents = require("Modules.Physics.Components")
+local UIMouse = require("Input.UIMouse")
 local CameraActions     = require("Input.ActionBindings.CameraActions")
 local CursorManager     = require("Input.CursorManager")
 local UserSettings      = require("Shared.UserSettings")
@@ -109,7 +110,7 @@ function OrbitCameraController:onInput(dt)
     -- MouseRight). A right press over a panel is the panel's (the overview's
     -- context menu): it starts no drag, though a drag begun elsewhere carries
     -- on across one.
-    local overPanel = GameState.ui.mouseOverPanel
+    local overPanel = UIMouse.overPanel
     self:setDragging(CameraActions.MouseCapture:isDown() and (self.dragging or not overPanel))
 
     -- The Mouse Sensitivity setting scales the mouse; Invert Vertical Look
