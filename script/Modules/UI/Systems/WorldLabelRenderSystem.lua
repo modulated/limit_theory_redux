@@ -37,6 +37,8 @@ function WorldLabelRenderSystem:draw(labeledEntities, moonDistThreshold)
     local cx, cy, cz = camPos.x, camPos.y, camPos.z
 
     for _, entry in ipairs(labeledEntities) do
+        -- A ship beyond sensor range carries no label (LimitTheoryRedux:updateSensors)
+        if entry.hidden then goto next_label end
         -- Hide moon labels unless camera is near the parent planet
         if entry.isMoon and entry.parentPos then
             local dx = cx - entry.parentPos.x

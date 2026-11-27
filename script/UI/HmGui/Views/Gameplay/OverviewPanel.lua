@@ -162,7 +162,7 @@ local function actionsFor(entry)
     end
 
     -- Ships: lock, attack, release (not the player's own drones and hires)
-    if entry.category == "ship" and entry.faction ~= "player" then
+    if entry.category == "ship" and entry.faction ~= "player" and not entry.signature then
         if game:isTarget(entry.entity) then
             if not game.attacking and not entry.hostile then
                 add("Attack", function() game:attackTarget(entry.entity, entry.name, entry.faction) end)

@@ -261,8 +261,8 @@ Config.game = {
             -- other systems, which go through levels 1 and up.
             [0] = { name = "Peaceful", description = "Quiet space. The odd pirate scout, easily seen off.",
               color = { 0.55, 0.95, 0.85 }, weight = 0,
-              npcs = { security = 2, trader = 3, pirate = 0, pirateScout = 1, pirateMerchant = 0,
-                       miner = 3, worker = 4 } },
+              npcs = { security = 3, trader = 6, pirate = 0, pirateScout = 2, pirateMerchant = 0,
+                       miner = 6, worker = 6 } },
             { name = "Secure", description = "Security patrols. Pirates are rarely seen.",
               color = { 0.35, 0.75, 1.0 }, weight = 3,
               npcs = { security = 3, trader = 3, pirate = 0, pirateMerchant = 0, miner = 2, worker = 4 } },
@@ -582,6 +582,20 @@ Config.game = {
             offset = 2.2,         -- from the outpost's centre, in its radii
             rebuildCost = 60000,
         },
+    },
+
+    -- Sensors (LimitTheoryRedux:mapNpcs): a ship within `range` game units
+    -- (10 km each; times the fitted scanRange stat) is identified on the maps,
+    -- the overview and in space. Beyond it, it is only a signature: a marker at
+    -- a rough position (off by `noiseShare` of the distance, at most
+    -- `maxNoise`, drawn afresh every `refresh` seconds) with a strength by
+    -- hull size, and no name or faction -- something to hunt down.
+    sensors = {
+        range     = 400,
+        noiseShare = 0.10,
+        maxNoise  = 1500,
+        refresh   = 5,
+        strength  = { small = "Faint", medium = "Moderate", large = "Strong" },
     },
 
     -- The action bar (Modules/Constructs/Managers/ActionBar.lua): how many

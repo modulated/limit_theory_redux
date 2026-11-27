@@ -364,12 +364,23 @@ function SystemOverview:refresh(game)
     end
 
     -- Ships in flight
-    for _, npc in ipairs(game.npcs and game.npcs:mapEntries() or {}) do
+    -- Ships, through the sensors: beyond their range, a signature at a rough
+    -- place, unnamed (LimitTheoryRedux:mapNpcs)
+    for _, npc in ipairs(game.mapNpcs and game:mapNpcs() or {}) do
         local pos, radius = placeOf(npc.entity)
-        local hostile = npc.faction and Factions.isHostile(npc.faction, Factions.Player) or false
-        add({ entity = npc.entity, name = npc.label or "Ship", kind = "Ship",
-            category = "ship", radius = radius, color = npc.color, hostile = hostile,
-            faction = npc.faction }, pos)
+        if npc.signature then
+            if pos and npc.offset then
+                pos = Position(pos.x + npc.offset.x, pos.y + npc.offset.y, pos.z + npc.offset.z)
+            end
+            add({ entity = npc.entity, name = npc.label, kind = "Signature",
+                category = "ship", radius = 0, color = npc.color, hostile = false,
+                signature = true }, pos)
+        else
+            local hostile = npc.faction and Factions.isHostile(npc.faction, Factions.Player) or false
+            add({ entity = npc.entity, name = npc.label or "Ship", kind = "Ship",
+                category = "ship", radius = radius, color = npc.color, hostile = hostile,
+                faction = npc.faction }, pos)
+        end
     end
 
     -- Asteroids: the nearest few, within reach of being worth listing

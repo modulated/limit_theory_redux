@@ -90,8 +90,11 @@ function SystemMap3D:collectEntities(state, rootEntity, shipEntity, npcEntries)
         local body = rbCmp and rbCmp:getRigidBody()
         if body then
             live[npc.entity] = true
+            local p = body:getPos()
+            -- A signature is drawn where the sensors put it, not where it is
+            if npc.offset then p = Position(p.x + npc.offset.x, p.y + npc.offset.y, p.z + npc.offset.z) end
             table.insert(state.entities, {
-                entity = npc.entity, label = npc.label, pos = body:getPos(),
+                entity = npc.entity, label = npc.label, pos = p,
                 scale = body:getBoundingRadius(), orbitRadius = 0, inclination = 0,
                 isMoon = false, parentPos = nil, trailWidth = 0, isNpc = true, labelPriority = 30,
                 color = Color(npc.color[1], npc.color[2], npc.color[3], 0.8),

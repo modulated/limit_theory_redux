@@ -1841,8 +1841,9 @@ function LimitTheoryRedux:targetNearestHostile()
     local here = rbCmp and rbCmp:getRigidBody() and rbCmp:getRigidBody():getPos()
     if not here then return end
     local hostiles = {}
-    for _, npc in ipairs(self.npcs:mapEntries()) do
-        if npc.faction and npc.entity:isValid() and Factions.isHostile(npc.faction, Factions.Player) then
+    -- Only what the sensors have identified (a signature is not a target yet)
+    for _, npc in ipairs(self:mapNpcs()) do
+        if not npc.signature and npc.faction and npc.entity:isValid() and Factions.isHostile(npc.faction, Factions.Player) then
             local body = npc.entity:get(PhysicsComponents.RigidBody)
             local pos = body and body:getRigidBody() and body:getRigidBody():getPos()
             if pos then
@@ -1852,7 +1853,7 @@ function LimitTheoryRedux:targetNearestHostile()
         end
     end
     if #hostiles == 0 then
-        self:notify("No hostile ships in this system.", { 0.75, 0.8, 0.85 })
+        self:notify("No hostile ship within sensor range.", { 0.75, 0.8, 0.85 })
         return
     end
     table.sort(hostiles, function(a, b) return a.d < b.d end)
@@ -2212,7 +2213,80 @@ end
 --- The NPC ships for the system maps ({entity, label, color} each).
 ---@return table[]
 function LimitTheoryRedux:mapNpcs()
-    return self.npcs and self.npcs:mapEntries() or {}
+    local entries = self.npcs and self.npcs:mapEntries() or {}
+    local here = self:shipPosition()
+    if not here then return entries end
+    local cfg = Config.game.sensors
+    local range = self:sensorRange()
+    local bucket = math.floor((self.simTime or 0) / cfg.refresh)
+    local out = {}
+    for _, npc in ipairs(entries) do
+        local rbCmp = npc.entity:get(PhysicsComponents.RigidBody)
+        local body = rbCmp and rbCmp:getRigidBody()
+        local p = body and body:getPos()
+        local d = p and math.sqrt((p.x - here.x) ^ 2 + (p.y - here.y) ^ 2 + (p.z - here.z) ^ 2) or 0
+        if npc.faction == Factions.Player or d <= range then
+            out[#out + 1] = npc
+        else
+            -- A signature: a rough place (the same for `refresh` seconds,
+            -- then drawn afresh), a strength by hull size, nothing else
+            local noise = math.min(d * cfg.noiseShare, cfg.maxNoise)
+            local function jitter(channel)
+                local v = math.sin((npc.entity.id % 1000003) * 12.9898 + bucket * 78.233 + channel * 37.719) * 43758.5453
+                return (v - math.floor(v)) * 2 - 1
+            end
+            local strength = cfg.strength[npc.sizeClass] or "Moderate"
+            out[#out + 1] = {
+                entity = npc.entity, signature = true, sizeClass = npc.sizeClass,
+                label = strength .. " signature",
+                color = { 0.85, 0.75, 0.45 },
+                offset = { x = jitter(1) * noise, y = jitter(2) * noise * 0.3, z = jitter(3) * noise },
+            }
+        end
+    end
+    return out
+end
+
+--- How far the ship's sensors identify a ship (Config.game.sensors; a
+--- better sensor fit reaches further).
+---@return number game units
+function LimitTheoryRedux:sensorRange()
+    return Config.game.sensors.range * self:fitStat("scanRange", 1)
+end
+
+--- The player's ship's position, or nil.
+---@return Position|nil
+function LimitTheoryRedux:shipPosition()
+    local rbCmp = self.playerShip and self.playerShip:isValid() and self.playerShip:get(PhysicsComponents.RigidBody)
+    local body = rbCmp and rbCmp:getRigidBody()
+    return body and body:getPos() or nil
+end
+
+--- A few times a second: ships beyond sensor range lose their labels in
+--- space (they are only signatures on the maps and the overview).
+---@param dt number
+function LimitTheoryRedux:updateSensors(dt)
+    self.sensorTimer = (self.sensorTimer or 0) - dt
+    if self.sensorTimer > 0 or not self.npcs then return end
+    self.sensorTimer = 0.25
+    local here = self:shipPosition()
+    local range = self:sensorRange()
+    for _, npc in ipairs(self.npcs:mapEntries()) do
+        local entry = npc.record and npc.record.labelEntry
+        if entry then
+            local hidden = false
+            if here and npc.faction ~= Factions.Player then
+                local rbCmp = npc.entity:get(PhysicsComponents.RigidBody)
+                local p = rbCmp and rbCmp:getRigidBody() and rbCmp:getRigidBody():getPos()
+                hidden = p ~= nil and ((p.x - here.x) ^ 2 + (p.y - here.y) ^ 2 + (p.z - here.z) ^ 2) > range * range
+            end
+            if hidden and not entry.hidden then
+                -- Lost from the sensors: a lock on it goes too
+                if self.target and self:isTarget(npc.entity) then self:clearTarget() end
+            end
+            entry.hidden = hidden
+        end
+    end
 end
 
 --- The key a generated station's player-side things are filed under (its
@@ -3734,6 +3808,31 @@ function LimitTheoryRedux:drawMapFrame()
 end
 
 --- Close whichever map is open; the ship's controls come back next frame.
+--- Open a map by number (1 the 2D system map, 2 the 3D one, 3 the galaxy;
+--- 0 closes): M cycles through them, the map's tabs pick one.
+---@param mode integer
+function LimitTheoryRedux:setMapMode(mode)
+    self.mapMode = mode
+    self.mapState.enabled = (self.mapMode == 1)
+    self.map3DState.enabled = (self.mapMode == 2)
+    self.galaxyMapState.enabled = (self.mapMode == 3)
+
+    if self.mapMode == 1 then
+        self:openSystemMap()
+    elseif self.mapMode == 2 then
+        SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip, self:mapNpcs())
+        SystemMap3D:activate(self.map3DState)
+    else
+        SystemMap3D:deactivate(self.map3DState)
+        if self.mapMode == 3 then
+            GalaxyMap:open(self.galaxyMapState, self.galaxy, self.currentSystemId, self.course)
+            CursorManager:free()
+        else
+            self.mapClosedFrame = true
+        end
+    end
+end
+
 function LimitTheoryRedux:closeMap()
     if self.mapMode == 0 then return end
     SystemMap3D:deactivate(self.map3DState)
@@ -4096,25 +4195,12 @@ function LimitTheoryRedux:onInput(data)
 
     if GeneralActions.CycleMapMode:isPressed() then
         -- 2D map, 3D map, then the galaxy map when there is a galaxy
-        self.mapMode = (self.mapMode + 1) % (self.galaxy and 4 or 3)
-        self.mapState.enabled = (self.mapMode == 1)
-        self.map3DState.enabled = (self.mapMode == 2)
-        self.galaxyMapState.enabled = (self.mapMode == 3)
-
-        if self.mapMode == 1 then
-            self:openSystemMap()
-        elseif self.mapMode == 2 then
-            SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip, self:mapNpcs())
-            SystemMap3D:activate(self.map3DState)
-        else
-            SystemMap3D:deactivate(self.map3DState)
-            if self.mapMode == 3 then
-                GalaxyMap:open(self.galaxyMapState, self.galaxy, self.currentSystemId, self.course)
-                CursorManager:free()
-            else
-                self.mapClosedFrame = true
-            end
-        end
+        self:setMapMode((self.mapMode + 1) % (self.galaxy and 4 or 3))
+    elseif self.mapMode ~= 0 and Input:mouse():isPressed(MouseControl.Left) then
+        -- A click on a tab of the map's top bar opens that map
+        local pos = Input:mouse():position()
+        local tab = MapFrame.tabAt(pos.x, pos.y)
+        if tab and tab ~= self.mapMode then self:setMapMode(tab) end
     end
 
     if self.mapClosedFrame and self.mapMode == 0 then
@@ -4278,6 +4364,7 @@ function LimitTheoryRedux:onStateSim(data)
     self.player:update(dt)
     self:updateCloak(dt)
     self:syncActionBar()
+    self:updateSensors(dt)
     self:updateMining(dt)
     AbilitySystem:update(self.playerShip, dt)
     -- A ship the refit screen asked for: the rebuild happens here, not inside

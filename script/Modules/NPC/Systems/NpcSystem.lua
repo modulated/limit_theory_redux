@@ -472,7 +472,8 @@ function NpcSystem:mapEntries()
     for _, record in ipairs(self.records) do
         if not record.dead and not record.pilot.docked then
             list[#list + 1] = { entity = record.entity, label = record.label, color = record.labelEntry.color,
-                faction = record.faction }
+                faction = record.faction, role = record.role, record = record,
+                sizeClass = record.pilot.stats.sizeClass or "medium" }
         end
     end
     return list

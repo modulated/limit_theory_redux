@@ -99,6 +99,11 @@ function SystemMap:collectEntities(state, rootEntity, shipEntity, npcEntries)
             entry.label = npc.label
             entry.color = npc.color
             entry.pos = body:getPos()
+            -- A signature is drawn where the sensors put it, not where it is
+            if npc.offset then
+                local p = entry.pos
+                entry.pos = Position(p.x + npc.offset.x, p.y + npc.offset.y, p.z + npc.offset.z)
+            end
             entry.scale = body:getBoundingRadius()
             live[npc.entity] = entry
             table.insert(state.entities, entry)
