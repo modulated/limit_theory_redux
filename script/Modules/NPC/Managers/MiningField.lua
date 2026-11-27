@@ -93,7 +93,7 @@ function MiningField:build(belts, seed)
         end
     end
     if fallbackFields > 0 then
-        Log.Debug("Mining: %d of %d fields had no composition, used Config.game.mining.ores",
+        Log.Debug("Mining: %d of %d fields had no composition, used the ores.toml fallback",
             fallbackFields, #belts)
     end
     Log.Info("Mining: %d mineable rocks", #self.rocks)

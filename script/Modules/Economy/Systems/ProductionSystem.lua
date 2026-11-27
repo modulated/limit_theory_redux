@@ -25,7 +25,7 @@ local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
 ---@class ProductionSystem
 local ProductionSystem = {}
 
---- The item group whose outputs never block a line (`ItemDefs.lua`).
+--- The item group whose outputs never block a line (res/data/items.toml).
 local WASTE_GROUP = "Waste"
 
 --- What a recipe's inputs are worth, at equilibrium prices: how much has to

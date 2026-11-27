@@ -1,7 +1,7 @@
 ---One thing that can be bolted to a ship: a weapon for a mount, or a module
 ---for a slot.
 ---
----A fitting is an **item** first (`Shared/Definitions/ItemDefs.lua`): you buy
+---A fitting is an **item** first (`res/data/items.toml`): you buy
 ---it on a station's market or make it in a rented factory, it sits in your
 ---hangar, and fitting it takes it out of the hangar and puts it on the ship.
 ---Unfitting puts it back. So a loadout is a pile of goods you own, and the
@@ -20,7 +20,7 @@
 ---A module may be both passive and active (an afterburner's thrust is a
 ---scale, its burn is an ability).
 ---@class FittingDefinition
----@field id integer permanent, written by hand in FittingDefs.lua
+---@field id integer permanent, written by hand in res/data/modules.toml
 ---@field name string the lookup key, the plain letters of the name
 ---@field displayName string the name as written
 ---@field description string one line, for the refit screen

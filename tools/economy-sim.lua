@@ -59,14 +59,14 @@
                          a recipe, so that making it pays: the inputs' value
                          times `markup` (default 1.4), resolved up the chain
                          from the mined goods. Prints the lines to paste into
-                         Shared/Definitions/ItemDefs.lua, and stops.
+                         res/data/items.toml, and stops.
       --rebalance [markup]
                          suggest input counts for every recipe so that a run
                          pays: inputs worth the outputs divided by `markup`
                          (default 1.4), keeping the inputs in proportion.
                          Legacy's quantities were never balanced against the
                          item prices -- most recipes destroy value as written.
-                         Prints the counts for ProductionDefs.lua, and stops.
+                         Prints the counts for res/data/recipes.toml, and stops.
       --help
 
   Read the summary for: lines that never ran (starved: their inputs have no
@@ -93,6 +93,8 @@ package.path = table.concat({
 }, ";")
 
 dofile(repoRoot .. "/script/Core/Structures/Class.lua")
+-- The game's data files (res/data/*.toml), wherever this is run from
+require("Shared.Data.Toml").addSearchPath(repoRoot .. "/res/data/")
 
 local quiet = false
 --- The report: always printed (`--quiet` only drops the per-hour table).
@@ -313,7 +315,7 @@ if args.rebalance then
         return total
     end
     out("Input counts at a markup of %.2f: what each recipe should eat for a run", markup)
-    out("to be worth making at the item prices in ItemDefs.lua. The inputs keep")
+    out("to be worth making at the item prices in items.toml. The inputs keep")
     out("their proportions and never fall below one.")
     out("")
     for _, recipe in ipairs(Productions:getAll()) do
@@ -395,7 +397,7 @@ if args.reprice then
 
     out("Suggested equilibrium prices at a markup of %.2f: what a made thing has", markup)
     out("to be worth for a line that makes it to pay for its inputs, its")
-    out("by-products and the station's cut. Paste into ItemDefs.lua.")
+    out("by-products and the station's cut. Paste into res/data/items.toml.")
     out("")
     out("    %-24s %-20s %8s %8s", "item", "group", "now", "suggest")
     local ids = {}
@@ -546,12 +548,12 @@ local function useStore(store)
     MarketSystem:setPlayerAccess({ hangar = function() return store end })
 end
 
---- The ores of the system, as `Config.game.mining.ores` names them.
+--- The ores of the system: the fallback list of res/data/ores.toml.
 ---@return table[] { def, weight }, with `total`
 local function systemOres()
     local ores, total = {}, 0
-    for _, ore in ipairs(Config.game.mining.ores) do
-        local def = Items:getByName(ore.name)
+    for _, ore in ipairs(require("Shared.Data.OreData").fallback()) do
+        local def = Items:getDefinition(ore.id)
         if def then
             ores[#ores + 1] = { def = def, weight = ore.weight }
             total = total + ore.weight

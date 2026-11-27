@@ -357,17 +357,7 @@ Config.game = {
         playerRange     = 0.45,  -- how close the player's ship mines a rock from (plus its radius)
         playerTimePerUnit = 3.0, -- seconds the player's laser takes per unit (as the NPC miners)
         playerScanInterval = 0.3, -- seconds between looks for a rock in reach
-        ores = {
-            { name = "Silicate Ore",  weight = 5 },
-            { name = "Iron Ore",      weight = 4 },
-            { name = "Aluminum Ore",  weight = 3 },
-            { name = "Copper Ore",    weight = 2 },
-            -- Carbonaceous chondrite: the commonest rock out there, and the
-            -- carbon feedstock the refineries want
-            { name = "Carboniferous Ore", weight = 2.5 },
-            { name = "Beryllium Ore", weight = 1 },
-            { name = "Thorium Ore",   weight = 0.3 },
-        },
+        -- What the rocks hold is data: res/data/ores.toml
     },
 
     -- Credits (Modules/Economy/Managers/PlayerWallet.lua): bounties and repairs.
@@ -427,7 +417,7 @@ Config.game = {
     },
 
     -- Stations making things (Modules/Economy/Systems/ProductionSystem.lua).
-    -- The recipes are Shared/Definitions/ProductionDefs.lua; `timeScale`
+    -- The recipes are res/data/recipes.toml; `timeScale`
     -- compresses Legacy's durations (4 s to 4 hours) into a session.
     production = {
         timeScale      = 20.0, -- game seconds of production per real second
@@ -450,7 +440,7 @@ Config.game = {
 
     -- Fitting out a ship (Modules/Constructs/Systems/ShipFittingSystem.lua).
     -- Weapons go in the hull's mounts, modules in its slots; every one of
-    -- them is an item bought or made (Shared/Definitions/FittingDefs.lua).
+    -- them is an item bought or made (res/data/modules.toml).
     -- Refitting is free, but only at a station, out of its hangar.
     fitting = {
         startingHull  = "Small Hull", -- the hull a new game flies (Shared/Definitions/HullDefs.lua)

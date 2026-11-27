@@ -1,0 +1,197 @@
+# What can be fitted to a ship: weapons for its mounts, modules for its slots.
+#
+# Loaded at start-up by script/Shared/Definitions/FittingDefs.lua, which
+# checks every entry and stops with "res/data/modules.toml:<line>: ..." on a
+# mistake. One [[module]] block per fitting. A fitting is an item first (bought
+# or made, kept in a hangar, bolted on at a station): `item` names it.
+#
+#   id           permanent number: ships record their fit by id. Never change
+#                or reuse one (next free: see the end of this file).
+#   name         what the refit screen shows
+#   item         the item that is this fitting, named as in items.toml. One
+#                fitting per item.
+#   slot         "weapon" (a mount) or "module" (a slot)
+#   description  one line for the refit screen
+#
+# Weapons:
+#   weapon       the weapon it mounts, by its name in Enums.Weapon.Type:
+#                Laser, Plasma, LaserGreen, LaserBlue, LaserViolet, LaserBolt,
+#                XLLongChargeLaser, MissileRocket, MissileTorpedo, FlakCannon,
+#                Railgun
+#   size         the smallest mount it fits: "SM", "M", "L" or "XL"
+#
+# Modules:
+#   effects.add    stats added over the whole fit
+#   effects.scale  stats multiplied over the whole fit (after the adds)
+#                  Stats: maxShield, shieldRegen, armor, maxHealth, cargoMass,
+#                  thrust, turn, scanRange, miningRate, marketReach
+#   ability        an active module, on the number keys:
+#                  { key = "<ability>", cooldown = <s>, duration = <s>,
+#                    magnitude = <how much> }; key is one of shieldBoost,
+#                  afterburner, repairPulse, miningLaser, surveyScan (code in
+#                  Modules/Constructs/Systems/AbilitySystem.lua)
+
+[[module]]
+id = 1
+name = "Pulse Turret"
+item = "Ship Weapon, Pulse Turret"
+slot = "weapon"
+description = "A plasma repeater. Good against hulls, poor at long range."
+weapon = "Plasma"
+size = "M"
+
+[[module]]
+id = 2
+name = "Beam Turret"
+item = "Ship Weapon, Beam Turret"
+slot = "weapon"
+description = "A bolt laser: accurate, steady damage, hungry for power."
+weapon = "LaserBolt"
+size = "M"
+
+[[module]]
+id = 3
+name = "Launcher Turret"
+item = "Ship Weapon, Launcher Turret"
+slot = "weapon"
+description = "A flak cannon. Spreads fire; made for small, fast things."
+weapon = "FlakCannon"
+size = "M"
+
+[[module]]
+id = 4
+name = "Cannon Bay"
+item = "Ship Weapon, Cannon Bay"
+slot = "weapon"
+description = "An assault railgun. One heavy slug at a time, a long way."
+weapon = "Railgun"
+size = "L"
+
+[[module]]
+id = 5
+name = "Beam Bay"
+item = "Ship Weapon, Beam Bay"
+slot = "weapon"
+description = "The XL long-charge laser: slow to charge, ruinous when it lands."
+weapon = "XLLongChargeLaser"
+size = "XL"
+
+[[module]]
+id = 6
+name = "Shield Capacitor"
+item = "Shield Capacitor"
+slot = "module"
+description = "More shield to lose before the hull starts taking it."
+effects.add = { maxShield = 60 }
+effects.scale = { shieldRegen = 1.1 }
+
+[[module]]
+id = 7
+name = "Armour Plating"
+item = "Armour Plating"
+slot = "module"
+description = "Plate over the hull: tougher, heavier, slower."
+effects.add = { armor = 4, maxHealth = 150 }
+effects.scale = { thrust = 0.92, turn = 0.9 }
+
+[[module]]
+id = 8
+name = "Cargo Pod"
+item = "Cargo Pod"
+slot = "module"
+description = "Hold space, bolted on outside. Nothing else fits where it goes."
+effects.add = { cargoMass = 1200 }
+effects.scale = { thrust = 0.95, turn = 0.93 }
+
+[[module]]
+id = 9
+name = "Manoeuvring Thrusters"
+item = "Manoeuvring Thrusters"
+slot = "module"
+description = "Turns the ship harder. Costs nothing but the slot."
+effects.scale = { turn = 1.3 }
+
+[[module]]
+id = 10
+name = "Ship Sensor"
+item = "Ship Sensor"
+slot = "module"
+description = "Sees further: labels, scans and the prospecting range."
+effects.scale = { scanRange = 1.5 }
+
+[[module]]
+id = 11
+name = "Ship Computer"
+item = "Ship Computer"
+slot = "module"
+description = "Runs the guns: steadier tracking and a shade more shield."
+effects.scale = { shieldRegen = 1.2 }
+
+[[module]]
+id = 12
+name = "Thruster Engine"
+item = "Ship Engine, Thruster"
+slot = "module"
+description = "More push, everywhere."
+effects.scale = { thrust = 1.25 }
+
+[[module]]
+id = 13
+name = "Impeller Engine"
+item = "Ship Engine, Impeller"
+slot = "module"
+description = "A heavy drive: a lot more push, at the cost of turning."
+effects.scale = { thrust = 1.6, turn = 0.85 }
+
+[[module]]
+id = 14
+name = "Shield Booster"
+item = "Shield Booster"
+slot = "module"
+description = "Slams the shield back up. Nothing for a while after."
+effects.add = { maxShield = 20 }
+ability = { key = "shieldBoost", cooldown = 25, magnitude = 0.6 }
+
+[[module]]
+id = 15
+name = "Afterburner"
+item = "Afterburner"
+slot = "module"
+description = "A hard burn for a few seconds. Turns worse while it runs."
+ability = { key = "afterburner", cooldown = 18, duration = 6, magnitude = 2.2 }
+
+[[module]]
+id = 16
+name = "Hull Repair Pulse"
+item = "Hull Repair Pulse"
+slot = "module"
+description = "Welds the hull back together, once in a while, for free."
+ability = { key = "repairPulse", cooldown = 60, magnitude = 0.25 }
+
+[[module]]
+id = 17
+name = "Mining Laser"
+item = "Mining Laser"
+slot = "module"
+description = "Cuts ore out of a rock. Without one, a rock is just a rock."
+effects.scale = { miningRate = 1 }
+ability = { key = "miningLaser", cooldown = 0 }
+
+[[module]]
+id = 18
+name = "Survey Scanner"
+item = "Survey Scanner"
+slot = "module"
+description = "Reads what a rock holds, and how much is left of it."
+effects.scale = { scanRange = 1.25 }
+ability = { key = "surveyScan", cooldown = 8, magnitude = 2.5 }
+
+[[module]]
+id = 19
+name = "Market Datalink"
+item = "Market Datalink"
+slot = "module"
+description = "Reads the order books of systems further out than a ship's own feed reaches."
+effects.add = { marketReach = 2 }
+
+# The next free module id: 20

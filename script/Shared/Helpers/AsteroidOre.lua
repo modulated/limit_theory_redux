@@ -15,8 +15,8 @@ local Items = require("Shared.Registries.Items")
 --- The ore follows from the field's generated `Composition` (item ids with
 --- weights, by field type, from the ruleset) and from the asteroid's own seed,
 --- so it is the same every time it is asked and needs nothing stored.
---- `Config.game.mining.ores` is the fallback for a field the ruleset gave no
---- composition.
+--- The `[fallback]` of res/data/ores.toml is used for a field the ruleset
+--- gave no composition.
 ---@class AsteroidOre
 local AsteroidOre = {}
 
@@ -40,21 +40,18 @@ local oresByField = setmetatable({}, { __mode = "k" })
 local fallbackFields = setmetatable({}, { __mode = "k" })
 local configOresCache
 
---- `Config.game.mining.ores` as a weighted list of registry items.
+--- The fallback ores (res/data/ores.toml, `[fallback]`) as a weighted list
+--- of registry items.
 ---@return table list of { def = ItemDefinition, weight = number }, with `total`
 local function configOres()
     if configOresCache then return configOresCache end
     local ores, total = {}, 0
-    for _, ore in ipairs(Config.game.mining.ores) do
-        local def = Items:getByName(ore.name)
-        if def then
-            ores[#ores + 1] = { def = def, weight = ore.weight }
-            total = total + ore.weight
-        else
-            Log.Warn("AsteroidOre: Config.game.mining.ores names unknown item '%s'", tostring(ore.name))
-        end
+    for _, ore in ipairs(require("Shared.Data.OreData").fallback()) do
+        local def = Items:getDefinition(ore.id)
+        ores[#ores + 1] = { def = def, weight = ore.weight }
+        total = total + ore.weight
     end
-    assert(total > 0, "no ores: Config.game.mining.ores names no item in the registry")
+    assert(total > 0, "no ores: res/data/ores.toml has an empty [fallback]")
     ores.total = total
     configOresCache = ores
     return ores

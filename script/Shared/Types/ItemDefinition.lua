@@ -2,7 +2,7 @@
 ---under: the plain letters of the name (`IronOre`, `ShipEngineThruster`).
 ---`displayName` is the name as it was written ("Iron Ore", "Ship Engine,
 ---Thruster") and is what the UI and the logs show. `id` is
----written by hand in `Shared/Definitions/ItemDefs.lua` and must never change:
+---written by hand in `res/data/items.toml` and must never change:
 ---see the note in `Shared/Registries/Items.lua`.
 ---@class ItemDefinition
 ---@field id integer

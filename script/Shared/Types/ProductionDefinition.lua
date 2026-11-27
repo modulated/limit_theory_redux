@@ -2,7 +2,7 @@
 ---the outputs. The port of Legacy's `Systems/Economy/Production.lua` and the
 ---recipes of `Legacy/GameObjects/Elements/Economy/Content.lua`.
 ---
----`id` is written by hand in `Shared/Definitions/ProductionDefs.lua` and must
+---`id` is written by hand in `res/data/recipes.toml` and must
 ---never change or be reused, for the same reason item ids must not: a station
 ---records which recipes it runs. `name` is the lookup key, the plain letters
 ---of the name; `displayName` is the name as written.

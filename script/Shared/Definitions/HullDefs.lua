@@ -10,7 +10,7 @@ local Hulls = require("Shared.Registries.Hulls")
 -- A hull decides three things: the weapon mounts it has (how many, where, and
 -- what size class each takes), how many module slots it carries, and the
 -- stats it starts from. Everything else about a ship -- what is in those
--- mounts and slots -- is the fit (Shared/Definitions/FittingDefs.lua).
+-- mounts and slots -- is the fit (res/data/modules.toml).
 --
 -- `sockets` is the socket list the armed-ship builder generates mounts from
 -- (Modules/NPC/Managers/GunshipRecipe.lua passes it through). Each entry is a

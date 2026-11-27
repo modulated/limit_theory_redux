@@ -1,5 +1,5 @@
 --- Every weapon and module that can be bolted to a ship, from
---- `Shared/Definitions/FittingDefs.lua`: by key (`Fittings.ShieldBooster`),
+--- `res/data/modules.toml`: by key (`Fittings.ShieldBooster`),
 --- by id, and by the item it is (`Fittings:forItem(itemId)`), which is how
 --- the refit screen turns the goods in a hangar into things that can be
 --- fitted.
@@ -22,7 +22,7 @@ Fittings.all = {}
 ---@return FittingDefinition
 function Fittings:add(def, itemId)
     assert(type(def.id) == "number" and def.id > 0 and def.id % 1 == 0,
-        "fitting '" .. tostring(def.name) .. "' has no id: give it the next free one in FittingDefs.lua")
+        "fitting '" .. tostring(def.name) .. "' has no id: give it the next free one in res/data/modules.toml")
     assert(not self.byId[def.id],
         "fitting id " .. def.id .. " is used twice ('" .. tostring(def.name)
         .. "' and '" .. tostring(self.byId[def.id] and self.byId[def.id].name) .. "')")

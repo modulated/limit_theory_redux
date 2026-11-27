@@ -73,9 +73,13 @@ function InitSystem()
 
         -- Fill the data registries (items, recipes, fittings, hulls): see
         -- Shared/Definitions/__init__.lua for why this is explicit
+        -- A mistake in res/data/*.toml stops the game here, saying where it is:
+        -- a game with half its items missing would only fail later, somewhere
+        -- that has nothing to do with the mistake.
         local defsOk, defsErr = pcall(require, "Shared.Definitions")
         if not defsOk then
-            Log.Error("Failed to load the game's definitions: %s", tostring(defsErr))
+            Log.Error("Failed to load the game's data: %s", tostring(defsErr))
+            error("The game's data could not be loaded:\n" .. tostring(defsErr), 0)
         end
 
         -- Load Types

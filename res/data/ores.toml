@@ -1,0 +1,78 @@
+# What the asteroids hold: the resources a star system's rocks yield.
+#
+# Loaded by script/Shared/Data/OreData.lua, which checks every entry and stops
+# with "res/data/ores.toml:<line>: ..." on a mistake.
+#
+# A belt or a ring gets a composition from its star system's ruleset
+# (script/Config/Gen/Rulesets/*.lua), which names one of the [composition.*]
+# tables below by its key, for each type of field (rocky, icy). Each rock in
+# the field is made of one ore, picked by weight from its seed, so the same
+# rock always holds the same thing.
+#
+#   ores   the list, { item = "<item name>", weight = <relative chance> }.
+#          Items are named exactly as in items.toml. Weights are relative:
+#          they need not add up to 1.
+#
+# [fallback] is used for a field its ruleset gave no composition.
+
+[fallback]
+ores = [
+    { item = "Silicate Ore", weight = 5 },
+    { item = "Iron Ore", weight = 4 },
+    { item = "Aluminum Ore", weight = 3 },
+    { item = "Copper Ore", weight = 2 },
+    # Carbonaceous chondrite: the commonest rock out there, and the carbon
+    # feedstock the refineries want
+    { item = "Carboniferous Ore", weight = 2.5 },
+    { item = "Beryllium Ore", weight = 1 },
+    { item = "Thorium Ore", weight = 0.3 },
+]
+
+# The small systems (one planet and its ring): the basic ores only
+[composition.basic_rocky]
+ores = [
+    { item = "Silicate Ore", weight = 0.45 },
+    { item = "Iron Ore", weight = 0.35 },
+    { item = "Carboniferous Ore", weight = 0.1 },
+    { item = "Aluminum Ore", weight = 0.1 },
+]
+
+# Standard systems: a planet's rocky ring
+[composition.standard_ring_rocky]
+ores = [
+    { item = "Silicate Ore", weight = 0.45 },
+    { item = "Iron Ore", weight = 0.28 },
+    { item = "Carboniferous Ore", weight = 0.12 },
+    { item = "Aluminum Ore", weight = 0.1 },
+    { item = "Beryllium Ore", weight = 0.05 },
+]
+
+# Standard systems: a planet's icy ring
+[composition.standard_ring_icy]
+ores = [
+    { item = "Water Ice", weight = 0.55 },
+    { item = "Silicate Ore", weight = 0.2 },
+    { item = "Hydrogen", weight = 0.1 },
+    { item = "Carboniferous Ore", weight = 0.05 },
+    { item = "Helium", weight = 0.05 },
+    { item = "Nitrogen", weight = 0.03 },
+    { item = "Oxygen", weight = 0.02 },
+]
+
+# Standard systems: a rocky asteroid belt around the star
+[composition.standard_belt_rocky]
+ores = [
+    { item = "Silicate Ore", weight = 0.5 },
+    { item = "Iron Ore", weight = 0.4 },
+    { item = "Carboniferous Ore", weight = 0.1 },
+]
+
+# Standard systems: an icy belt, out past the frost line
+[composition.standard_belt_icy]
+ores = [
+    { item = "Water Ice", weight = 0.65 },
+    { item = "Hydrogen", weight = 0.15 },
+    { item = "Helium", weight = 0.1 },
+    { item = "Carboniferous Ore", weight = 0.05 },
+    { item = "Silicate Ore", weight = 0.05 },
+]

@@ -5,7 +5,7 @@ item that is defined, which of them can be mined, which can be traded, and the p
 that turn one into another. It is meant to be edited: the tables are the design surface, and the
 Status sections say how much of each is actually wired up.
 
-Status summary (2026-11): it all runs. 68 items with permanent ids; every belt and ring has a
+Status summary (2026-11): it all runs. 70 items with permanent ids; every belt and ring has a
 composition and mining reads it; a rock knows what it holds; stations hold stock, price it by how
 short they are, run the production chains against it, and trade with the player on a docked screen;
 every station has an order book where prices are whatever
@@ -19,18 +19,44 @@ saving.
 
 ## 1. Where it lives
 
+**The game's data is in `res/data/`**, as TOML files a person can edit and any tool can read:
+
+| File | What it holds |
+|------|---------------|
+| `res/data/items.toml` | every item: id, name, group, mass, energy density, base price |
+| `res/data/recipes.toml` | every recipe: id, class, duration, inputs and outputs by item name |
+| `res/data/modules.toml` | every weapon and module: the item it is, its slot and size, its effects and ability |
+| `res/data/ores.toml` | what the asteroids hold: the compositions the rulesets give their belts and rings, and the fallback |
+
+Each file's header explains its fields. The loaders (`script/Shared/Definitions/ItemDefs.lua`,
+`ProductionDefs.lua`, `FittingDefs.lua`, `script/Shared/Data/OreData.lua`) check every entry when the
+game starts, and a mistake stops it with the file, the line and what is wrong:
+
+    res/data/recipes.toml:140: recipe 10 (Iron Refinery): inputs, entry 2 names no item 'Iron Or' (names are as in items.toml)
+
+Unknown fields are refused too, so a misspelt key is not silently ignored. For balancing:
+
+    luajit tools/data-check.lua                 # check the files against each other
+    luajit tools/data-check.lua --csv recipes   # a spreadsheet: costs, values, margins
+    luajit tools/economy-sim.lua --recipes      # every recipe's margin at base prices
+
+To add an item, recipe or module: add a block to the file with the next free id (each file ends
+by saying which, and `data-check` prints them), name things as `items.toml` does, and run
+`data-check`. The hulls are still Lua (`Shared/Definitions/HullDefs.lua`): their weapon sockets
+are geometry, not balance.
+
 | What | File |
 |------|------|
 | Item type (`mass`, `energy`, `startEquilibriumPrice`) | `script/Shared/Types/ItemDefinition.lua` |
 | Item group type | `script/Shared/Types/ItemGroup.lua` |
 | Item registry (`Items.RawMaterials.IronOre`, `Items:getDefinition(id)`) | `script/Shared/Registries/Items.lua` |
-| **The item list** | `script/Shared/Definitions/ItemDefs.lua` |
-| Asteroid/ring composition (which ore a rock holds) | `script/Config/Gen/Rulesets/*.lua` (`composition`) |
+| **The item list** | `res/data/items.toml`, loaded by `script/Shared/Definitions/ItemDefs.lua` |
+| Asteroid/ring composition (which ore a rock holds) | `res/data/ores.toml`, named by `script/Config/Gen/Rulesets/*.lua` (`composition`) |
 | Asteroid entity carrying an item + quantity | `script/Modules/CelestialObjects/Entities/AsteroidEntity.lua` |
 | Mineable rocks, yields and regrowth | `script/Modules/NPC/Managers/MiningField.lua`, `Config.game.mining` |
 | Miner job (mine, dock, sell) | `script/Modules/NPC/Jobs/Mining.lua`, `Actions/MineAt.lua` |
 | Player credits (bounties, repairs) | `script/Modules/Economy/Managers/PlayerWallet.lua`, `Config.game.economy` |
-| **The production recipes** | `script/Shared/Definitions/ProductionDefs.lua`, `Shared/Registries/Productions.lua`, `Shared/Types/ProductionDefinition.lua` |
+| **The production recipes** | `res/data/recipes.toml`, loaded by `script/Shared/Definitions/ProductionDefs.lua`; `Shared/Registries/Productions.lua`, `Shared/Types/ProductionDefinition.lua` |
 | **The market**: order books, matching, escrow, fees | `script/Modules/Economy/Systems/MarketSystem.lua`, `Components/OrderBookComponent.lua` |
 | What a station reckons things are worth, its stock and imports | `script/Modules/Economy/Systems/StationTradeSystem.lua` |
 | What is known of other systems' markets | `script/Modules/Economy/Managers/MarketIntel.lua` |
@@ -40,19 +66,25 @@ saving.
 | The docked station screen | `script/UI/HmGui/Views/Gameplay/Station.lua` |
 | The player's hangar and rented lines | `script/Modules/Economy/Managers/PlayerFactories.lua` |
 | A station's crew | `script/Modules/Economy/Components/WorkforceComponent.lua`, `Modules/NPC/Jobs/Work.lua` |
-| **The hulls and the fittings** | `script/Shared/Definitions/HullDefs.lua`, `FittingDefs.lua` (section 8) |
+| **The hulls and the fittings** | `script/Shared/Definitions/HullDefs.lua`; `res/data/modules.toml` loaded by `FittingDefs.lua` (section 8) |
 | Mining and trade tuning | `Config.game.mining`, `Config.game.trade`, `Config.game.production`, `Config.game.factory`, `Config.game.cargo`, `Config.game.fitting` |
 
 ### Item definition
 
-```lua
-ItemDefinition { name = "Iron Ore", mass = 6, energyDensity = 1.68, startEquilibriumPrice = 30 }
+```toml
+[[item]]
+id = 6
+name = "Iron Ore"
+group = "Raw Materials"
+mass = 6
+energy_density = 1.68
+price = 30
 ```
 
 - `energy` is stored as `round(mass * energyDensity)`; `energyDensity` itself is not kept.
 - **`id` is written by hand and is permanent.** It is the only part of an item that may end up in
   saved data, so it is never changed and never reused: a new item takes the next free number (the
-  last line of `ItemDefs.lua` says which), and a removed item leaves its number unused. The registry
+  last line of `items.toml` says which), and a removed item leaves its number unused. The registry
   asserts that every item has an id and that no two share one, so a mistake fails at load instead of
   quietly turning someone's cargo into something else. Ids 1–51 are the numbers the old
   registration-order scheme had given out, so nothing shifted when they were written down.
@@ -232,7 +264,7 @@ decides it, so every part of the game agrees:
 
 Nothing shows the ore in the HUD yet: the rocks carry it, and reading it is the scanner's job.
 
-`Config.game.mining.ores` is the fallback for a field the generator gave no composition (it is
+The `[fallback]` of `res/data/ores.toml` is used for a field the generator gave no composition (it is
 logged at debug level when that happens):
 
 | Ore | Weight | Share |
@@ -304,7 +336,7 @@ entities, price and marketplace components and its test state: there is one mark
 
 ## 5. Production (crafting)
 
-The recipes are `script/Shared/Definitions/ProductionDefs.lua`, in the `Productions` registry, and
+The recipes are `res/data/recipes.toml`, in the `Productions` registry, and
 `Modules/Economy/Systems/ProductionSystem.lua` runs them: a line takes its inputs out of the
 station's stock when it starts, counts down its duration (compressed by
 `Config.game.production.timeScale`) and puts the outputs in when it finishes. Nothing is made out
@@ -503,7 +535,7 @@ like anything else, and the whole of the above economy is what supplies them.
 | What | File |
 |------|------|
 | The hulls that can be flown | `script/Shared/Definitions/HullDefs.lua` -> `Shared/Registries/Hulls.lua` |
-| The parts that go in them | `script/Shared/Definitions/FittingDefs.lua` -> `Shared/Registries/Fittings.lua` |
+| The parts that go in them | `res/data/modules.toml` -> `Shared/Definitions/FittingDefs.lua` -> `Shared/Registries/Fittings.lua` |
 | Working a fit out and applying it | `script/Modules/Constructs/Systems/ShipFittingSystem.lua` |
 | Modules that fire on a key | `script/Modules/Constructs/Systems/AbilitySystem.lua` |
 | The ships the player owns, and their fits | `Modules/Constructs/Managers/PlayerFleet.lua` |
