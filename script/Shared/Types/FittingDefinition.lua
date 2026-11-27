@@ -30,6 +30,7 @@
 ---@field weaponId integer|nil the weapon it mounts (Enums.Weapon.Type)
 ---@field effects table|nil { add = { stat = number }, scale = { stat = number } }
 ---@field ability table|nil { key = string, cooldown = number, duration = number|nil, magnitude = number|nil }
+---@field tool table|nil a mounted tool (not a gun): { kind = "mining", cycle = seconds, units = per cycle }
 ---@overload fun(args: table): FittingDefinition
 local FittingDefinition = Class("FittingDefinition")
 
@@ -71,7 +72,14 @@ function FittingDefinition.new(args)
     self.weaponId = args.weaponId
     self.effects = args.effects
     self.ability = args.ability
+    self.tool = args.tool
     return self
+end
+
+--- A tool on a mount (the mining laser): aimed, but never a gun.
+---@return boolean
+function FittingDefinition:isTool()
+    return self.tool ~= nil
 end
 
 ---@return boolean

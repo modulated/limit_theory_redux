@@ -595,11 +595,22 @@ module, which goes in a slot. A module either changes a stat or does something o
 - *Passive*: Shield Capacitor, Armour Plating, Cargo Pod, Manoeuvring Thrusters, Ship Sensor, Ship
   Computer, Thruster Engine, Impeller, Market Datalink. They add to a stat and then scale it, in
   that order, so two of a thing stack sensibly.
-- *Active*: Shield Booster, Afterburner, Hull Repair Pulse, Survey Scanner — bound to the number
-  keys 1-4, each with its own cooldown, shown as a HUD row. A module that cannot do anything (a
-  full shield, an undamaged hull) refuses and costs no cooldown.
-- *Held*: the Mining Laser. Without one fitted the mining key says so and nothing happens, which is
-  the one place a fitting gates a verb outright.
+- *Active*: Shield Booster, Afterburner, Hull Repair Pulse, Survey Scanner — on the action bar,
+  each with its own cooldown. A module that cannot do anything (a full shield, an undamaged hull)
+  refuses and costs no cooldown.
+- *Tool*: the Mining Laser goes on a weapon **mount** (SM or larger), because it is aimed, but it
+  is never a gun: its mount is left out of the ship's weapon battery. On the action bar it toggles:
+  it mines the rock targeted for mining (the overview's *Target for mining* on an asteroid), or the
+  nearest in reach, in cycles (`tool.cycle` seconds, shortened by the `miningRate` stat), putting
+  `tool.units` of ore in the hold at the end of each and starting the next on its own, until it is
+  stopped, the rock is empty or out of reach, or the hold is full. Without one, a rock is just a
+  rock.
+
+**The action bar** (bottom centre, keys 1-8, `Config.game.actionBar.slots`) holds what the ship
+can do on command: tools on mounts and active modules. Each ship keeps its own arrangement; what is
+newly fitted takes the first free slot, and with the cursor free (the overview open) a slot can be
+clicked to use it or dragged onto another to swap them. A slot shows its key, what is in it, a bar
+filling for the mining cycle or the cooldown, and the seconds left.
 
 Two of them change what the player can *know* rather than what the ship can do:
 

@@ -484,7 +484,9 @@ Config.game = {
         -- What a new game's first ship comes fitted with, by fitting name.
         -- Every ship after it starts empty: a fit belongs to the ship it is
         -- on (Modules/Constructs/Managers/PlayerFleet.lua).
-        startingModules = { "Mining Laser", "Shield Capacitor" },
+        startingModules = { "Shield Capacitor" },
+        -- ...and on its mounts (the mining laser is a tool on a mount)
+        startingWeapons = { "Mining Laser" },
     },
 
     -- The player's own industry (Modules/Economy/Managers/PlayerFactories.lua):
@@ -575,6 +577,12 @@ Config.game = {
             offset = 2.2,         -- from the outpost's centre, in its radii
             rebuildCost = 60000,
         },
+    },
+
+    -- The action bar (Modules/Constructs/Managers/ActionBar.lua): how many
+    -- slots, on the number keys from 1
+    actionBar = {
+        slots = 8,
     },
 
     -- What wrecks leave (Modules/Economy/Systems/LootSystem.lua; what is in

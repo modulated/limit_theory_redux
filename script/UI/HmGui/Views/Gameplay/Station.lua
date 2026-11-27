@@ -977,7 +977,7 @@ local function refit(s)
     end
 
     -- The slots
-    rows[#rows + 1] = text("MODULE SLOTS        the number keys fire the active ones",
+    rows[#rows + 1] = text("MODULE SLOTS        active ones go on the action bar (keys 1-8)",
         "Unageo-Medium", math.floor(13 * s), ACCENT)
     for slot = 1, loadout:getModuleSlots() do
         local fitted = loadout:getModule(slot)

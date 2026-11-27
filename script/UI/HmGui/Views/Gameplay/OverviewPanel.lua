@@ -175,6 +175,16 @@ local function actionsFor(entry)
         end
     end
 
+    -- Rocks: the mining laser's target
+    if entry.category == "asteroid" then
+        local current = game.rockTarget and game.rockTarget.entity
+        if current and same(current, entry.entity) then
+            add("Targeted for mining", function() end, false)
+        else
+            add("Target for mining", function() game:targetRock(entry.entity, entry.name) end)
+        end
+    end
+
     if same(game.lookingAt, entry.entity) then
         add("Stop looking", function() game:lookAtShip(true) end)
     else
@@ -419,7 +429,6 @@ function OverviewPanel.render()
     local game = LimitTheoryRedux
     if not (game and game.overviewShowing and game:overviewShowing()) then
         menu = nil
-        UIMouse.overPanel = false
         return
     end
 
@@ -519,7 +528,7 @@ function OverviewPanel.render()
     local overMenu = drawMenu(s)
     -- A drag holds the mouse wherever the cursor wanders: the left button is
     -- also the fire button, and the cameras have no business with it either
-    UIMouse.overPanel = overPanel or overMenu or drag ~= nil
+    if overPanel or overMenu or drag ~= nil then UIMouse.claim() end
 
     -- Clicks: a press outside an open menu closes it; on a row it selects,
     -- doubles to approach, or opens the menu there

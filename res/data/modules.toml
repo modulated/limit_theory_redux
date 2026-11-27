@@ -13,12 +13,15 @@
 #   slot         "weapon" (a mount) or "module" (a slot)
 #   description  one line for the refit screen
 #
-# Weapons:
+# Weapons (and tools, which go on a mount but are not guns):
 #   weapon       the weapon it mounts, by its name in Enums.Weapon.Type:
 #                Laser, Plasma, LaserGreen, LaserBlue, LaserViolet, LaserBolt,
 #                XLLongChargeLaser, MissileRocket, MissileTorpedo, FlakCannon,
 #                Railgun
 #   size         the smallest mount it fits: "SM", "M", "L" or "XL"
+#   tool         instead of `weapon`, for a mounted tool the action bar runs:
+#                { kind = "mining", cycle = <s>, units = <per cycle> } (the
+#                miningRate stat shortens the cycle)
 #
 # Modules:
 #   effects.add    stats added over the whole fit
@@ -28,7 +31,7 @@
 #   ability        an active module, on the number keys:
 #                  { key = "<ability>", cooldown = <s>, duration = <s>,
 #                    magnitude = <how much> }; key is one of shieldBoost,
-#                  afterburner, repairPulse, miningLaser, surveyScan (code in
+#                  afterburner, repairPulse, surveyScan (code in
 #                  Modules/Constructs/Systems/AbilitySystem.lua)
 
 [[module]]
@@ -168,14 +171,16 @@ slot = "module"
 description = "Welds the hull back together, once in a while, for free."
 ability = { key = "repairPulse", cooldown = 60, magnitude = 0.25 }
 
+# A tool, not a gun: it goes on a weapon mount (it has to be aimed at the
+# rock) but never fires at ships. On the action bar it runs in cycles.
 [[module]]
 id = 17
 name = "Mining Laser"
 item = "Mining Laser"
-slot = "module"
-description = "Cuts ore out of a rock. Without one, a rock is just a rock."
-effects.scale = { miningRate = 1 }
-ability = { key = "miningLaser", cooldown = 0 }
+slot = "weapon"
+size = "SM"
+description = "Cuts ore out of the targeted rock, a cycle at a time, until stopped."
+tool = { kind = "mining", cycle = 6, units = 2 }
 
 [[module]]
 id = 18

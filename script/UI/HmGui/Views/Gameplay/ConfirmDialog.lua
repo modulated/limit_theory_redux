@@ -99,7 +99,7 @@ function ConfirmDialog.render()
     Gui:endLayer()
 
     -- Modal: the mouse is the dialog's wherever it is
-    UIMouse.overPanel = true
+    UIMouse.claim()
 
     if answer ~= nil then game:answerConfirmation(answer) end
 end

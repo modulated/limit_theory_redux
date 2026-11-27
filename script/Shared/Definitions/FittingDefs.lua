@@ -26,7 +26,8 @@ local Stat = FittingDefinition.Stat
 local Weapon = Enums.Weapon
 local Size = Weapon.MountSizeClass
 
-local FIELDS = { "id", "name", "item", "slot", "description", "weapon", "size", "effects", "ability" }
+local FIELDS = { "id", "name", "item", "slot", "description", "weapon", "size", "effects", "ability", "tool" }
+local TOOL_KINDS = { mining = true }
 local ABILITY_FIELDS = { key = true, cooldown = true, duration = true, magnitude = true }
 
 -- The stats a module may name, as their values in FittingDefinition.Stat
@@ -82,12 +83,28 @@ for _, entry in ipairs(file.module) do
         itemName = item.name,
     }
     if slot == Slot.Weapon then
-        def.weaponId = f:oneOf("weapon", Weapon.Type)
-        def.weaponId = Weapon.Type[def.weaponId]
         def.sizeClass = Size[f:oneOf("size", Size)]
         if entry.effects or entry.ability then f:fail("a weapon takes no `effects` or `ability`") end
+        if entry.tool ~= nil then
+            -- A tool on a mount (the mining laser), not a gun
+            if entry.weapon ~= nil then f:fail("a mount fitting is a `weapon` or a `tool`, not both") end
+            local tool = f:tbl("tool")
+            for k in pairs(tool) do
+                if k ~= "kind" and k ~= "cycle" and k ~= "units" then
+                    f:fail("tool has an unknown field '%s' (kind, cycle, units)", tostring(k))
+                end
+            end
+            if not TOOL_KINDS[tool.kind] then f:fail("tool.kind must be one of: mining") end
+            if type(tool.cycle) ~= "number" or tool.cycle <= 0 then f:fail("tool.cycle must be seconds above 0") end
+            if type(tool.units) ~= "number" or tool.units < 1 or tool.units % 1 ~= 0 then
+                f:fail("tool.units must be a whole number of at least 1")
+            end
+            def.tool = { kind = tool.kind, cycle = tool.cycle, units = tool.units }
+        else
+            def.weaponId = Weapon.Type[f:oneOf("weapon", Weapon.Type)]
+        end
     else
-        if entry.weapon or entry.size then f:fail("only a weapon has `weapon` and `size`") end
+        if entry.weapon or entry.size or entry.tool then f:fail("only a mount fitting has `weapon`, `tool` and `size`") end
         local effects = f:tbl("effects", true)
         if effects then
             for k in pairs(effects) do

@@ -315,6 +315,16 @@ function PlayerFleet:restore(entity, turrets, spare)
             handBack(def)
         end
     end
+    -- A mount fitting found in a module slot (a save from before the mining
+    -- laser moved to a mount): it goes to a mount instead
+    for slot, id in pairs(ship.modules) do
+        local def = Fittings:get(id)
+        if def and def:isWeapon() then
+            ship.modules[slot] = nil
+            ship.pendingWeapons = ship.pendingWeapons or {}
+            table.insert(ship.pendingWeapons, id)
+        end
+    end
     -- A starting gun: in the smallest free mount that takes it
     if ship.pendingWeapons then
         local ordered = ShipFittingSystem:mounts(entity)

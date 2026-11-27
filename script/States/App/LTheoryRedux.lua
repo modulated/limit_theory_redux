@@ -57,6 +57,7 @@ local MemoryReporter = require('Modules.Profiling.MemoryReporter')
 local ConstructManager = require('Modules.Constructs.Managers.ConstructManager')
 local StationGenerator = require('Modules.Constructs.Managers.Generators.StationGenerator')
 local PlayerStations = require('Modules.Economy.Managers.PlayerStations')
+local ActionBar = require('Modules.Constructs.Managers.ActionBar')
 local PlayerForces = require('Modules.Economy.Managers.PlayerForces')
 local LootSystem = require('Modules.Economy.Systems.LootSystem')
 local LootData = require('Shared.Data.LootData')
@@ -836,7 +837,7 @@ end
 function LimitTheoryRedux:mineableRock(ignoreLaser, reachScale)
     if self.docked or not self.playerShip or not self.npcs or not self.npcs.mining then return nil end
     -- A rock is just a rock without something to cut it with
-    if not ignoreLaser and not self:fittedAbility("miningLaser") then return nil end
+    if not ignoreLaser and not self:miningMount() then return nil end
     local rbCmp = self.playerShip:get(PhysicsComponents.RigidBody)
     local body = rbCmp and rbCmp:getRigidBody()
     if not body then return nil end
@@ -871,69 +872,282 @@ end
 ---@param dt number
 function LimitTheoryRedux:updateMining(dt)
     if not self:isTravelGame() then return end
-    if self.docked or self.mapMode ~= 0 then
-        self.miningProgress, self.miningTarget, self.miningScan = nil, nil, nil
-        self.miningFullWarned, self.miningNoLaserHint = false, false
+    if self.docked or self.mapMode ~= 0 or self.jump then
+        if self.miningJob then self:stopMining() end
+        self.miningTarget, self.miningScan, self.miningNoLaserHint = nil, nil, false
         return
     end
-    -- Looking for a rock in reach walks the spawned asteroids, so it is done
-    -- a few times a second, not once a frame: the HUD reads what it found.
+    -- What is in reach, for the HUD: looking walks the spawned asteroids, so
+    -- a few times a second, not once a frame
     self.miningScan = (self.miningScan or 0) - dt
-    if self.miningScan <= 0 or (self.miningTarget and self.miningTarget.rock.yield < 1) then
+    if self.miningScan <= 0 then
         self.miningScan = Config.game.mining.playerScanInterval
-        if self:fittedAbility("miningLaser") then
+        if self:miningMount() then
             self.miningTarget = self:mineableRock()
             self.miningNoLaserHint = false
         else
-            -- Nothing to cut with: say so when a rock is close enough to matter
             self.miningTarget = nil
             self.miningNoLaserHint = self:mineableRock(true) ~= nil
         end
     end
-    local mining = GeneralActions.Mine:isDown()
-    local info = self.miningTarget
-    if not mining or not info then
-        self.miningProgress = nil
+
+    local job = self.miningJob
+    if not job then return end
+    -- The laser has to still be there, and the rock still in reach with
+    -- something left in it
+    local def, mountId = self:miningMount(job.mountId)
+    if not def then
+        self:stopMining("The mining laser is gone.")
         return
     end
-    local cfg = Config.game.mining
+    local info = job.rock
+    if not info or not info.entity or not info.entity:isValid() or info.rock.yield < 1 then
+        self:stopMining("Mining stopped: nothing left in the rock.")
+        return
+    end
+    if not self:rockInReach(info) then
+        self:stopMining("Mining stopped: the rock is out of the laser's reach.")
+        return
+    end
     local hold = PlayerCargo:get()
-    -- Said once, not once a tick, while the key is held against a full hold
-    local function holdFull()
-        self.miningProgress = nil
-        if not self.miningFullWarned then
-            self.miningFullWarned = true
-            self:notify("The hold is full.", { 1.0, 0.4, 0.3 })
-        end
-    end
     if hold:getRoomFor(info.rock.itemId) < 1 then
-        holdFull()
+        self:stopMining("Mining stopped: the hold is full.", { 1.0, 0.4, 0.3 })
         return
     end
-    self.miningFullWarned = false
-    -- A better laser cuts faster
-    local perUnit = cfg.playerTimePerUnit / math.max(0.1, self:fitStat("miningRate", 1))
-    self.miningProgress = (self.miningProgress or 0) + dt
-    while self.miningProgress >= perUnit do
-        self.miningProgress = self.miningProgress - perUnit
-        if not self.npcs.mining:take(info.rock) then
-            self:notify(info.rock.item .. ": nothing left in this rock.", { 1.0, 0.7, 0.3 })
-            self.miningTarget = nil
-            break
-        end
+
+    -- A cycle at a time: at the end of each the cut ore goes into the hold,
+    -- and the next cycle starts on its own
+    local cycle = self:miningCycle(def)
+    job.progress = job.progress + dt
+    if job.progress < cycle then return end
+    job.progress = 0
+    local want = math.min(def.tool.units, math.floor(info.rock.yield), hold:getRoomFor(info.rock.itemId))
+    local got = 0
+    for _ = 1, want do
+        if not self.npcs.mining:take(info.rock) then break end
         if PlayerCargo:add(info.rock.itemId, 1) < 1 then
-            -- No room after all: put it back
             info.rock.yield = info.rock.yield + 1
-            holdFull()
             break
         end
-        -- Whatever the scanner said or did not say, a unit in the hold is
-        -- the rock identified
-        if not self:knowsRock(info) then
-            self:markSurveyed(info)
-            self:notify(string.format("The rock is %s.", info.rock.item), { 0.5, 1.0, 0.7 })
+        got = got + 1
+    end
+    if got > 0 then
+        -- A unit in the hold is the rock identified, whatever the scanner said
+        if not self:knowsRock(info) then self:markSurveyed(info) end
+        self:notify(string.format("+%d %s  ·  hold %s", got, info.rock.item, PlayerCargo:describeLoad()),
+            { 0.5, 1.0, 0.7 })
+    end
+end
+
+--- The mining laser on a mount (the given one, or the first), or nil.
+---@param mountId string|nil
+---@return FittingDefinition|nil def, string|nil mountId
+function LimitTheoryRedux:miningMount(mountId)
+    local loadout = self.playerShip and self.playerShip:isValid()
+        and self.playerShip:get(ConstructComponents.Loadout)
+    if not loadout then return nil end
+    local ids = {}
+    for id in pairs(loadout.weapons or {}) do ids[#ids + 1] = id end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+        if not mountId or id == mountId then
+            local def = loadout:getWeapon(id)
+            if def and def.tool and def.tool.kind == "mining" then return def, id end
         end
     end
+    return nil
+end
+
+--- How long a mining cycle takes with this laser and this fit.
+---@param def FittingDefinition
+---@return number seconds
+function LimitTheoryRedux:miningCycle(def)
+    return def.tool.cycle / math.max(0.1, self:fitStat("miningRate", 1))
+end
+
+--- Whether a rock is within the laser's reach of the ship.
+---@param info table
+---@return boolean
+function LimitTheoryRedux:rockInReach(info)
+    local rbCmp = self.playerShip and self.playerShip:get(PhysicsComponents.RigidBody)
+    local body = rbCmp and rbCmp:getRigidBody()
+    if not body or not info.pos then return false end
+    local reach = (info.scale or 0) + Config.game.mining.playerRange * self:fitStat("scanRange", 1)
+    return body:getPos():distance(info.pos) <= reach * 1.05
+end
+
+--- The rock an asteroid entity is, as mineableRock describes it (nil if it
+--- is not one of the spawned rocks).
+---@param entity Entity
+---@return table|nil
+function LimitTheoryRedux:rockInfoFor(entity)
+    if not entity or not self.npcs or not self.npcs.mining then return nil end
+    for _, info in ipairs(AsteroidFieldSystem:getSpawnedEntities()) do
+        if info.entity and info.entity.id == entity.id and info.field and info.asteroid then
+            local rock = self.npcs.mining:trackAsteroid(info.field, info.asteroid,
+                { x = info.pos.x, y = info.pos.y, z = info.pos.z })
+            return { entity = info.entity, field = info.field, asteroid = info.asteroid,
+                     pos = info.pos, scale = info.scale, rock = rock }
+        end
+    end
+    return nil
+end
+
+--- Target a rock for the mining laser (the overview's Target on an asteroid).
+---@param entity Entity
+---@param name string|nil
+function LimitTheoryRedux:targetRock(entity, name)
+    local info = self:rockInfoFor(entity)
+    if not info then return end
+    self.rockTarget = info
+    self:notify(string.format("Rock targeted: %s%s", self:knowsRock(info) and info.rock.item or (name or "an unsurveyed rock"),
+        self:rockInReach(info) and "" or "  ·  out of the laser's reach"), { 0.8, 0.68, 0.52 })
+end
+
+--- The mining laser, on or off (its action bar slot). It mines the targeted
+--- rock, or the nearest in reach (which it then targets).
+---@param mountId string
+function LimitTheoryRedux:toggleMining(mountId)
+    if self.miningJob then
+        self:stopMining("Mining stopped.")
+        return
+    end
+    if self.docked then
+        self:notify("Undock first.", { 1.0, 0.7, 0.3 })
+        return
+    end
+    local def = self:miningMount(mountId)
+    if not def then return end
+    local info = self.rockTarget
+    if info and (not info.entity:isValid() or info.rock.yield < 1) then
+        self.rockTarget, info = nil, nil
+    end
+    if info and not self:rockInReach(info) then
+        self:notify("The targeted rock is out of the laser's reach.", { 1.0, 0.7, 0.3 })
+        return
+    end
+    info = info or self:mineableRock()
+    if not info then
+        self:notify("No rock in the mining laser's reach.", { 1.0, 0.7, 0.3 })
+        return
+    end
+    if PlayerCargo:get():getRoomFor(info.rock.itemId) < 1 then
+        self:notify("The hold is full.", { 1.0, 0.4, 0.3 })
+        return
+    end
+    self.rockTarget = info
+    self.miningJob = { mountId = mountId, rock = info, progress = 0 }
+    self:notify(string.format("Mining %s: a cycle every %.1fs",
+        self:knowsRock(info) and info.rock.item or "an unsurveyed rock", self:miningCycle(def)),
+        { 0.5, 1.0, 0.7 })
+end
+
+--- Stop the mining laser, with a word why (nil: say nothing).
+---@param why string|nil
+---@param color table|nil
+function LimitTheoryRedux:stopMining(why, color)
+    self.miningJob = nil
+    if why then self:notify(why, color or { 0.75, 0.8, 0.85 }) end
+end
+
+------------------------------------------------------------------------------
+-- The action bar (Modules/Constructs/Managers/ActionBar.lua)
+------------------------------------------------------------------------------
+
+--- What the ship can do on command, in bar order: tools on mounts, then
+--- active modules by slot.
+---@return string[] refs
+function LimitTheoryRedux:actionRefs()
+    local refs = {}
+    local loadout = self.playerShip and self.playerShip:isValid()
+        and self.playerShip:get(ConstructComponents.Loadout)
+    if not loadout then return refs end
+    local mounts = {}
+    for id in pairs(loadout.weapons or {}) do mounts[#mounts + 1] = id end
+    table.sort(mounts)
+    for _, id in ipairs(mounts) do
+        local def = loadout:getWeapon(id)
+        if def and def.tool then refs[#refs + 1] = ActionBar.mountRef(id) end
+    end
+    for slot = 1, loadout:getModuleSlots() do
+        local def = loadout:getModule(slot)
+        if def and def:isActive() then refs[#refs + 1] = ActionBar.moduleRef(slot) end
+    end
+    return refs
+end
+
+--- Keep the flown ship's bar in step with its fit (cheap: called each frame).
+function LimitTheoryRedux:syncActionBar()
+    local ship = PlayerFleet:active()
+    if ship then ActionBar.sync(ship, self:actionRefs()) end
+end
+
+--- What is in a bar slot and what it is doing, for the HUD:
+--- { ref, name, kind ("module"|"tool"), ready, active, progress (0..1),
+---   remaining (s) } or nil for an empty slot.
+---@param index integer
+---@return table|nil
+function LimitTheoryRedux:actionSlot(index)
+    local ship = PlayerFleet:active()
+    local ref = ship and ActionBar.of(ship)[index]
+    if not ref then return nil end
+    local loadout = self.playerShip and self.playerShip:isValid()
+        and self.playerShip:get(ConstructComponents.Loadout)
+    if not loadout then return nil end
+    local kind, where = ActionBar.parse(ref)
+    if kind == "mount" then
+        local def = loadout:getWeapon(where)
+        if not def then return nil end
+        local job = self.miningJob
+        local running = job ~= nil and job.mountId == where
+        return {
+            ref = ref, name = def.displayName, kind = "tool", ready = true, active = running,
+            progress = running and math.min(1, job.progress / self:miningCycle(def)) or 0,
+            remaining = running and math.max(0, self:miningCycle(def) - job.progress) or 0,
+        }
+    elseif kind == "module" then
+        local def = loadout:getModule(where)
+        if not def then return nil end
+        for _, row in ipairs(AbilitySystem:status(self.playerShip)) do
+            if row.slot == where then
+                local cooling = not row.ready and row.cooldown > 0
+                return {
+                    ref = ref, name = def.displayName, kind = "module", ready = row.ready,
+                    active = row.active > 0,
+                    progress = cooling and (1 - row.remaining / row.cooldown) or 0,
+                    remaining = row.active > 0 and row.active or row.remaining,
+                }
+            end
+        end
+        return { ref = ref, name = def.displayName, kind = "module", ready = true, active = false,
+                 progress = 0, remaining = 0 }
+    end
+    return nil
+end
+
+--- Use what is in a bar slot (its number key, or a click on it).
+---@param index integer
+function LimitTheoryRedux:useAction(index)
+    local ship = PlayerFleet:active()
+    local ref = ship and ActionBar.of(ship)[index]
+    if not ref then
+        self:notify(string.format("Slot %d of the action bar is empty.", index), { 0.7, 0.7, 0.7 })
+        return
+    end
+    local kind, where = ActionBar.parse(ref)
+    if kind == "mount" then
+        self:toggleMining(where)
+    elseif kind == "module" then
+        self:fireModule(where)
+    end
+end
+
+--- Drag one bar slot onto another (the HUD's action bar).
+---@param from integer
+---@param to integer
+function LimitTheoryRedux:moveAction(from, to)
+    local ship = PlayerFleet:active()
+    if ship then ActionBar.move(ship, from, to) end
 end
 
 --- What the pilots can see of the player's ship: nothing while it is docked,
@@ -1220,8 +1434,6 @@ function LimitTheoryRedux:updateOverview(dt)
         -- Freed every frame, since a camera switch re-grabs it
         CursorManager:free()
         if overview then SystemOverview:update(self, dt) end
-    else
-        UIMouse.overPanel = false
     end
 
     -- A look at something ends when it goes, or when the camera leaves it.
@@ -1822,10 +2034,6 @@ function LimitTheoryRedux:fireModule(slot)
     end
     if not fitting:isActive() then
         self:notify(string.format("%s works on its own.", fitting.displayName), { 0.7, 0.7, 0.7 })
-        return
-    end
-    if fitting.ability.key == "miningLaser" then
-        self:notify("Hold E to mine.", { 0.7, 0.7, 0.7 })
         return
     end
     local fired, reason = AbilitySystem:trigger(self.playerShip, fitting.ability.key, self)
@@ -2560,7 +2768,9 @@ function LimitTheoryRedux:armedConstruction(construction)
     local turrets, turretsById, mountIds = {}, {}, {}
     for _, turret in ipairs(construction.turrets or {}) do
         local mountId = turret.component and turret.component:getMountId() or turret.mountId
-        if mountId and loadout:getWeapon(mountId) then
+        -- A gun, not a tool: the mining laser's mount is not in the battery
+        local def = mountId and loadout:getWeapon(mountId)
+        if def and def.weaponId then
             turrets[#turrets + 1] = turret
             turretsById[mountId] = turret
             mountIds[#mountIds + 1] = mountId
@@ -3555,34 +3765,40 @@ function LimitTheoryRedux:drawNavigation()
         if dock then
             table.insert(lines, { text = "F: dock", color = { 0.6, 0.9, 1.0 } })
         end
-        -- Mining: what the rock in reach holds, and how the hold is doing
-        local rock = self.miningTarget
-        if not rock and not self:fittedAbility("miningLaser") and self.miningNoLaserHint then
-            table.insert(lines, { text = "A rock, and nothing fitted to cut it: a Mining Laser goes in a module slot",
-                color = { 1.0, 0.7, 0.3 } })
-        end
-        if rock then
-            local mining = GeneralActions.Mine:isDown()
-            -- An unread rock is just a rock: a Survey Scanner says what is in
-            -- it, and so does cutting a unit out of it
-            if self:knowsRock(rock) then
-                table.insert(lines, {
-                    text = mining
-                        and string.format("Mining %s  ·  %d left in the rock  ·  hold %s",
-                            rock.rock.item, math.floor(rock.rock.yield), PlayerCargo:describeLoad())
-                        or string.format("E: mine %s (%d left)", rock.rock.item, math.floor(rock.rock.yield)),
-                    color = mining and { 0.5, 1.0, 0.7 } or { 0.6, 0.9, 1.0 },
-                })
-            else
+        -- Mining: the laser's cycle, or what is in reach of it
+        local job = self.miningJob
+        local laser, laserMount = self:miningMount()
+        local barSlot = laserMount and PlayerFleet:active()
+            and ActionBar.slotOf(PlayerFleet:active(), ActionBar.mountRef(laserMount))
+        if job then
+            local def = self:miningMount(job.mountId)
+            local info = job.rock
+            local pct = def and math.floor(100 * job.progress / self:miningCycle(def)) or 0
+            table.insert(lines, {
+                text = string.format("Mining %s  %d%%  ·  %d left in the rock  ·  hold %s%s",
+                    self:knowsRock(info) and info.rock.item or "an unsurveyed rock", pct,
+                    math.floor(info.rock.yield), PlayerCargo:describeLoad(),
+                    barSlot and string.format("  ·  %d: stop", barSlot) or ""),
+                color = { 0.5, 1.0, 0.7 },
+            })
+        else
+            local rock = self.miningTarget
+            if not rock and not laser and self.miningNoLaserHint then
+                table.insert(lines, { text = "A rock, and nothing fitted to cut it: a Mining Laser goes on a weapon mount",
+                    color = { 1.0, 0.7, 0.3 } })
+            end
+            if rock and laser then
+                local what = self:knowsRock(rock)
+                    and string.format("%s (%d left)", rock.rock.item, math.floor(rock.rock.yield))
+                    or "an unsurveyed rock"
                 local scanner, scannerSlot = self:fittedAbility("surveyScan")
+                local scan = (not self:knowsRock(rock) and scanner)
+                    and string.format("  ·  survey it from the action bar") or ""
                 table.insert(lines, {
-                    text = mining and string.format("Mining an unsurveyed rock  ·  hold %s",
-                            PlayerCargo:describeLoad())
-                        or (scanner
-                            and string.format("E: mine an unsurveyed rock  ·  %d: survey it",
-                                scannerSlot or 1)
-                            or "E: mine an unsurveyed rock  ·  a Survey Scanner would say what is in it"),
-                    color = mining and { 0.5, 1.0, 0.7 } or { 0.7, 0.75, 0.8 },
+                    text = string.format("In reach: %s  ·  %s%s", what,
+                        barSlot and string.format("%d: mine", barSlot) or "put the mining laser on the action bar",
+                        scan),
+                    color = { 0.6, 0.9, 1.0 },
                 })
             end
         end
@@ -3829,13 +4045,14 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.TargetNearest:update(dt)
     GeneralActions.QuickSave:update(dt)
     GeneralActions.QuickLoad:update(dt)
-    GeneralActions.Mine:update(dt)
     GeneralActions.Repair:update(dt)
     for slot, binding in ipairs({ GeneralActions.Module1, GeneralActions.Module2,
-                                  GeneralActions.Module3, GeneralActions.Module4 }) do
+                                  GeneralActions.Module3, GeneralActions.Module4,
+                                  GeneralActions.Module5, GeneralActions.Module6,
+                                  GeneralActions.Module7, GeneralActions.Module8 }) do
         binding:update(dt)
         if binding:isPressed() and not self.docked then
-            self:fireModule(slot)
+            self:useAction(slot)
         end
     end
 
@@ -4021,6 +4238,7 @@ function LimitTheoryRedux:onStateSim(data)
     Profiler.Begin('Sim.Player')
     self.player:update(dt)
     self:updateCloak(dt)
+    self:syncActionBar()
     self:updateMining(dt)
     AbilitySystem:update(self.playerShip, dt)
     -- A ship the refit screen asked for: the rebuild happens here, not inside

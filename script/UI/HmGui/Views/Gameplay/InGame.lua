@@ -365,7 +365,16 @@ InGame:addContent(scenarioText)
 InGame:addContent(cameraLabel)
 InGame:addContent(pausedText)
 
--- The overview (O): drawn last, so its context menu sits over everything
+-- The panels: each claims the mouse while the cursor is on it (Input/UIMouse),
+-- and the answer is published after the last one
+local UIMouse = require("Input.UIMouse")
+InGame:addContent({ state = {}, render = function() UIMouse.beginFrame() end })
+
+-- The action bar, bottom centre (the number keys)
+local ActionBarPanel = require("UI.HmGui.Views.Gameplay.ActionBarPanel")
+InGame:addContent({ state = {}, render = function() ActionBarPanel.render() end })
+
+-- The overview (O): drawn after the bar, so its context menu sits over it
 local OverviewPanel = require("UI.HmGui.Views.Gameplay.OverviewPanel")
 InGame:addContent({
     state = {},
@@ -383,5 +392,7 @@ InGame:addContent({
         ConfirmDialog.render()
     end
 })
+
+InGame:addContent({ state = {}, render = function() UIMouse.endFrame() end })
 
 return InGame

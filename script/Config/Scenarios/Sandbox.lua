@@ -14,8 +14,8 @@ return {
     start = {
         credits = 500,
         hull = "Solo Hull",
-        weapons = { "Pulse Turret" },
-        modules = { "Mining Laser" },
+        weapons = { "Pulse Turret", "Mining Laser" },
+        modules = {},
         -- Config.game.hostility.levels[0]: Peaceful
         homeLevel = 0,
     },

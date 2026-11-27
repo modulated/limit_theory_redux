@@ -40,13 +40,6 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardR) },
     }),
 
-    --- Mining: held down, not tapped (the laser runs while the key is down)
-    ---@type ActionBinding
-    Mine = ActionBinding({
-        label = "Mine the nearest asteroid (hold)", group = "Flight",
-        keyboard = { Control.Single(Button.KeyboardE) },
-    }),
-
     ---@type ActionBinding
     Cloak = ActionBinding({
         label = "Cloak on / off", group = "Flight",
@@ -85,30 +78,54 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardO) },
     }),
 
-    --- The four module slots: a fitted active module fires on its key
-    --- (Modules/Constructs/Systems/AbilitySystem.lua)
+    --- The action bar's slots: whatever is in a slot (an active module, the
+    --- mining laser) is used on its key (LimitTheoryRedux:useAction)
     ---@type ActionBinding
     Module1 = ActionBinding({
-        label = "Fire the module in slot 1", group = "Flight",
+        label = "Action bar slot 1", group = "Flight",
         keyboard = { Control.Single(Button.KeyboardKey1) },
     }),
 
     ---@type ActionBinding
     Module2 = ActionBinding({
-        label = "Fire the module in slot 2", group = "Flight",
+        label = "Action bar slot 2", group = "Flight",
         keyboard = { Control.Single(Button.KeyboardKey2) },
     }),
 
     ---@type ActionBinding
     Module3 = ActionBinding({
-        label = "Fire the module in slot 3", group = "Flight",
+        label = "Action bar slot 3", group = "Flight",
         keyboard = { Control.Single(Button.KeyboardKey3) },
     }),
 
     ---@type ActionBinding
     Module4 = ActionBinding({
-        label = "Fire the module in slot 4", group = "Flight",
+        label = "Action bar slot 4", group = "Flight",
         keyboard = { Control.Single(Button.KeyboardKey4) },
+    }),
+
+    ---@type ActionBinding
+    Module5 = ActionBinding({
+        label = "Action bar slot 5", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardKey5) },
+    }),
+
+    ---@type ActionBinding
+    Module6 = ActionBinding({
+        label = "Action bar slot 6", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardKey6) },
+    }),
+
+    ---@type ActionBinding
+    Module7 = ActionBinding({
+        label = "Action bar slot 7", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardKey7) },
+    }),
+
+    ---@type ActionBinding
+    Module8 = ActionBinding({
+        label = "Action bar slot 8", group = "Flight",
+        keyboard = { Control.Single(Button.KeyboardKey8) },
     }),
 
     ---@type ActionBinding
