@@ -1451,6 +1451,33 @@ function LimitTheoryRedux:windowsShowing()
     return false
 end
 
+--- Escape in flight: put away what is open on the screen, one layer a
+--- press -- a question (answered no), the overview's context menu, then
+--- every window and the expanded overview together. Returns whether there
+--- was anything; with nothing open, Escape brings up the game menu instead.
+---@return boolean
+function LimitTheoryRedux:dismissOpenUI()
+    if self:confirmationShowing() then
+        self:answerConfirmation(false)
+        return true
+    end
+    if require("UI.HmGui.Views.Gameplay.OverviewPanel").closeMenu() then
+        return true
+    end
+    local closed = false
+    if self:windowsShowing() then
+        for id, open in pairs(self.windows) do
+            if open then self.windows[id] = false end
+        end
+        closed = true
+    end
+    if self:overviewShowing() then
+        self:setOverview(false)
+        closed = true
+    end
+    return closed
+end
+
 --- Open or close the overview.
 ---@param shown boolean
 function LimitTheoryRedux:setOverview(shown)
@@ -4304,8 +4331,9 @@ function LimitTheoryRedux:onInput(data)
     if not self.playerShip then return end
     local dt = data:deltaTime()
 
-    -- Escape toggles the pause menu (Return to Game / Controls / Back to Main
-    -- Menu / Exit); from the Controls screen it goes back to the pause menu.
+    -- Escape first puts away what is open (dismissOpenUI), then toggles the
+    -- pause menu (Return to Game / Controls / Back to Main Menu / Exit); from
+    -- the Controls screen it goes back to the pause menu.
     if Input:isPressed(ApplicationBindings.Escape) then
         if self.controlsOpen then
             self:closeControls()
@@ -4318,7 +4346,8 @@ function LimitTheoryRedux:onInput(data)
             self:closeMap()
         elseif self.pauseMenuOpen then
             self:closePauseMenu()
-        else
+        elseif not self:dismissOpenUI() then
+            -- Nothing open to put away: the game menu
             self:openPauseMenu()
         end
     end

@@ -461,6 +461,14 @@ drawBrief = function()
     Gui:endContainer()
 end
 
+--- Close the context menu (Escape). Returns whether one was open.
+---@return boolean
+function OverviewPanel.closeMenu()
+    local open = menu ~= nil
+    menu = nil
+    return open
+end
+
 --- The whole panel, and the menu over it.
 function OverviewPanel.render()
     local game = LimitTheoryRedux
