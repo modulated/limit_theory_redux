@@ -6,6 +6,7 @@ source ./utils.sh
 run_tests=false
 debug=false
 fast=false
+profile_server=false
 bundle=false
 
 while test $# -gt 0; do
@@ -18,6 +19,8 @@ while test $# -gt 0; do
       echo "    --run-tests     run tests"
       echo "    --debug         build and run tests in debug mode"
       echo "    --fast          optimized build with thin LTO, for local play-testing (not for shipping)"
+      echo "    --profile-server  --fast build with the live stats/profiler server compiled in"
+      echo "                    (it starts with the game: http://127.0.0.1:8777, or --stats-server <port>)"
       echo "    --bundle        assemble an app bundle (only has an effect on macOS)"
       exit 0
       ;;
@@ -30,6 +33,11 @@ while test $# -gt 0; do
       shift
       ;;
     --fast)
+      fast=true
+      shift
+      ;;
+    --profile-server)
+      profile_server=true
       fast=true
       shift
       ;;
@@ -68,12 +76,18 @@ if [ -z "$PHX_VERSION" ]; then
     export PHX_VERSION
 fi
 
+# The stats/profiler server is a cargo feature of ltr (doc/STAT_SERVER.md)
+features=()
+if [[ $profile_server == true ]]; then
+    features=(--features stats-server)
+fi
+
 if [[ $debug == true ]]; then
     target_dir="target/debug"
-    cargo build --color auto
+    cargo build "${features[@]}" --color auto
 elif [[ $fast == true ]]; then
     target_dir="target/release-fast"
-    cargo build --profile release-fast --color auto
+    cargo build --profile release-fast "${features[@]}" --color auto
 else
     target_dir="target/release"
     cargo build --release --color auto
@@ -100,4 +114,9 @@ cp "${target_dir}/${libprefix}phx${libsuffix}" "bin/${libprefix}phx${libsuffix}"
 
 if [[ $bundle == true ]]; then
     create_app_bundle bin
+fi
+
+if [[ $profile_server == true ]]; then
+    echo "Built with the stats server: it starts with the game on http://127.0.0.1:8777"
+    echo "(another port: bin/ltr${binsuffix} --stats-server <port>)"
 fi
