@@ -24,7 +24,7 @@ local MAX_PITCH = 1.45
 ---@param enabled boolean the camera is a piloting one, and the game is in flight
 function FreeLook.update(dt, enabled)
     local mouse = Input:mouse()
-    local held = enabled and mouse:isDown(MouseControl.Right)
+    local held = enabled and Window:isFocused() and mouse:isDown(MouseControl.Right)
         and (FreeLook.held or not UIMouse.overPanel)
     FreeLook.held = held
     if held then

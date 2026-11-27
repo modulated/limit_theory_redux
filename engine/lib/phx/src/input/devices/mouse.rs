@@ -69,6 +69,13 @@ pub struct MouseState {
     /// The next position is a jump, not movement: the cursor entered the
     /// window, the window regained focus, or something warped it.
     skip_next_delta: bool,
+    /// The window is not the focused one (alt-tabbed away): nothing the
+    /// mouse does is movement in the game.
+    unfocused: bool,
+    /// The cursor has left the window (onto another window or monitor).
+    /// Raw motion goes on arriving while the window keeps focus, and none of
+    /// it is meant for the game.
+    cursor_outside: bool,
 }
 
 /// No mouse reports moving this far in a single packet (they arrive at up to
@@ -136,7 +143,10 @@ impl MouseState {
 
         // Only where no raw motion arrives: a cursor held in the window (the
         // camera's grab) stops at its edge while the mouse keeps moving.
-        if !self.has_raw_motion {
+        // Away from the window, the cursor's moves are not the game's either.
+        if self.unfocused || self.cursor_outside {
+            self.skip_next_delta = true;
+        } else if !self.has_raw_motion {
             let (dx, dy) = (x - prev_pos.x, y - prev_pos.y);
             // A cursor does not travel this far between two reports: it was
             // put there. The first position after entering the window or
@@ -158,6 +168,7 @@ impl MouseState {
 
     pub fn update_in_window(&mut self, in_window: bool) -> bool {
         self.in_window = in_window;
+        self.cursor_outside = !in_window;
         // Wherever the cursor comes back, it did not travel there
         self.skip_next_delta = true;
 
@@ -168,6 +179,18 @@ impl MouseState {
     /// entirely when it comes back, and that is not movement either.
     pub fn forget_position_delta(&mut self) {
         self.skip_next_delta = true;
+    }
+
+    /// The window lost or regained focus. While it is away, the mouse's
+    /// movement is not the game's (alt-tab, then moving over another window
+    /// or monitor used to swing the camera right round), and whatever this
+    /// frame had gathered is dropped. Coming back, the cursor is somewhere
+    /// else: a jump, not movement.
+    pub fn set_focused(&mut self, focused: bool) {
+        self.unfocused = !focused;
+        self.skip_next_delta = true;
+        self.axis_state.zero(MouseControl::DeltaX as _);
+        self.axis_state.zero(MouseControl::DeltaY as _);
     }
 
     /// The device's own movement, independent of the cursor. Windows sends
@@ -207,6 +230,11 @@ impl MouseState {
             return false;
         }
         self.has_raw_motion = true;
+        // The device moves whether or not the game has it: only movement
+        // while the window has focus and the cursor is in it counts
+        if self.unfocused || self.cursor_outside {
+            return false;
+        }
         self.axis_state.add(MouseControl::DeltaX as _, dx)
             && self.axis_state.add(MouseControl::DeltaY as _, dy)
             && self.control_state.update()

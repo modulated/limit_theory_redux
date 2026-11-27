@@ -290,7 +290,7 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
     -- Read rotation input
     local yaw   = 0
     local pitch = 0
-    if mouseAim then
+    if mouseAim and Window:isFocused() then
         yaw, pitch = mouseSteering(shipEntity, dt, useDelta)
         yaw, pitch = applyInversion(yaw, pitch)
     else
@@ -335,7 +335,7 @@ function ShipFlightSystem:updateSteeringOnly(dt, shipEntity, mouseAim, useDelta)
 
     local roll = ShipActions.Roll:get()
     local yaw, pitch = 0, 0
-    if mouseAim then
+    if mouseAim and Window:isFocused() then
         yaw, pitch = mouseSteering(shipEntity, dt, useDelta)
         yaw, pitch = applyInversion(yaw, pitch)
     else
