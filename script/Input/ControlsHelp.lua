@@ -25,7 +25,8 @@ local LEGACY_KEYS = {
     { label = "Pause",      group = "General", buttons = { ApplicationBindings.Pause } },
     { label = "Toggle HUD", group = "General", buttons = { ApplicationBindings.ToggleHUD } },
     { label = "Screenshot", group = "General", buttons = { ApplicationBindings.Screenshot } },
-    { label = "Fullscreen", group = "General", buttons = { ApplicationBindings.ToggleFullscreen } },
+    { label = "Fullscreen", group = "General", text = "Alt + Enter" },
+    { label = "Physics wireframes", group = "Debug", buttons = { ApplicationBindings.ToggleWireframe } },
     { label = "Quit",       group = "General", text = "Alt + Q" }, -- hard-coded in Application:handleAppInput
 }
 

@@ -26,11 +26,12 @@ F1            -- switch to first-person camera
 F2            -- switch to chase camera
 F3            -- switch to orbiting camera (mostly useful when not actively flying)
 F10           -- toggle profiler on, then toggle off and display stats
-F11           -- toggle fullscreen on/off
+F11           -- toggle the physics debug wireframes on/off (for this session only)
+Alt-Enter     -- toggle fullscreen on/off
 F12           -- take a screenshot (*.png) and save it to ./screenshot folder
 B             -- when in startup mode (not flight mode), generate a new background star system
 H             -- while held down, increase game processing speed
-K             -- toggle the realtime metrics overlay on/off
+K             -- toggle the realtime metrics overlay on/off (for this session only)
 L             -- toggle the dynamic lighting on/off (default is OFF, heavy performance cost!)
 M             -- toggle autopilot: click on target (world view or System Map), then press this key to fly there
 P             -- pause and unpause the game (flight mode)

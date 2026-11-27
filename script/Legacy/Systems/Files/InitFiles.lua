@@ -67,6 +67,24 @@ local function parseSettingValue(var, text, current)
     return nil, format("can't be set from user.ini (it holds a %s)", kind)
 end
 
+---Debug views switched on and off by a key for the session (F11 the physics
+---wireframes, K the metrics). They are not settings: user.ini neither writes
+---them nor reads them back, so one pressed by accident is gone on the next
+---start. (They used to be saved like everything else in GameState, so a
+---single press of the old wireframe key kept the wireframes on for good.)
+local SESSION_ONLY = {
+    ["debug"] = { metricsEnabled = true },
+    ["debug.physics"] = { drawWireframes = true, drawBoundingBoxesLocal = true, drawBoundingBoxesworld = true },
+}
+
+---@param section string "debug" or "debug.physics"
+---@param key string
+---@return boolean
+local function isSessionOnly(section, key)
+    local keys = SESSION_ONLY[section]
+    return keys ~= nil and keys[key] == true
+end
+
 ---Reads user.ini into GameState. Nothing in the file stops the game: a line that
 ---can't be read, an unknown section or setting, or a value of the wrong kind is
 ---logged as a warning and skipped, and that setting keeps its current value.
@@ -124,6 +142,10 @@ function InitFiles:readUserInits()
         local key = var
         if section[key] == nil then key = firstToLower(var) end
         if section[key] == nil then key = firstToUpper(var) end
+        if isSessionOnly(sectionName, key) then
+            Log.Debug("user.ini line %d: %s is a debug key toggle, not a setting; ignored", lineNumber, var)
+            return
+        end
         if section[key] == nil then
             Log.Warn("user.ini line %d: no setting %s in [%s]; skipped", lineNumber, var, sectionName)
             return
@@ -250,11 +272,17 @@ function InitFiles:writeUserInits()
     end
 
     local function writeSubCat(cat, var, val)
-        io.write("\n") -- empty line before every sub-category
-        io.write(format("[%s]", tostring(cat) .. "." .. tostring(var)), "\n")
+        local name = tostring(cat) .. "." .. tostring(var)
+        local lines = {}
         for l_SubCat, l_SubTable in pairsByKeys(val) do
-            io.write(format("%s=%s", tostring(l_SubCat), tostring(l_SubTable)), "\n")
+            if not isSessionOnly(name, l_SubCat) then
+                lines[#lines + 1] = format("%s=%s", tostring(l_SubCat), tostring(l_SubTable))
+            end
         end
+        if #lines == 0 then return end -- nothing in it is a setting
+        io.write("\n") -- empty line before every sub-category
+        io.write(format("[%s]", name), "\n")
+        for _, line in ipairs(lines) do io.write(line, "\n") end
     end
 
     local function writeOptions(optionTitle, optionTable, optionDesc)
@@ -288,7 +316,7 @@ function InitFiles:writeUserInits()
         local cacheSubCatVal
 
         for l_Variable, l_Value in pairsByKeys(l_CategoryTable) do
-            local pass = true
+            local pass = not isSessionOnly(l_Category, l_Variable)
             -- excluded
             if string.match(l_Variable, "current")
                 or string.match(l_Variable, "lastCamera")
