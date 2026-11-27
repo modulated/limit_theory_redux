@@ -78,6 +78,11 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          salvage, goods and now and then a module; the player's ship draws canisters in and
          loads them, warning when the hold is full. Hull Scrap and Salvaged Electronics are
          recycled at a refinery (recipes 53, 54).
+   - [x] Hunting: sensors identify ships within range and show the rest as signatures (maps,
+         overview, HUD edge markers), by how loud they are (size, firing, mining, running hard;
+         pirates hide quiet among the rocks of asteroid fields). Stations post bounty contracts on
+         named pirates, tracked in gold. Deep-Space Sensor Array and Signal Triangulator modules
+         (signatureRange, signatureAccuracy) make the player a better hunter.
    - [x] Game data as TOML (`res/data/`): items, recipes, modules and ore compositions, checked
          at load with file:line errors; `tools/data-check.lua` cross-checks and exports CSV.
    - [x] A Sandbox start: Solo hull, a pulse turret, a mining laser, 500 credits, a Peaceful

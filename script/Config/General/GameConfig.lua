@@ -590,12 +590,31 @@ Config.game = {
     -- a rough position (off by `noiseShare` of the distance, at most
     -- `maxNoise`, drawn afresh every `refresh` seconds) with a strength by
     -- hull size, and no name or faction -- something to hunt down.
+    --
+    -- How loud a ship is (NpcSystem:loudness, 0..1: its size, and firing,
+    -- mining, running hard; a pirate lying in wait among the rocks is quiet)
+    -- scales all three: it is identified within range x (0.6 + 0.8 x loud),
+    -- shows as a signature at all within detectRange x (0.25 + loud), and is
+    -- placed off by noiseShare x (1.5 - loud) of the distance. The fit's
+    -- scanRange widens both ranges, signatureRange the second,
+    -- signatureAccuracy divides the error.
     sensors = {
-        range     = 400,
-        noiseShare = 0.10,
-        maxNoise  = 1500,
-        refresh   = 5,
-        strength  = { small = "Faint", medium = "Moderate", large = "Strong" },
+        range       = 400,
+        detectRange = 8000,
+        noiseShare  = 0.10,
+        maxNoise    = 1500,
+        refresh     = 5,
+        markers     = 6,   -- signatures marked at the screen's edge, nearest first
+        -- Loudness under each threshold reads as this word
+        strength    = { { 0.25, "Faint" }, { 0.5, "Moderate" }, { 0.8, "Strong" }, { 9, "Loud" } },
+    },
+
+    -- The stations' bounty board (Modules/Economy/Managers/BountyBoard.lua):
+    -- named pirates in the system, at this many times their usual bounty
+    bounties = {
+        maxOffers        = 3,
+        maxContracts     = 3,
+        rewardMultiplier = 3,
     },
 
     -- The action bar (Modules/Constructs/Managers/ActionBar.lua): how many

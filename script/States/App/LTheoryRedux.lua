@@ -59,6 +59,7 @@ local ConstructManager = require('Modules.Constructs.Managers.ConstructManager')
 local StationGenerator = require('Modules.Constructs.Managers.Generators.StationGenerator')
 local PlayerStations = require('Modules.Economy.Managers.PlayerStations')
 local ActionBar = require('Modules.Constructs.Managers.ActionBar')
+local BountyBoard = require('Modules.Economy.Managers.BountyBoard')
 local PlayerForces = require('Modules.Economy.Managers.PlayerForces')
 local LootSystem = require('Modules.Economy.Systems.LootSystem')
 local LootData = require('Shared.Data.LootData')
@@ -791,6 +792,11 @@ function LimitTheoryRedux:onCombatKill(event)
     if self:isOutpostDefense(event.attacker) or self:isPlayerUnit(event.attacker) then
         local record = self.npcs:recordOf(event.target)
         local economy = Config.game.economy
+        local contract = BountyBoard:claim(record)
+        if contract then
+            self:notify(string.format("Contract on '%s' complete: +%s", contract.callsign,
+                PlayerWallet.format(contract.reward)), { 1.0, 0.85, 0.35 })
+        end
         if record and Factions.isHostile(economy.bountyIssuer, record.faction) then
             local bounty = economy.bounties[record.role] or economy.defaultBounty
             PlayerWallet:add(bounty, "Bounty (outpost defences): " .. record.label)
@@ -802,6 +808,11 @@ function LimitTheoryRedux:onCombatKill(event)
     if not self.playerShip or event.attacker ~= self.playerShip then return end
     local record = self.npcs:recordOf(event.target)
     if not record then return end
+    local contract = BountyBoard:claim(record)
+    if contract then
+        self:notify(string.format("Contract on '%s' complete: +%s", contract.callsign,
+            PlayerWallet.format(contract.reward)), { 1.0, 0.85, 0.35 })
+    end
     local economy = Config.game.economy
     if Factions.isHostile(economy.bountyIssuer, record.faction) then
         local bounty = economy.bounties[record.role] or economy.defaultBounty
@@ -2217,34 +2228,160 @@ function LimitTheoryRedux:mapNpcs()
     local here = self:shipPosition()
     if not here then return entries end
     local cfg = Config.game.sensors
-    local range = self:sensorRange()
+    local scan = self:fitStat("scanRange", 1)
+    local reach = self:fitStat("signatureRange", 1)
+    local accuracy = math.max(0.1, self:fitStat("signatureAccuracy", 1))
     local bucket = math.floor((self.simTime or 0) / cfg.refresh)
     local out = {}
     for _, npc in ipairs(entries) do
+        local record = npc.record
         local rbCmp = npc.entity:get(PhysicsComponents.RigidBody)
         local body = rbCmp and rbCmp:getRigidBody()
         local p = body and body:getPos()
         local d = p and math.sqrt((p.x - here.x) ^ 2 + (p.y - here.y) ^ 2 + (p.z - here.z) ^ 2) or 0
-        if npc.faction == Factions.Player or d <= range then
+        local loud = record and self.npcs:loudness(record) or 0.5
+        local contract = BountyBoard:contractOn(record)
+        local identifyAt = cfg.range * scan * (0.6 + 0.8 * loud)
+        local detectAt = cfg.detectRange * scan * reach * (0.25 + loud)
+        if npc.faction == Factions.Player or d <= identifyAt then
+            if contract then
+                -- Identified: named for the contract, in gold
+                npc = {
+                    entity = npc.entity, faction = npc.faction, role = npc.role, record = record,
+                    sizeClass = npc.sizeClass, color = { 1.0, 0.82, 0.3 },
+                    label = string.format("BOUNTY: %s '%s'", npc.label or "Pirate", contract.callsign),
+                    bounty = true,
+                }
+            end
             out[#out + 1] = npc
-        else
-            -- A signature: a rough place (the same for `refresh` seconds,
-            -- then drawn afresh), a strength by hull size, nothing else
-            local noise = math.min(d * cfg.noiseShare, cfg.maxNoise)
+        elseif contract or d <= detectAt then
+            -- A signature: a rough place (the same for `refresh` seconds, then
+            -- drawn afresh), a strength by how loud it is, nothing else. A
+            -- contracted ship is tracked wherever it is.
+            local noise = math.min(d * cfg.noiseShare * (1.5 - loud), cfg.maxNoise) / accuracy
             local function jitter(channel)
                 local v = math.sin((npc.entity.id % 1000003) * 12.9898 + bucket * 78.233 + channel * 37.719) * 43758.5453
                 return (v - math.floor(v)) * 2 - 1
             end
-            local strength = cfg.strength[npc.sizeClass] or "Moderate"
+            local strength = "Moderate"
+            for _, step in ipairs(cfg.strength) do
+                if loud < step[1] then strength = step[2] break end
+            end
             out[#out + 1] = {
-                entity = npc.entity, signature = true, sizeClass = npc.sizeClass,
-                label = strength .. " signature",
-                color = { 0.85, 0.75, 0.45 },
+                entity = npc.entity, signature = true, sizeClass = npc.sizeClass, loudness = loud,
+                label = contract and string.format("Bounty '%s' (%s signature)", contract.callsign, strength:lower())
+                    or (strength .. " signature"),
+                color = contract and { 1.0, 0.82, 0.3 } or { 0.85, 0.75, 0.45 },
                 offset = { x = jitter(1) * noise, y = jitter(2) * noise * 0.3, z = jitter(3) * noise },
+                bounty = contract ~= nil,
             }
         end
     end
     return out
+end
+
+--- The sensors' signatures on the HUD: the nearest `markers` of them (and
+--- every bounty target), as a small diamond where the sensors put it when it
+--- is on screen, and as an arrow at the screen's edge pointing the way to it
+--- when it is not, with the distance. Bounty targets in gold.
+---@param w number
+---@param h number
+---@param font string
+function LimitTheoryRedux:drawSignatureMarkers(w, h, font)
+    local contacts = self.sensorContacts
+    local here = self:shipPosition()
+    if not contacts or #contacts == 0 or not here then return end
+    local camEntity = CameraManager:getActiveCameraEntity()
+    local camTransform = camEntity and camEntity:get(PhysicsComponents.Transform)
+    if not camTransform then return end
+    local cam = camTransform:getPos()
+    local rot = CameraManager:getViewRot()
+    local fwd, rt, up = rot:getForward(), rot:getRight(), rot:getUp()
+    local tanHalf = math.tan(math.rad(CameraManager:getFov()) / 2)
+    local aspect = w / h
+
+    -- Nearest first, bounty targets always
+    local list = {}
+    for _, c in ipairs(contacts) do
+        local rbCmp = c.entity:isValid() and c.entity:get(PhysicsComponents.RigidBody)
+        local body = rbCmp and rbCmp:getRigidBody()
+        if body then
+            local p = body:getPos()
+            local x, y, z = p.x + c.offset.x, p.y + c.offset.y, p.z + c.offset.z
+            local d = math.sqrt((x - here.x) ^ 2 + (y - here.y) ^ 2 + (z - here.z) ^ 2)
+            list[#list + 1] = { c = c, x = x, y = y, z = z, d = d }
+        end
+    end
+    table.sort(list, function(a, b)
+        if a.c.bounty ~= b.c.bounty then return a.c.bounty == true end
+        return a.d < b.d
+    end)
+
+    local margin = 46
+    local cx, cy = w / 2, h / 2
+    for i, m in ipairs(list) do
+        if i > Config.game.sensors.markers and not m.c.bounty then break end
+        local color = m.c.bounty and { r = 1.0, g = 0.82, b = 0.3, a = 0.95 } or { r = 0.9, g = 0.78, b = 0.45, a = 0.8 }
+        local rx, ry, rz = m.x - cam.x, m.y - cam.y, m.z - cam.z
+        local depth = rx * fwd.x + ry * fwd.y + rz * fwd.z
+        local sx = (rx * rt.x + ry * rt.y + rz * rt.z)
+        local sy = (rx * up.x + ry * up.y + rz * up.z)
+        local px, py
+        local onScreen = false
+        if depth > 0 then
+            px = cx + sx / (depth * tanHalf * aspect) * cx
+            py = cy - sy / (depth * tanHalf) * cy
+            onScreen = px > margin and px < w - margin and py > margin and py < h - margin
+        end
+        local dist = UniverseScaleConfig:formatDistance(m.d)
+        if onScreen then
+            -- Where the sensors put it: a diamond, the strength and distance
+            DrawEx.Ring(px, py, 9, color, m.c.bounty)
+            DrawEx.Point(px, py, 3, color)
+            DrawEx.TextAlpha(font, m.c.label .. "  " .. dist, 11, px - 140, py + 10, 280, 14,
+                color.r, color.g, color.b, color.a, 0.5, 0.5)
+        else
+            -- Off screen (or behind): an arrow at the edge, pointing the way
+            local dx, dy = sx, -sy
+            if depth <= 0 then dx, dy = -dx, -dy end
+            local len = math.sqrt(dx * dx + dy * dy)
+            if len < 1e-6 then dx, dy, len = 0, 1, 1 end
+            dx, dy = dx / len, dy / len
+            -- The edge of the screen, less the margin, along that direction
+            local tx = dx ~= 0 and (cx - margin) / math.abs(dx) or math.huge
+            local ty = dy ~= 0 and (cy - margin) / math.abs(dy) or math.huge
+            local t = math.min(tx, ty)
+            local ex, ey = cx + dx * t, cy + dy * t
+            local nx, ny = -dy, dx
+            DrawEx.Tri(ex + dx * 12, ey + dy * 12, ex + nx * 7, ey + ny * 7, ex - nx * 7, ey - ny * 7, color)
+            DrawEx.TextAlpha(font, dist, 10, ex - dx * 26 - 60, ey - dy * 22 - 7, 120, 14,
+                color.r, color.g, color.b, color.a, 0.5, 0.5)
+        end
+    end
+end
+
+--- Where a ship was last seen, in words, for the bounty board.
+---@param record table
+---@return string
+function LimitTheoryRedux:lastSeenArea(record)
+    local p = record.body and record.body:getPos()
+    if not p then return "somewhere in the system" end
+    local best, bestD = nil, math.huge
+    local places = self.npcs and self.npcs.places or {}
+    for _, dock in ipairs(places.docks or {}) do
+        local q = dock.position
+        local d = (p.x - q.x) ^ 2 + (p.y - q.y) ^ 2 + (p.z - q.z) ^ 2
+        if d < bestD then best, bestD = dock.label, d end
+    end
+    for _, gate in ipairs(places.gates or {}) do
+        local q = gate.position
+        local d = (p.x - q.x) ^ 2 + (p.y - q.y) ^ 2 + (p.z - q.z) ^ 2
+        if d < bestD then best, bestD = "the gate to " .. (gate.destination and gate.destination.name or "?"), d end
+    end
+    if record.lurkSpot then
+        return "in an asteroid field" .. (best and (", nearest " .. best) or "")
+    end
+    return best and ("near " .. best) or "somewhere in the system"
 end
 
 --- How far the ship's sensors identify a ship (Config.game.sensors; a
@@ -2269,23 +2406,30 @@ function LimitTheoryRedux:updateSensors(dt)
     self.sensorTimer = (self.sensorTimer or 0) - dt
     if self.sensorTimer > 0 or not self.npcs then return end
     self.sensorTimer = 0.25
-    local here = self:shipPosition()
-    local range = self:sensorRange()
+    -- What the sensors make of every ship: identified ones keep their label
+    -- in space; signatures lose it (and a lock on one is dropped)
+    local identified = {}
+    local contacts = {}
+    for _, entry in ipairs(self:mapNpcs()) do
+        if entry.signature then
+            contacts[#contacts + 1] = entry
+        else
+            identified[entry.entity.id] = true
+        end
+    end
+    self.sensorContacts = contacts
     for _, npc in ipairs(self.npcs:mapEntries()) do
         local entry = npc.record and npc.record.labelEntry
         if entry then
-            local hidden = false
-            if here and npc.faction ~= Factions.Player then
-                local rbCmp = npc.entity:get(PhysicsComponents.RigidBody)
-                local p = rbCmp and rbCmp:getRigidBody() and rbCmp:getRigidBody():getPos()
-                hidden = p ~= nil and ((p.x - here.x) ^ 2 + (p.y - here.y) ^ 2 + (p.z - here.z) ^ 2) > range * range
-            end
+            local hidden = not identified[npc.entity.id]
             if hidden and not entry.hidden then
-                -- Lost from the sensors: a lock on it goes too
                 if self.target and self:isTarget(npc.entity) then self:clearTarget() end
             end
             entry.hidden = hidden
         end
+    end
+    for _, gone in ipairs(BountyBoard:voidGone()) do
+        self:notify(string.format("Bounty contract void: '%s' is gone.", gone), { 0.75, 0.75, 0.75 })
     end
 end
 
@@ -2590,6 +2734,11 @@ function LimitTheoryRedux:destroyScene(keepShip)
         self.npcs:clear()
     end
     self.forceRecords = {}
+    -- The bounty board is the system's: its contracts end with it
+    if #BountyBoard.contracts > 0 and self.playerShip then
+        self:notify("Bounty contracts end on leaving the system.", { 0.75, 0.75, 0.75 })
+    end
+    BountyBoard:reset()
     -- Canisters float in this system's space, and go with it
     LootSystem:clear()
     -- Before the things it may follow go
@@ -3982,6 +4131,9 @@ function LimitTheoryRedux:drawNavigation()
         DrawEx.TextAlpha(font, line.text, 15, 0, centreTop + (i - 1) * 21, w, 19,
             line.color[1], line.color[2], line.color[3], 0.95 * (line.alpha or 1), 0.5, 0.5)
     end
+
+    -- Signatures: the nearest few marked on screen, or at its edge
+    if self:isTravelGame() and not self.docked then self:drawSignatureMarkers(w, h, font) end
 
     -- The virtual stick (shipFlight.chaseSteering = "virtual"): where the
     -- mouse has the stick, about the centre, and the dead zone round it

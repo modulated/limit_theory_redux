@@ -12,6 +12,7 @@ local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
 local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
 local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
 local PlayerForces = require("Modules.Economy.Managers.PlayerForces")
+local BountyBoard = require("Modules.Economy.Managers.BountyBoard")
 local EconomyComponents = require("Modules.Economy.Components")
 local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
 local ShipFittingSystem = require("Modules.Constructs.Systems.ShipFittingSystem")
@@ -1126,9 +1127,81 @@ local function tabs(s)
             tab("Hangar", "hangar"),
             tab("Nearby", "nearby"),
             tab("Refit", "refit"),
-            -- The player's own ships are commanded from their outposts
-            PlayerStations.isOwnedKey(stationKey()) and tab("Forces", "forces") or nil,
+            -- The bounty board at the system's stations; the player's own ships
+            -- are commanded from their outposts
+            PlayerStations.isOwnedKey(stationKey()) and tab("Forces", "forces") or tab("Bounties", "bounties"),
         }
+    }
+end
+
+--- The Bounties tab: named pirates in this system with a price on their
+--- heads (BountyBoard). A contract tracks its ship on the maps and the HUD,
+--- in gold, wherever it is in the system; the reward is paid on the kill.
+---@param s number
+---@return UILayoutGrid
+local function bounties(s)
+    local game = LimitTheoryRedux
+    BountyBoard:refresh(game)
+    local size = math.floor(14 * s)
+    local head = math.floor(13 * s)
+    local rows = {}
+    local cells = { Grid.Fixed(220 * s), Grid.Fixed(150 * s), Grid.Fixed(110 * s), Grid.Fixed(370 * s),
+                    Grid.Fixed(120 * s) }
+
+    rows[#rows + 1] = text(string.format("WANTED              %d posted  ·  contracts %d of %d",
+            #BountyBoard.offers, #BountyBoard.contracts, Config.game.bounties.maxContracts),
+        "Unageo-Medium", head, DIM)
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    if #BountyBoard.offers == 0 then
+        rows[#rows + 1] = text("No pirate in this system has a price on its head just now.", "Unageo-Regular", size, DIM)
+    end
+    for _, offer in ipairs(BountyBoard.offers) do
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(28 * s),
+            cells = cells,
+            contents = {
+                text("'" .. offer.callsign .. "'", "Unageo-Semibold", size, WHITE),
+                text(offer.kind, "Unageo-Regular", size, GREY),
+                text(PlayerWallet.format(offer.reward), "Unageo-Regular", size, GOLD, AlignHorizontal.Right),
+                text("last seen " .. offer.area, "Unageo-Regular", size, DIM),
+                wideButton("Accept", s, 110, #BountyBoard.contracts < Config.game.bounties.maxContracts, false,
+                    function()
+                        local ok, why = BountyBoard:accept(offer)
+                        game:notify(ok and string.format("Contract taken: '%s' -- tracked in gold on the maps and HUD.",
+                            offer.callsign) or ("Cannot take it: " .. (why or "no")),
+                            ok and { 1.0, 0.85, 0.35 } or { 1.0, 0.4, 0.3 })
+                    end),
+            }
+        }
+    end
+
+    rows[#rows + 1] = text("YOUR CONTRACTS", "Unageo-Medium", head, DIM)
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    if #BountyBoard.contracts == 0 then
+        rows[#rows + 1] = text("None. Take one above; it ends if you leave the system.", "Unageo-Regular", size, DIM)
+    end
+    for _, contract in ipairs(BountyBoard.contracts) do
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(28 * s),
+            cells = cells,
+            contents = {
+                text("'" .. contract.callsign .. "'", "Unageo-Semibold", size, GOLD),
+                text(contract.kind, "Unageo-Regular", size, GREY),
+                text(PlayerWallet.format(contract.reward), "Unageo-Regular", size, GOLD, AlignHorizontal.Right),
+                text("hunt it: its signature is marked in gold", "Unageo-Regular", size, DIM),
+                wideButton("Abandon", s, 110, true, false, function() BountyBoard:abandon(contract) end),
+            }
+        }
+    end
+    rows[#rows + 1] = text("Pirates lie quiet among the rocks of asteroid fields; firing, mining and running hard "
+        .. "make any ship louder. Sensor modules hear further and place signatures closer.",
+        "Unageo-Regular", math.floor(12 * s), DIM)
+
+    return Grid {
+        layoutType = GuiLayoutType.Vertical,
+        spacing = math.floor(3 * s),
+        cells = Grid.Fit(),
+        contents = rows
     }
 end
 
@@ -1366,6 +1439,8 @@ local function screen(s)
             body = refit(s)
         elseif Station.tab == "forces" and PlayerStations.isOwnedKey(stationKey()) then
             body = forces(s)
+        elseif Station.tab == "bounties" and not PlayerStations.isOwnedKey(stationKey()) then
+            body = bounties(s)
         else
             body = market(station, s)
         end

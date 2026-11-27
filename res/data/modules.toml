@@ -27,7 +27,9 @@
 #   effects.add    stats added over the whole fit
 #   effects.scale  stats multiplied over the whole fit (after the adds)
 #                  Stats: maxShield, shieldRegen, armor, maxHealth, cargoMass,
-#                  thrust, turn, scanRange, miningRate, marketReach
+#                  thrust, turn, scanRange, miningRate, marketReach,
+#                  signatureRange, signatureAccuracy (hunting: how far off a
+#                  ship's signature shows, and how closely it is placed)
 #   ability        an active module, on the number keys:
 #                  { key = "<ability>", cooldown = <s>, duration = <s>,
 #                    magnitude = <how much> }; key is one of shieldBoost,
@@ -199,4 +201,23 @@ slot = "module"
 description = "Reads the order books of systems further out than a ship's own feed reaches."
 effects.add = { marketReach = 2 }
 
-# The next free module id: 20
+
+# Hunting sensors: passive, and they stack with the Ship Sensor (scanRange,
+# which also widens the range ships are identified at)
+[[module]]
+id = 20
+name = "Deep-Space Sensor Array"
+item = "Deep-Space Sensor Array"
+slot = "module"
+description = "Hears ships further off: signatures show at half as far again."
+effects.scale = { signatureRange = 1.5, scanRange = 1.1 }
+
+[[module]]
+id = 21
+name = "Signal Triangulator"
+item = "Signal Triangulator"
+slot = "module"
+description = "Pins a signature down: it is placed twice as closely."
+effects.scale = { signatureAccuracy = 2 }
+
+# The next free module id: 22

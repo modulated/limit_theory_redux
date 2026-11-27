@@ -53,6 +53,8 @@ FittingDefinition.Stat = {
     ScanRange   = "scanRange",   -- scale: how far the scanner and the labels reach
     MiningRate  = "miningRate",  -- scale: seconds a unit takes, divided by this
     MarketReach = "marketReach", -- add: jumps away whose order books can be read
+    SignatureRange = "signatureRange",       -- scale: how far off a ship's signature shows (sensors)
+    SignatureAccuracy = "signatureAccuracy", -- scale: how closely a signature is placed (sensors)
 }
 
 ---@param args table

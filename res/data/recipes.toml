@@ -905,4 +905,37 @@ outputs = [
     { item = "Waste", count = 2 },
 ]
 
-# The next free recipe id: 55
+
+[[recipe]]
+id = 55
+name = "Deep-Space Sensor Array Factory"
+class = "Factory"
+duration = 420
+inputs = [
+    { item = "Ship Sensor", count = 1 },
+    { item = "Infolytic Chip", count = 2 },
+    { item = "Copper", count = 6 },
+    { item = "Energy Cell", count = 30 },
+]
+outputs = [
+    { item = "Deep-Space Sensor Array", count = 1 },
+    { item = "Waste", count = 3 },
+]
+
+[[recipe]]
+id = 56
+name = "Signal Triangulator Factory"
+class = "Factory"
+duration = 360
+inputs = [
+    { item = "Infolytic Chip", count = 4 },
+    { item = "Silicon", count = 8 },
+    { item = "Gold", count = 2 },
+    { item = "Energy Cell", count = 30 },
+]
+outputs = [
+    { item = "Signal Triangulator", count = 1 },
+    { item = "Waste", count = 2 },
+]
+
+# The next free recipe id: 57

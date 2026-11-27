@@ -69,6 +69,9 @@ function ShipFittingSystem:computeStats(ship)
         -- The books a trader can read from here: the configured reach, which
         -- a datalink module adds to
         [Stat.MarketReach] = Config.game.market and Config.game.market.remoteJumps or 0,
+        -- Hunting: how far off signatures show, and how closely they are placed
+        [Stat.SignatureRange] = 1,
+        [Stat.SignatureAccuracy] = 1,
     }
 
     -- Every fitting's adds first, then every scale, so the order modules were

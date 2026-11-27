@@ -538,6 +538,24 @@ mass = 20
 energy_density = 25
 price = 13500
 
+# Hunting sensors (modules.toml): how far off a ship's signature shows, and
+# how closely it is placed
+[[item]]
+id = 77
+name = "Deep-Space Sensor Array"
+group = "Equipment"
+mass = 140
+energy_density = 20
+price = 4900
+
+[[item]]
+id = 78
+name = "Signal Triangulator"
+group = "Equipment"
+mass = 60
+energy_density = 24
+price = 3800
+
 # --------------------------------------------------------------------------
 # Constructs
 # --------------------------------------------------------------------------
@@ -693,4 +711,4 @@ mass = 13
 energy_density = 50
 price = 600
 
-# The next free item id: 77
+# The next free item id: 79

@@ -479,6 +479,38 @@ function NpcSystem:mapEntries()
     return list
 end
 
+--- How loud a ship is to sensors, 0..1: its hull's size, and what it is
+--- doing. Firing and mining are loud, running hard a little louder; a
+--- pirate lying in wait among the rocks of a field is hard to hear.
+--- (LimitTheoryRedux:mapNpcs turns it into how far off the signature shows,
+--- how far off the ship is identified, and how closely it is placed.)
+---@param record table
+---@return number loudness, boolean hiding
+function NpcSystem:loudness(record)
+    local stats = record.pilot.stats
+    local loud = ({ small = 0.3, medium = 0.5, large = 0.7 })[stats.sizeClass or "medium"] or 0.5
+    local activity = record.pilot:getActivity() or ""
+    local battery = record.battery
+    if battery and ((battery.projectiles and #battery.projectiles > 0) or (battery.beams and #battery.beams > 0)) then
+        loud = loud + 0.35
+    end
+    if activity:find("^Mining") then loud = loud + 0.2 end
+    local v = record.pilot.velocity
+    if v and stats.maxSpeed and math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) > stats.maxSpeed * 0.7 then
+        loud = loud + 0.1
+    end
+    local hiding = false
+    if record.lurkSpot and record.body and (activity == "Lurking" or activity == "Marauding") then
+        local p, l = record.body:getPos(), record.lurkSpot
+        local dx, dy, dz = p.x - l.x, p.y - l.y, p.z - l.z
+        if dx * dx + dy * dy + dz * dz < 9 then
+            hiding = true
+            loud = loud - 0.35
+        end
+    end
+    return math.max(0.05, math.min(1, loud)), hiding
+end
+
 --- Remove every NPC (the scene is going).
 function NpcSystem:clear()
     for i = #self.records, 1, -1 do
