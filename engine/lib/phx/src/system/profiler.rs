@@ -136,11 +136,19 @@ impl Profiler {
     pub fn disable() {
         PROFILER_ENABLED.store(false, AtomicOrdering::Release);
         let mut profiler = PROFILER.lock().expect("Cannot lock profiler");
+        // Stopped from inside a profiled section (every Lua event handler is
+        // one while profiling, including the onPreRender that answers the
+        // dashboard's Stop): close the sections still open, as if they ended
+        // now. Their own `end` calls come after this and find the profiler
+        // off, so they do nothing.
         if profiler.stack.len() > 1 {
-            panic!(
-                "Profiler::disable: Cannot stop profiler from within a profiled section. Active scope(s): {:?}",
-                profiler.stack
+            info!(
+                "Profiler::disable: closing open scope(s) {:?}",
+                &profiler.stack[1..]
             );
+            while profiler.stack.len() > 1 {
+                Self::end_intern(&mut profiler, false);
+            }
         }
 
         Self::end_intern(&mut profiler, true);
