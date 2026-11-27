@@ -58,6 +58,8 @@ local ConstructManager = require('Modules.Constructs.Managers.ConstructManager')
 local StationGenerator = require('Modules.Constructs.Managers.Generators.StationGenerator')
 local PlayerStations = require('Modules.Economy.Managers.PlayerStations')
 local PlayerForces = require('Modules.Economy.Managers.PlayerForces')
+local LootSystem = require('Modules.Economy.Systems.LootSystem')
+local LootData = require('Shared.Data.LootData')
 local Items = require('Shared.Registries.Items')
 local GalaxyGenerator = require('Modules.Navigation.Managers.GalaxyGenerator')
 local JumpGateGenerator = require('Modules.Navigation.Managers.JumpGateGenerator')
@@ -2265,6 +2267,8 @@ function LimitTheoryRedux:destroyScene(keepShip)
         self.npcs:clear()
     end
     self.forceRecords = {}
+    -- Canisters float in this system's space, and go with it
+    LootSystem:clear()
     -- Before the things it may follow go
     if self.player then
         self.player:setOrbitTarget(nil)
@@ -2915,6 +2919,38 @@ function LimitTheoryRedux:updatePlayerForces(dt)
             unit.hull = health and health:getCurrentHealth() or unit.hull
             unit.shield = defense and defense:getCurrentShield() or unit.shield
         end
+    end
+end
+
+--- A ship died: it leaves a canister of what its role's loot table rolls
+--- (res/data/loot.toml). The player's own ships leave nothing.
+---@param record table NpcSystem's record
+function LimitTheoryRedux:onNpcDestroyed(record)
+    if record.unit or not record.body then return end
+    self.lootRng = self.lootRng or RNG.Create((self.seed or 1) + 77)
+    local ok, contents = pcall(LootData.roll, record.role, self.lootRng)
+    if not ok then
+        Log.Error("Loot: %s", tostring(contents))
+        return
+    end
+    local p = record.body:getPos()
+    LootSystem:attach(self.world, self)
+    LootSystem:drop({ x = p.x, y = p.y, z = p.z }, contents)
+end
+
+--- Each frame: canisters drift in to the ship and into the hold, with a
+--- word when something was collected or would not fit.
+---@param dt number
+function LimitTheoryRedux:updateLoot(dt)
+    if #LootSystem.canisters == 0 then return end
+    local shipPos
+    if self.playerShip and not self.docked and not self.jump then
+        local rbCmp = self.playerShip:get(PhysicsComponents.RigidBody)
+        local body = rbCmp and rbCmp:getRigidBody()
+        shipPos = body and body:getPos()
+    end
+    for _, event in ipairs(LootSystem:update(dt, shipPos, PlayerCargo:get(), self.simTime or 0)) do
+        self:notify(event.text, event.color)
     end
 end
 
@@ -3993,6 +4029,7 @@ function LimitTheoryRedux:onStateSim(data)
     self.npcs:update(dt)
     self:updateOutpostDefenses(dt)
     self:updatePlayerForces(dt)
+    self:updateLoot(dt)
     Profiler.End()
     -- The stations' factory floors, and the goods they cannot make arriving
     Profiler.Begin('Sim.Economy')

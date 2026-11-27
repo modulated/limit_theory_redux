@@ -58,7 +58,7 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          mounts, modules in slots, actives on the number keys, every part has a recipe, and a
          Market Datalink module widens how many jumps of order books can be read). A hull bought
          is a ship commissioned, and a fit belongs to its ship, so a fleet of ships rigged for
-         different work is the point. Left over: fittings as loot from a kill, ships the player can
+         different work is the point. Left over: ships the player can
          rename, and a fleet list away from the station screen (you can only see the ships parked
          where you are standing).
    - [ ] Biomass has no source, so the hydrocarbon chain runs on imports.
@@ -74,6 +74,10 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    - [x] Forces: combat drones (built from iridium, a rare ore, through a three-recipe chain)
          and hired mercenaries (fee plus hourly wage) guard an outpost or patrol all of them in
          a system, from the outpost's Forces tab.
+   - [x] Loot: a destroyed ship leaves a cargo canister (res/data/loot.toml, by role) of
+         salvage, goods and now and then a module; the player's ship draws canisters in and
+         loads them, warning when the hold is full. Hull Scrap and Salvaged Electronics are
+         recycled at a refinery (recipes 53, 54).
    - [x] Game data as TOML (`res/data/`): items, recipes, modules and ore compositions, checked
          at load with file:line errors; `tools/data-check.lua` cross-checks and exports CSV.
    - [x] A Sandbox start: Solo hull, a pulse turret, a mining laser, 500 credits, a Peaceful

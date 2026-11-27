@@ -27,6 +27,7 @@ saving.
 | `res/data/recipes.toml` | every recipe: id, class, duration, inputs and outputs by item name |
 | `res/data/modules.toml` | every weapon and module: the item it is, its slot and size, its effects and ability |
 | `res/data/ores.toml` | what the asteroids hold: the compositions the rulesets give their belts and rings, and the fallback |
+| `res/data/loot.toml` | what a destroyed ship leaves, by its role: salvage, goods, modules, each with a chance and a range |
 
 Each file's header explains its fields. The loaders (`script/Shared/Definitions/ItemDefs.lua`,
 `ProductionDefs.lua`, `FittingDefs.lua`, `script/Shared/Data/OreData.lua`) check every entry when the
@@ -470,6 +471,24 @@ Station, at 1,550,000 t, only ever travels that way).
   standing. The outpost itself cannot be destroyed; the platform can. Its hull and shields show
   on the Factory tab, where it is repaired at the hull rate or, once shot down, rebuilt for
   `rebuildCost`.
+
+### Salvage: what wrecks leave
+
+A ship destroyed by anyone leaves a **cargo canister** where it died, filled by its role's table in
+`res/data/loot.toml` (each drop rolled on its own chance; modules and weapons are items, so a
+wreck's gear drops as the fitting items it is). Canisters glow amber and are labelled with what is
+in them; they last `loot.lifetime` seconds (`Config.game.loot`). Within `tractorRange` the
+player's ship draws a canister in (faster as it gets close) and at `collectRange` empties it into
+the hold. What does not fit stays in the canister, with a "Hold full" warning every
+`fullWarningInterval` seconds while the ship is by it; make room and the rest comes in. The
+player's own drones and hires leave nothing. `LootSystem` (`Modules/Economy/Systems`) runs it.
+
+Two salvage items are recycled at a refinery into basic materials:
+
+| Recipe | In | Out |
+|--------|----|-----|
+| Scrap Recycler (53) | Hull Scrap x20, Energy Cell x5 | Iron x5, Aluminum x3, Copper x1, Waste x4 |
+| Electronics Recycler (54) | Salvaged Electronics x6, Energy Cell x5 | Copper x4, Silicon x3, Gold x1, Waste x2 |
 
 ### Forces: drones and mercenaries
 

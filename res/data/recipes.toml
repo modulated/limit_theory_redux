@@ -871,4 +871,38 @@ outputs = [
     { item = "Waste", count = 30 },
 ]
 
-# The next free recipe id: 53
+
+# Recycling the salvage from wrecks back into basic materials
+[[recipe]]
+id = 53
+name = "Scrap Recycler"
+class = "Refinery"
+duration = 30
+inputs = [
+    { item = "Hull Scrap", count = 20 },
+    { item = "Energy Cell", count = 5 },
+]
+outputs = [
+    { item = "Iron", count = 5 },
+    { item = "Aluminum", count = 3 },
+    { item = "Copper", count = 1 },
+    { item = "Waste", count = 4 },
+]
+
+[[recipe]]
+id = 54
+name = "Electronics Recycler"
+class = "Refinery"
+duration = 45
+inputs = [
+    { item = "Salvaged Electronics", count = 6 },
+    { item = "Energy Cell", count = 5 },
+]
+outputs = [
+    { item = "Copper", count = 4 },
+    { item = "Silicon", count = 3 },
+    { item = "Gold", count = 1 },
+    { item = "Waste", count = 2 },
+]
+
+# The next free recipe id: 55

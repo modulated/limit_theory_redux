@@ -571,6 +571,21 @@ Config.game = {
         },
     },
 
+    -- What wrecks leave (Modules/Economy/Systems/LootSystem.lua; what is in
+    -- them: res/data/loot.toml). The player's ship draws canisters in from
+    -- `tractorRange` and loads them at `collectRange` (game units).
+    loot = {
+        lifetime            = 300,   -- seconds a canister floats before it is gone
+        tractorRange        = 1.5,
+        collectRange        = 0.12,
+        pullSpeed           = 0.6,   -- units/s at the edge of the range (3x close in)
+        fullWarningInterval = 5,     -- seconds between "hold full" warnings at one canister
+        scale               = 0.006,
+        color               = { 1.0, 0.75, 0.25 },
+        lightRadius         = 0.08,
+        lightIntensity      = 2.0,
+    },
+
     -- The ships that work for the player (Modules/Economy/Managers/
     -- PlayerForces.lua): combat drones, built (res/data/recipes.toml: the
     -- Combat Drone Drydock) and launched from an outpost's hangar, and

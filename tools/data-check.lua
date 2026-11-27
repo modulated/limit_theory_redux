@@ -1,7 +1,8 @@
 --[[----------------------------------------------------------------------------
   data-check: load the game's data files and check them as a whole.
 
-  The game reads res/data/items.toml, recipes.toml, modules.toml and ores.toml
+  The game reads res/data/items.toml, recipes.toml, modules.toml, ores.toml
+  and loot.toml
   at start-up, and each loader stops on a mistake in a single entry (a
   misspelt field, an unknown item, a repeated id). This runs those same
   loaders without the game, then checks what no single entry can:
@@ -64,6 +65,12 @@ if not ok then
     os.exit(1)
 end
 local OreData = require("Shared.Data.OreData")
+local LootData = require("Shared.Data.LootData")
+local okLoot, lootErr = pcall(LootData.roles)
+if not okLoot then
+    io.stderr:write(tostring(lootErr) .. "\n")
+    os.exit(1)
+end
 local Items, Productions, Fittings, Hulls = reg.Items, reg.Productions, reg.Fittings, reg.Hulls
 
 --- Every item, by id.
@@ -153,6 +160,11 @@ local function addOres(list)
 end
 addOres(OreData.fallback())
 for _, key in ipairs(OreData.keys()) do addOres(OreData.composition(key)) end
+-- Wrecks are a source too (res/data/loot.toml)
+local salvaged = {}
+for _, role in ipairs(LootData.roles()) do
+    for _, drop in ipairs(LootData.drops(role)) do salvaged[drop.id] = true end
+end
 
 for _, f in ipairs(Fittings:getAll()) do
     if not made[f.itemId] then
@@ -167,8 +179,8 @@ end
 local warnings = {}
 for _, r in ipairs(Productions:getAll()) do
     for _, e in ipairs(r.inputs) do
-        if not made[e.item.id] and not mined[e.item.id] then
-            warnings[#warnings + 1] = string.format("recipe %d (%s) needs %s, which nothing makes or mines (imports only)",
+        if not made[e.item.id] and not mined[e.item.id] and not salvaged[e.item.id] then
+            warnings[#warnings + 1] = string.format("recipe %d (%s) needs %s, which nothing makes, mines or salvages (imports only)",
                 r.id, r.displayName, e.item.displayName)
         end
     end
@@ -191,8 +203,22 @@ for _, d in ipairs(allItems()) do itemIds[#itemIds + 1] = d.id end
 for _, r in ipairs(Productions:getAll()) do recipeIds[#recipeIds + 1] = r.id end
 for _, f in ipairs(Fittings:getAll()) do moduleIds[#moduleIds + 1] = f.id end
 
-print(string.format("items %d (next id %d), recipes %d (next id %d), modules %d (next id %d), ore compositions %d",
-    #itemIds, nextId(itemIds), #recipeIds, nextId(recipeIds), #moduleIds, nextId(moduleIds), #OreData.keys()))
+-- What the wrecks give: salvage should be something a recipe turns back
+-- into materials, or it is only ever sold
+for _, role in ipairs(LootData.roles()) do
+    for _, drop in ipairs(LootData.drops(role)) do
+        local def = Items:getDefinition(drop.id)
+        if def.group == "Waste" and not used[drop.id] and def.name ~= "Waste" then
+            warnings[#warnings + 1] = string.format("loot for %s drops %s, which no recipe recycles",
+                role, def.displayName)
+        end
+    end
+end
+table.sort(warnings)
+
+print(string.format("items %d (next id %d), recipes %d (next id %d), modules %d (next id %d), ore compositions %d, loot tables %d",
+    #itemIds, nextId(itemIds), #recipeIds, nextId(recipeIds), #moduleIds, nextId(moduleIds), #OreData.keys(),
+    #LootData.roles()))
 for _, w in ipairs(warnings) do print("note: " .. w) end
 for _, p in ipairs(problems) do print("PROBLEM: " .. p) end
 if #problems > 0 then os.exit(1) end

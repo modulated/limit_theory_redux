@@ -655,6 +655,24 @@ mass = 9
 energy_density = 1
 price = 15
 
+# Salvage: what is left of a ship after a fight. Dropped by wrecks
+# (res/data/loot.toml) and recycled at a refinery into basic materials.
+[[item]]
+id = 75
+name = "Hull Scrap"
+group = "Waste"
+mass = 5
+energy_density = 1
+price = 18
+
+[[item]]
+id = 76
+name = "Salvaged Electronics"
+group = "Waste"
+mass = 2
+energy_density = 3
+price = 85
+
 # --------------------------------------------------------------------------
 # Miscellaneous
 # --------------------------------------------------------------------------
@@ -675,4 +693,4 @@ mass = 13
 energy_density = 50
 price = 600
 
-# The next free item id: 75
+# The next free item id: 77

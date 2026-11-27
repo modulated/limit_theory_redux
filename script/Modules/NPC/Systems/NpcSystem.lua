@@ -641,6 +641,8 @@ function NpcSystem:update(dt)
             if not self:isAlive(record.entity) then
                 -- Destroyed: the weapon system explodes it; the wreck goes later
                 record.dead = Config.game.npc.wreckTime
+                -- What it leaves behind (LimitTheoryRedux: a cargo canister)
+                if self.game and self.game.onNpcDestroyed then self.game:onNpcDestroyed(record) end
                 record.pilot:clearActions(record)
                 record.pilot:clearGoal()
                 if record.battery then record.battery:setAIActive(false) end
