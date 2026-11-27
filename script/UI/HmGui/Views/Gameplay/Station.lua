@@ -11,6 +11,7 @@ local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
 local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
 local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
 local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
+local PlayerForces = require("Modules.Economy.Managers.PlayerForces")
 local EconomyComponents = require("Modules.Economy.Components")
 local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
 local ShipFittingSystem = require("Modules.Constructs.Systems.ShipFittingSystem")
@@ -1070,7 +1071,90 @@ local function tabs(s)
             tab("Hangar", "hangar"),
             tab("Nearby", "nearby"),
             tab("Refit", "refit"),
+            -- The player's own ships are commanded from their outposts
+            PlayerStations.isOwnedKey(stationKey()) and tab("Forces", "forces") or nil,
         }
+    }
+end
+
+--- The Forces tab, at one of the player's outposts: launch a drone from the
+--- hangar, hire a mercenary, and give every unit in the system its order.
+---@param s number
+---@return UILayoutGrid
+local function forces(s)
+    local game = LimitTheoryRedux
+    local key = stationKey()
+    local size = math.floor(14 * s)
+    local cfg = Config.game.forces
+    local rows = {}
+
+    local droneDef, hangarStock = game:droneStock()
+    local drones = droneDef and hangarStock and hangarStock:count(droneDef.id) or 0
+    local room = PlayerForces:room(key)
+    rows[#rows + 1] = text(string.format("FORCES              %d of %d berths free here  ·  wages %s an hour",
+            room, cfg.maxPerOutpost, PlayerWallet.format(PlayerForces:wageBill())),
+        "Unageo-Medium", math.floor(13 * s), DIM)
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(30 * s),
+        cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
+        contents = {
+            text(string.format("Combat drone: built, not hired. %d in this hangar.", drones),
+                "Unageo-Regular", size, GREY),
+            text("no upkeep", "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+            wideButton("Launch", s, 110, drones > 0 and room > 0, false, function() game:launchDrone() end),
+        }
+    }
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(30 * s),
+        cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
+        contents = {
+            text(string.format("Mercenary: %s to hire, then %s an hour while they serve.",
+                    PlayerWallet.format(cfg.mercenary.hireCost), PlayerWallet.format(cfg.mercenary.wagePerHour)),
+                "Unageo-Regular", size, GREY),
+            text("", "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+            wideButton("Hire", s, 110, room > 0 and PlayerWallet:has(cfg.mercenary.hireCost), false,
+                function() game:hireMercenary() end),
+        }
+    }
+
+    local units = PlayerForces:inSystem(game.currentSystemId or 1)
+    rows[#rows + 1] = text(#units > 0 and "IN THIS SYSTEM" or "IN THIS SYSTEM      none yet",
+        "Unageo-Medium", math.floor(13 * s), DIM)
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    for _, unit in ipairs(units) do
+        local status = game:unitStatus(unit)
+        local home = PlayerStations:byKey(unit.homeKey)
+        local guarding = unit.order == PlayerForces.Order.Guard
+        local orderText = guarding and ("guarding " .. (home and home.name or "its outpost"))
+            or "patrolling your outposts"
+        local here = unit.homeKey == key
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(28 * s),
+            cells = { Grid.Fixed(500 * s), Grid.Fixed(200 * s), Grid.Fixed(110 * s), Grid.Fixed(110 * s) },
+            contents = {
+                text(string.format("%s  ·  %s", unit.name, orderText), "Unageo-Regular", size, GREY),
+                text(string.format("hull %d%%  shield %d%%",
+                        math.floor(100 * status.hull / math.max(1, status.maxHull)),
+                        math.floor(100 * status.shield / math.max(1, status.maxShield))),
+                    "Unageo-Regular", size, status.hull < status.maxHull * 0.4 and GOLD or DIM, AlignHorizontal.Right),
+                wideButton(guarding and "Patrol" or "Guard", s, 100, true, false, function()
+                    game:setUnitOrder(unit, guarding and PlayerForces.Order.Patrol or PlayerForces.Order.Guard)
+                end),
+                wideButton(unit.kind == PlayerForces.Kind.Drone and "Recall" or "Dismiss", s, 100,
+                    unit.kind ~= PlayerForces.Kind.Drone or (here and status.here), false,
+                    function() game:releaseUnit(unit) end),
+            }
+        }
+    end
+    rows[#rows + 1] = text("A drone is recalled into its own outpost's hangar. Guards fly around their outpost; "
+        .. "patrols make the round of all your outposts here.", "Unageo-Regular", math.floor(12 * s), DIM)
+
+    return Grid {
+        layoutType = GuiLayoutType.Vertical,
+        spacing = math.floor(2 * s),
+        cells = Grid.Fit(),
+        contents = rows
     }
 end
 
@@ -1128,6 +1212,8 @@ local function screen(s)
             contents[#contents + 1] = nearby(s)
         elseif Station.tab == "refit" then
             contents[#contents + 1] = refit(s)
+        elseif Station.tab == "forces" and PlayerStations.isOwnedKey(stationKey()) then
+            contents[#contents + 1] = forces(s)
         else
             contents[#contents + 1] = market(station, s)
         end

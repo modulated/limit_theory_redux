@@ -821,4 +821,54 @@ outputs = [
     { item = "Waste", count = 2600 },
 ]
 
-# The next free recipe id: 50
+
+[[recipe]]
+id = 50
+name = "Iridium Refinery"
+class = "Refinery"
+duration = 60
+inputs = [
+    { item = "Iridium Ore", count = 10 },
+    { item = "Energy Cell", count = 20 },
+]
+outputs = [
+    { item = "Iridium", count = 3 },
+    { item = "Anode Sludge", count = 4 },
+]
+
+[[recipe]]
+id = 51
+name = "Drone Control Core Factory"
+class = "Factory"
+duration = 900
+inputs = [
+    { item = "Infolytic Chip", count = 4 },
+    { item = "Iridium", count = 4 },
+    { item = "Radioactive Isotopes", count = 2 },
+    { item = "Ship Computer", count = 1 },
+    { item = "Energy Cell", count = 50 },
+]
+outputs = [
+    { item = "Drone Control Core", count = 1 },
+    { item = "Waste", count = 6 },
+]
+
+[[recipe]]
+id = 52
+name = "Combat Drone Drydock"
+class = "Drydock"
+duration = 3600
+inputs = [
+    { item = "Drone Control Core", count = 1 },
+    { item = "Iridium", count = 10 },
+    { item = "Steel", count = 60 },
+    { item = "Ship Weapon, Pulse Turret", count = 1 },
+    { item = "Ship Sensor", count = 1 },
+    { item = "Energy Cell", count = 200 },
+]
+outputs = [
+    { item = "Combat Drone", count = 1 },
+    { item = "Waste", count = 30 },
+]
+
+# The next free recipe id: 53

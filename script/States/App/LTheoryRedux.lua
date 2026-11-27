@@ -57,6 +57,8 @@ local MemoryReporter = require('Modules.Profiling.MemoryReporter')
 local ConstructManager = require('Modules.Constructs.Managers.ConstructManager')
 local StationGenerator = require('Modules.Constructs.Managers.Generators.StationGenerator')
 local PlayerStations = require('Modules.Economy.Managers.PlayerStations')
+local PlayerForces = require('Modules.Economy.Managers.PlayerForces')
+local Items = require('Shared.Registries.Items')
 local GalaxyGenerator = require('Modules.Navigation.Managers.GalaxyGenerator')
 local JumpGateGenerator = require('Modules.Navigation.Managers.JumpGateGenerator')
 local JumpGateSystem = require('Modules.Navigation.Systems.JumpGateSystem')
@@ -746,7 +748,8 @@ end
 function LimitTheoryRedux:onCombatHit(event)
     if not self.playerShip or event.attacker ~= self.playerShip or not self.npcs then return end
     local record = self.npcs:recordOf(event.target)
-    if not record then return end
+    -- The player's own ships: friendly fire costs no standing with anyone
+    if not record or record.faction == Factions.Player then return end
     local now = self.simTime or 0
     if not record.blamedAt or now - record.blamedAt >= 1.0 then
         record.blamedAt = now
@@ -760,14 +763,15 @@ end
 ---@param event table
 function LimitTheoryRedux:onCombatKill(event)
     if not self.npcs then return end
-    -- An outpost's guns: an outlaw's bounty is the owner's; no standing moves
-    if self:isOutpostDefense(event.attacker) then
+    -- An outpost's guns or one of the player's own ships: an outlaw's
+    -- bounty is the owner's; no standing moves
+    if self:isOutpostDefense(event.attacker) or self:isPlayerUnit(event.attacker) then
         local record = self.npcs:recordOf(event.target)
         local economy = Config.game.economy
         if record and Factions.isHostile(economy.bountyIssuer, record.faction) then
             local bounty = economy.bounties[record.role] or economy.defaultBounty
             PlayerWallet:add(bounty, "Bounty (outpost defences): " .. record.label)
-            self:notify(string.format("Your outpost's guns destroyed %s: bounty +%s", record.label,
+            self:notify(string.format("Your forces destroyed %s: bounty +%s", record.label,
                 PlayerWallet.format(bounty)), { 1.0, 0.85, 0.35 })
         end
         return
@@ -2031,6 +2035,8 @@ function LimitTheoryRedux:populateSystem()
     if level then
         self.npcs:populate(level, system and system.seed or self.seed)
     end
+    -- The player's own ships in this system, back at their posts
+    self:spawnPlayerForces()
 end
 
 --- A new game or a regenerated one starts in a new galaxy, in its first
@@ -2051,6 +2057,7 @@ function LimitTheoryRedux:resetGalaxy()
     PlayerCargo:reset()
     PlayerFactories:reset()
     PlayerStations:reset()
+    PlayerForces:reset()
     MarketIntel:reset()
     self:connectMarket()
     -- A new galaxy's rocks are all unread
@@ -2257,6 +2264,7 @@ function LimitTheoryRedux:destroyScene(keepShip)
     if self.npcs then
         self.npcs:clear()
     end
+    self.forceRecords = {}
     -- Before the things it may follow go
     if self.player then
         self.player:setOrbitTarget(nil)
@@ -2790,6 +2798,234 @@ function LimitTheoryRedux:updateOutpostDefenses(dt)
             end
         end
     end
+end
+
+------------------------------------------------------------------------------
+-- The player's forces (PlayerForces): drones and mercenaries, flown as NPC
+-- gunships of the player's side while the player is in their system
+------------------------------------------------------------------------------
+
+--- Where an outpost is, for its units.
+---@param key string
+---@return table|nil position, number radius
+function LimitTheoryRedux:outpostPlace(key)
+    local entry = self:outpostEntry(key)
+    local rbCmp = entry and entry.entity:get(PhysicsComponents.RigidBody)
+    local body = rbCmp and rbCmp:getRigidBody()
+    if not body then return nil, 0 end
+    return body:getPos(), body:getBoundingRadius()
+end
+
+--- The round a unit flies: four points about its outpost (guard), or every
+--- outpost of the player's in the system (patrol).
+---@param unit PlayerUnit
+---@return table[] positions
+function LimitTheoryRedux:unitNodes(unit)
+    local nodes = {}
+    local function around(key, reach)
+        local p, radius = self:outpostPlace(key)
+        if not p then return end
+        local r = math.max(reach, radius * 2)
+        -- Each unit starts its round at a different quarter, so they spread out
+        for i = 0, 3 do
+            local a = (i + unit.id) * math.pi / 2
+            nodes[#nodes + 1] = { x = p.x + math.cos(a) * r, y = p.y, z = p.z + math.sin(a) * r }
+        end
+    end
+    if unit.order == PlayerForces.Order.Patrol then
+        for _, entry in ipairs(self.playerStationEntities or {}) do
+            local p, radius = self:outpostPlace(PlayerStations.keyOf(entry.record.id))
+            if p then
+                local a = unit.id * 1.7
+                local r = radius * 2.5
+                nodes[#nodes + 1] = { x = p.x + math.cos(a) * r, y = p.y, z = p.z + math.sin(a) * r }
+            end
+        end
+        if #nodes > 1 then return nodes end
+        nodes = {}
+    end
+    around(unit.homeKey, Config.game.forces.guardRadius)
+    return nodes
+end
+
+--- Fly one unit: an NPC gunship of its role near its outpost, with its
+--- order as its job and its hull and shields as last seen.
+---@param unit PlayerUnit
+---@return table|nil record
+function LimitTheoryRedux:spawnUnit(unit)
+    if not self.npcs or not self:isTravelGame() then return nil end
+    local home, radius = self:outpostPlace(unit.homeKey)
+    if not home then
+        Log.Warn("Forces: %s has no outpost to come back to (%s)", unit.name, tostring(unit.homeKey))
+        return nil
+    end
+    local forces = Config.game.forces
+    local role = unit.kind == PlayerForces.Kind.Drone and forces.drone.role or forces.mercenary.role
+    local a = unit.id * 2.39996
+    local r = radius * 2.2
+    local spot = { x = home.x + math.cos(a) * r, y = home.y + radius * 0.5, z = home.z + math.sin(a) * r }
+    local record = self.npcs:spawn(role, spot, 7919 * unit.id + 101)
+    if not record then return nil end
+    record.unit = unit
+    record.label = unit.name
+    record.assignment = { nodes = function() return self:unitNodes(unit) end }
+    local health = record.entity:get(CoreComponentsAll.Health)
+    local defense = record.entity:get(ConstructComponents.Defense)
+    if health and unit.hull then health:setCurrentHealth(math.max(1, math.min(unit.hull, health:getMaxHealth()))) end
+    if defense and unit.shield then defense:setCurrentShield(math.min(unit.shield, defense:getMaxShield())) end
+    self.forceRecords = self.forceRecords or {}
+    self.forceRecords[unit.id] = record
+    return record
+end
+
+--- The player's units in this system, after it was built.
+function LimitTheoryRedux:spawnPlayerForces()
+    self.forceRecords = {}
+    for _, unit in ipairs(PlayerForces:inSystem(self.currentSystemId or 1)) do
+        self:spawnUnit(unit)
+    end
+end
+
+--- Each frame: wages, the units' state onto their records, and the ones
+--- that were destroyed off the books.
+---@param dt number
+function LimitTheoryRedux:updatePlayerForces(dt)
+    self.wageTimer = (self.wageTimer or 0) - dt
+    if self.wageTimer <= 0 then
+        self.wageTimer = Config.game.forces.wageInterval
+        local events, left = PlayerForces:payWages(self.simTime or 0)
+        for _, event in ipairs(events) do self:notify(event.text, { 1.0, 0.6, 0.3 }) end
+        for _, id in ipairs(left) do
+            local record = self.forceRecords and self.forceRecords[id]
+            if record and not record.removed then self.npcs:remove(record) end
+            if self.forceRecords then self.forceRecords[id] = nil end
+        end
+    end
+    for id, record in pairs(self.forceRecords or {}) do
+        local unit = PlayerForces:get(id)
+        if not unit or record.removed then
+            self.forceRecords[id] = nil
+        elseif record.dead then
+            PlayerForces:remove(id)
+            self.forceRecords[id] = nil
+            self:notify(string.format("%s was destroyed.", unit.name), { 1.0, 0.4, 0.3 })
+        elseif record.entity:isValid() then
+            local health = record.entity:get(CoreComponentsAll.Health)
+            local defense = record.entity:get(ConstructComponents.Defense)
+            unit.hull = health and health:getCurrentHealth() or unit.hull
+            unit.shield = defense and defense:getCurrentShield() or unit.shield
+        end
+    end
+end
+
+--- Whether an entity is one of the player's units.
+---@param entity Entity|nil
+---@return boolean
+function LimitTheoryRedux:isPlayerUnit(entity)
+    if not entity or not entity.id then return false end
+    for _, record in pairs(self.forceRecords or {}) do
+        if record.entity and record.entity.id == entity.id then return true end
+    end
+    return false
+end
+
+--- A unit's state for the Forces tab: { hull, maxHull, shield, maxShield,
+--- here (flying in this system) }.
+---@param unit PlayerUnit
+---@return table
+function LimitTheoryRedux:unitStatus(unit)
+    local record = self.forceRecords and self.forceRecords[unit.id]
+    local status = { here = record ~= nil }
+    local stats = Config.game.npc.roles[unit.kind == PlayerForces.Kind.Drone
+        and Config.game.forces.drone.role or Config.game.forces.mercenary.role]
+    status.maxHull, status.maxShield = stats.maxHealth, stats.maxShield
+    status.hull, status.shield = unit.hull or stats.maxHealth, unit.shield or stats.maxShield
+    if record and record.entity:isValid() then
+        local health = record.entity:get(CoreComponentsAll.Health)
+        local defense = record.entity:get(ConstructComponents.Defense)
+        if health then status.hull, status.maxHull = health:getCurrentHealth(), health:getMaxHealth() end
+        if defense then status.shield, status.maxShield = defense:getCurrentShield(), defense:getMaxShield() end
+    end
+    return status
+end
+
+--- The drone item, and the hangar of the outpost the player is docked at.
+---@return ItemDefinition|nil, StockComponent|nil, string|nil key
+function LimitTheoryRedux:droneStock()
+    local key = self.docked and self.docked.key
+    if not PlayerStations.isOwnedKey(key) then return nil, nil, nil end
+    return Items:getByName(Config.game.forces.drone.item), PlayerFactories:hangar(key), key
+end
+
+--- Launch a drone from the docked outpost's hangar.
+function LimitTheoryRedux:launchDrone()
+    local def, hangar, key = self:droneStock()
+    if not def or not hangar then return end
+    if hangar:count(def.id) < 1 then
+        self:notify("No " .. def.displayName .. " in this hangar.", { 1.0, 0.7, 0.3 })
+        return
+    end
+    local unit, reason = PlayerForces:launchDrone(self.currentSystemId or 1, key)
+    if not unit then
+        self:notify("Cannot launch: " .. reason, { 1.0, 0.4, 0.3 })
+        return
+    end
+    hangar:remove(def.id, 1)
+    self:spawnUnit(unit)
+    self:notify(string.format("%s launched: guarding %s.", unit.name, self.docked.label), { 0.3, 1.0, 0.45 })
+end
+
+--- Hire a mercenary at the docked outpost.
+function LimitTheoryRedux:hireMercenary()
+    local key = self.docked and self.docked.key
+    if not PlayerStations.isOwnedKey(key) then return end
+    local unit, reason = PlayerForces:hireMercenary(self.currentSystemId or 1, key, self.simTime or 0)
+    if not unit then
+        self:notify("Cannot hire: " .. reason, { 1.0, 0.4, 0.3 })
+        return
+    end
+    self:spawnUnit(unit)
+    local cfg = Config.game.forces.mercenary
+    self:notify(string.format("%s hired for %s, at %s an hour: guarding %s.", unit.name,
+        PlayerWallet.format(cfg.hireCost), PlayerWallet.format(cfg.wagePerHour), self.docked.label),
+        { 0.3, 1.0, 0.45 })
+end
+
+--- Guard or patrol.
+---@param unit PlayerUnit
+---@param order string
+function LimitTheoryRedux:setUnitOrder(unit, order)
+    PlayerForces:setOrder(unit.id, order)
+    local record = self.forceRecords and self.forceRecords[unit.id]
+    -- The current round is dropped; Think gives the new one
+    if record and not record.dead and not record.removed then
+        record.pilot:clearActions(record)
+        record.pilot:clearGoal()
+    end
+end
+
+--- A drone back into its outpost's hangar (it must be here and docked with
+--- the player at its outpost), or a mercenary paid off.
+---@param unit PlayerUnit
+function LimitTheoryRedux:releaseUnit(unit)
+    local record = self.forceRecords and self.forceRecords[unit.id]
+    if unit.kind == PlayerForces.Kind.Drone then
+        local def, hangar, key = self:droneStock()
+        if not def or key ~= unit.homeKey or not record then
+            self:notify("A drone is recalled at its own outpost, while it is in the system.", { 1.0, 0.7, 0.3 })
+            return
+        end
+        if hangar:add(def.id, 1) < 1 then
+            self:notify("No room in the hangar for the drone.", { 1.0, 0.4, 0.3 })
+            return
+        end
+        self:notify(unit.name .. " recalled to the hangar.", { 0.6, 0.9, 1.0 })
+    else
+        self:notify(unit.name .. " paid off and gone.", { 0.6, 0.9, 1.0 })
+    end
+    PlayerForces:remove(unit.id)
+    if record and not record.removed then self.npcs:remove(record) end
+    if self.forceRecords then self.forceRecords[unit.id] = nil end
 end
 
 --- Whether an entity is one of the outposts' defence platforms.
@@ -3756,6 +3992,7 @@ function LimitTheoryRedux:onStateSim(data)
     Profiler.Begin('Sim.NPCs')
     self.npcs:update(dt)
     self:updateOutpostDefenses(dt)
+    self:updatePlayerForces(dt)
     Profiler.End()
     -- The stations' factory floors, and the goods they cannot make arriving
     Profiler.Begin('Sim.Economy')

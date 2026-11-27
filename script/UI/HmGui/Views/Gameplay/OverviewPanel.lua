@@ -160,8 +160,8 @@ local function actionsFor(entry)
         items[#items + 1] = { label = label, enabled = enabled ~= false, run = run }
     end
 
-    -- Ships: lock, attack, release
-    if entry.category == "ship" then
+    -- Ships: lock, attack, release (not the player's own drones and hires)
+    if entry.category == "ship" and entry.faction ~= "player" then
         if game:isTarget(entry.entity) then
             if not game.attacking and not entry.hostile then
                 add("Attack", function() game:attackTarget(entry.entity, entry.name, entry.faction) end)

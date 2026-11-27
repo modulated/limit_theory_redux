@@ -334,6 +334,22 @@ Config.game = {
                 maxSpeed = 0.7, accel = 0.25, turnRate = 1.2,
                 detectRange = 6.0,
             },
+            -- The player's own (Modules/Economy/Managers/PlayerForces.lua):
+            -- an unmanned gunship launched from an outpost, and a gun for hire
+            drone = {
+                faction = "player", label = "Drone",
+                gunship = true, scale = 0.022, sizeClass = "small",
+                maxHealth = 650, maxShield = 220, shieldRegen = 12,
+                maxSpeed = 0.75, accel = 0.3, turnRate = 1.4,
+                detectRange = 6.0, sensor = 1.2,
+            },
+            hiredMercenary = {
+                faction = "player", label = "Mercenary",
+                gunship = true, scale = 0.025, sizeClass = "medium",
+                maxHealth = 500, maxShield = 120, shieldRegen = 8,
+                maxSpeed = 0.6, accel = 0.25, turnRate = 1.2,
+                detectRange = 5.5,
+            },
             -- A green pirate in a light ship: what a peaceful system sees
             pirateScout = {
                 faction = "pirate", label = "Pirate scout",
@@ -552,6 +568,24 @@ Config.game = {
             scale = 0.04, sizeClass = "large",
             offset = 2.2,         -- from the outpost's centre, in its radii
             rebuildCost = 60000,
+        },
+    },
+
+    -- The ships that work for the player (Modules/Economy/Managers/
+    -- PlayerForces.lua): combat drones, built (res/data/recipes.toml: the
+    -- Combat Drone Drydock) and launched from an outpost's hangar, and
+    -- mercenaries hired at an outpost. Each guards its home outpost or
+    -- patrols all of the player's outposts in the system (the Forces tab).
+    -- They fly as npc.roles.drone and npc.roles.hiredMercenary.
+    forces = {
+        maxPerOutpost = 6,         -- ships one outpost can be home to
+        guardRadius   = 3.0,       -- how far around its outpost a guard flies
+        wageInterval  = 60,        -- seconds of game time between paydays
+        drone = { item = "Combat Drone", role = "drone" },
+        mercenary = {
+            role = "hiredMercenary",
+            hireCost = 8000,       -- credits, once
+            wagePerHour = 1500,    -- credits per hour of game time
         },
     },
 

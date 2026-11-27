@@ -45,6 +45,7 @@ ores = [
     { item = "Carboniferous Ore", weight = 0.12 },
     { item = "Aluminum Ore", weight = 0.1 },
     { item = "Beryllium Ore", weight = 0.05 },
+    { item = "Iridium Ore", weight = 0.02 },
 ]
 
 # Standard systems: a planet's icy ring
@@ -65,6 +66,7 @@ ores = [
     { item = "Silicate Ore", weight = 0.5 },
     { item = "Iron Ore", weight = 0.4 },
     { item = "Carboniferous Ore", weight = 0.1 },
+    { item = "Iridium Ore", weight = 0.03 },
 ]
 
 # Standard systems: an icy belt, out past the frost line

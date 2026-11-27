@@ -471,6 +471,25 @@ Station, at 1,550,000 t, only ever travels that way).
   on the Factory tab, where it is repaired at the hull rate or, once shot down, rebuilt for
   `rebuildCost`.
 
+### Forces: drones and mercenaries
+
+`Modules/Economy/Managers/PlayerForces.lua`, configured by `Config.game.forces`; commanded from the
+**Forces** tab, which shows when docked at one of your outposts. Each unit has a home outpost (up
+to `maxPerOutpost` each) and an order: **guard** (fly around the outpost) or **patrol** (the round
+of all your outposts in the system). They fly as NPC gunships of your side
+(`npc.roles.drone`, `npc.roles.hiredMercenary`), attack whatever you are hostile to, and pay you
+the bounty on outlaws they kill. They are flown only while you are in their system, and saved
+with the game, hull and shields as last seen.
+
+- **Combat drones** are built, not hired: launch one from the outpost's hangar, recall it back
+  into the hangar. No upkeep; destroyed is gone. The chain is deliberately hard: **Iridium Ore**
+  (a trace in the standard systems' rocky belts and rings, none in the small ones) is refined
+  into **Iridium**, which with infolytic chips, radioactive isotopes and a ship computer makes a
+  **Drone Control Core**; a drydock puts the core, more iridium, steel, a pulse turret and a
+  sensor together into a **Combat Drone** (recipes 50–52, about 52,000 credits of goods).
+- **Mercenaries** are hired for `mercenary.hireCost` and paid `mercenary.wagePerHour` for every
+  hour of game time, wherever you are. When the wages cannot be paid, they leave.
+
 Outposts, with the state of their defences, are saved with the game, and built again from their
 records whenever the player comes back to the system.
 

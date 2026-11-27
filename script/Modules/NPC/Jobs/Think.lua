@@ -68,6 +68,14 @@ end
 function Think.chooseJob(npc, ctx)
     local places, rng = ctx.places, ctx.rng
 
+    -- The player's own ships: what their order says (LimitTheoryRedux
+    -- sets `assignment.nodes` to the outpost's surroundings or the round of
+    -- the player's outposts)
+    if npc.assignment then
+        local nodes = npc.assignment.nodes and npc.assignment.nodes() or {}
+        return #nodes > 0 and Patrolling(nodes) or nil
+    end
+
     -- A guard: its charge, or a new one
     if npc.isGuard then
         if not ctx:isGuarding(npc.charge) then

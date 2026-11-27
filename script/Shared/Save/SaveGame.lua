@@ -9,6 +9,7 @@ local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
 local PlayerFleet = require("Modules.Constructs.Managers.PlayerFleet")
 local StockComponent = require("Modules.Economy.Components.StockComponent")
 local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
+local PlayerForces = require("Modules.Economy.Managers.PlayerForces")
 
 --- What a saved game holds, and putting it back.
 ---
@@ -26,6 +27,7 @@ local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
 ---   intel       what is known of the markets within reach
 ---   stations    the stock of the stations in the system the player is in
 ---   structures  the player's own stations (PlayerStations, when present)
+---   forces      the player's drones and mercenaries (PlayerForces)
 ---
 --- Loading runs the game's own paths rather than a third way of building a
 --- world: a new game from the saved seed and scenario, with the persistent
@@ -223,6 +225,7 @@ function SaveGame.capture(game)
         intel = copy(MarketIntel.stations, "intel"),
         stations = stationsOut(game),
         structures = PlayerStations:snapshot(),
+        forces = PlayerForces:snapshot(),
     }
 end
 
@@ -309,6 +312,7 @@ function SaveGame.restoreManagers(game, state)
     game.savedStationStock = copy(state.stations) or {}
 
     PlayerStations:restore(state.structures)
+    PlayerForces:restore(state.forces)
 end
 
 ------------------------------------------------------------------------------

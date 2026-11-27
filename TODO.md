@@ -71,6 +71,13 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          lines of its specialisation, free. Its defences are an armed platform beside it that
          engages whatever the player is hostile to and earns the bounties it takes; the platform
          can be shot down (the station cannot) and is repaired or rebuilt at the outpost.
+   - [x] Forces: combat drones (built from iridium, a rare ore, through a three-recipe chain)
+         and hired mercenaries (fee plus hourly wage) guard an outpost or patrol all of them in
+         a system, from the outpost's Forces tab.
+   - [x] Game data as TOML (`res/data/`): items, recipes, modules and ore compositions, checked
+         at load with file:line errors; `tools/data-check.lua` cross-checks and exports CSV.
+   - [x] A Sandbox start: Solo hull, a pulse turret, a mining laser, 500 credits, a Peaceful
+         home system with only pirate scouts.
    - [ ] Balance: tune with `luajit tools/economy-sim.lua --seeds 8 --prospector --trader`
          (it runs the economy headless). Income swings more than tenfold between systems
          depending on whether the local refineries want the local ore; mining and hauling pay

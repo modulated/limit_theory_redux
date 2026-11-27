@@ -72,6 +72,7 @@ end
 ---@field InfolyticChip ItemDefinition
 
 ---@class ItemsRawMaterials
+---@field IridiumOre ItemDefinition
 ---@field SilicateOre ItemDefinition
 ---@field IronOre ItemDefinition
 ---@field CopperOre ItemDefinition
@@ -81,6 +82,7 @@ end
 ---@field CarboniferousOre ItemDefinition
 
 ---@class ItemsRefinedMaterials
+---@field Iridium ItemDefinition
 ---@field Iron ItemDefinition
 ---@field Copper ItemDefinition
 ---@field Aluminum ItemDefinition
@@ -111,6 +113,7 @@ end
 ---@field LiquidWater ItemDefinition
 
 ---@class ItemsEquipment
+---@field DroneControlCore ItemDefinition
 ---@field ShipComputer ItemDefinition
 ---@field ShipSensor ItemDefinition
 ---@field ShipEngineThruster ItemDefinition
@@ -134,6 +137,7 @@ end
 ---@field MarketDatalink ItemDefinition
 
 ---@class ItemsConstructs
+---@field CombatDrone ItemDefinition
 ---@field ShipHullSolo ItemDefinition
 ---@field ShipHullSmall ItemDefinition
 ---@field ShipHullCompact ItemDefinition

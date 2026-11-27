@@ -127,6 +127,16 @@ mass = 6
 energy_density = 1.4
 price = 28
 
+# Rare: a trace in the standard systems' rocky belts and rings, and nowhere
+# in the small ones. What the drones are made of.
+[[item]]
+id = 71
+name = "Iridium Ore"
+group = "Raw Materials"
+mass = 8
+energy_density = 1.9
+price = 260
+
 # --------------------------------------------------------------------------
 # Refined Materials
 # --------------------------------------------------------------------------
@@ -270,6 +280,14 @@ group = "Refined Materials"
 mass = 6
 energy_density = 3.5
 price = 55
+
+[[item]]
+id = 72
+name = "Iridium"
+group = "Refined Materials"
+mass = 6
+energy_density = 1.2
+price = 1150
 
 # --------------------------------------------------------------------------
 # Gases
@@ -510,6 +528,16 @@ mass = 60
 energy_density = 21
 price = 3400
 
+# The mind of an unmanned ship: iridium circuitry, infolytic chips and an
+# isotope cell. The hard part of a combat drone.
+[[item]]
+id = 73
+name = "Drone Control Core"
+group = "Equipment"
+mass = 20
+energy_density = 25
+price = 13500
+
 # --------------------------------------------------------------------------
 # Constructs
 # --------------------------------------------------------------------------
@@ -589,6 +617,16 @@ mass = 2000
 energy_density = 30
 price = 650000
 
+# An unmanned gunship, crated. Launched from an outpost's hangar to guard it
+# or patrol the player's stations (Forces tab).
+[[item]]
+id = 74
+name = "Combat Drone"
+group = "Constructs"
+mass = 900
+energy_density = 30
+price = 52000
+
 # --------------------------------------------------------------------------
 # Waste
 # --------------------------------------------------------------------------
@@ -637,4 +675,4 @@ mass = 13
 energy_density = 50
 price = 600
 
-# The next free item id: 71
+# The next free item id: 75
