@@ -23,12 +23,232 @@ end
 ---@class SystemMap
 local SystemMap = {}
 
+------------------------------------------------------------------------------
+-- The schematic layout (the default; the corner label switches to true
+-- scale). At true scale a system is mostly empty: planets are specks, and
+-- their moons, rings and stations sit on top of them until zoomed in a very
+-- long way. The schematic layout is to be read at a glance instead:
+--
+--   * distance from the star is compressed (log), the outermost body at
+--     LAYOUT_RADIUS map units, so inner and outer orbits are spread evenly;
+--   * each planet's neighbourhood (its moons, ring, stations, the ships about
+--     it) is magnified to a fixed size round the planet (`neighbourhood`),
+--     easing into the compressed layout at its edge.
+--
+-- Everything is drawn as (map position + pan) x zoom, as at true scale; only
+-- the map position of a world point (`SystemMap:project`) differs. Directions
+-- are kept: a planet is drawn where it is in its orbit.
+------------------------------------------------------------------------------
+
+local LAYOUT_RADIUS = 1000
+
+---@param e table
+---@return number
+local function smooth(e)
+    e = math.max(0, math.min(1, e))
+    return e * e * (3 - 2 * e)
+end
+
+--- Work out the layout's fixed numbers from the walked entries: where the
+--- star is, the compression, which entries are planets and how far each
+--- planet's neighbourhood reaches.
+---@param state table
+function SystemMap:_buildLayout(state)
+    local layout = { planets = {}, zone = {} }
+    local star = nil
+    for _, entry in ipairs(state.entities) do
+        if entry.isStar then star = entry end
+    end
+    layout.star = star
+    local sx, sz = 0, 0
+    if star then sx, sz = star.pos.x, star.pos.z end
+
+    -- How far each planet's things reach from it
+    local reach = {}
+    for _, entry in ipairs(state.entities) do
+        local parent = entry._parentEntity
+        if parent and not entry.isStar then
+            local key = tostring(parent)
+            local r = entry.orbitRadius and entry.orbitRadius > 0
+                and entry.orbitRadius + (entry.beltWidth or 0) * 0.5
+                or (entry.parentPos and math.sqrt((entry.pos.x - entry.parentPos.x) ^ 2
+                    + (entry.pos.z - entry.parentPos.z) ^ 2)) or 0
+            reach[key] = math.max(reach[key] or 0, r)
+        end
+    end
+
+    -- The star's orbits: the compression runs from half the innermost to
+    -- the outermost
+    local rmin, rmax = math.huge, 0
+    for _, entry in ipairs(state.entities) do
+        if entry.isPlanet or (entry.isBelt and not entry.isRing) or entry.isStarLevel then
+            local r = math.sqrt((entry.pos.x - sx) ^ 2 + (entry.pos.z - sz) ^ 2)
+            if entry.isBelt then r = entry.orbitRadius or r end
+            local outer = r + (entry.beltWidth or 0) * 0.5
+            if r > 0 then rmin = math.min(rmin, r) end
+            rmax = math.max(rmax, outer)
+        end
+        if entry.isPlanet then
+            layout.planets[#layout.planets + 1] = entry
+            layout.zone[entry] = math.max((entry.scale or 0) * 8, (reach[tostring(entry.entity)] or 0) * 1.25)
+        end
+    end
+    if rmin == math.huge then rmin = math.max(rmax * 0.1, 1) end
+    if rmax <= rmin then rmax = rmin * 10 end
+    layout.r0 = rmin * 0.5
+    layout.logMax = math.log(1 + rmax / layout.r0)
+
+    -- A neighbourhood is as big as the room between neighbouring orbits allows
+    local radii = {}
+    for _, planet in ipairs(layout.planets) do
+        local r = math.sqrt((planet.pos.x - sx) ^ 2 + (planet.pos.z - sz) ^ 2)
+        radii[#radii + 1] = self:_radial(layout, r)
+    end
+    table.sort(radii)
+    local gap = LAYOUT_RADIUS * 0.3
+    for i = 2, #radii do gap = math.min(gap, radii[i] - radii[i - 1]) end
+    layout.neighbourhood = math.max(14, math.min(90, gap * 0.42))
+    state.layout = layout
+end
+
+--- Map distance from the star for a world distance (schematic).
+---@param layout table
+---@param r number
+---@return number
+function SystemMap:_radial(layout, r)
+    return LAYOUT_RADIUS * math.log(1 + math.max(0, r) / layout.r0) / layout.logMax
+end
+
+--- Map units per world unit inside a planet's neighbourhood.
+---@param state table
+---@param planet table entry
+---@return number
+function SystemMap:localScale(state, planet)
+    local layout = state.layout
+    if not layout then return 1 end
+    local zone = layout.zone[planet]
+    return zone and zone > 0 and layout.neighbourhood / zone or 1
+end
+
+--- Each frame: where each planet is on the map (they orbit).
+---@param state table
+function SystemMap:_updateLayout(state)
+    local layout = state.layout
+    if not layout then return end
+    layout.planetMap = layout.planetMap or {}
+    for _, planet in ipairs(layout.planets) do
+        local mx, mz = self:_starProject(state, planet.pos.x, planet.pos.z)
+        local m = layout.planetMap[planet] or {}
+        m[1], m[2] = mx, mz
+        layout.planetMap[planet] = m
+    end
+end
+
+--- The compressed position about the star alone.
+function SystemMap:_starProject(state, wx, wz)
+    local layout = state.layout
+    local star = layout.star
+    local sx, sz = 0, 0
+    if star then sx, sz = star.pos.x, star.pos.z end
+    local dx, dz = wx - sx, wz - sz
+    local r = math.sqrt(dx * dx + dz * dz)
+    if r < 1e-9 then return sx, sz end
+    local k = self:_radial(layout, r) / r
+    return sx + dx * k, sz + dz * k
+end
+
+--- Where a world point (x, z) is on the map.
+---@param state table
+---@param wx number
+---@param wz number
+---@return number mx, number mz
+function SystemMap:project(state, wx, wz)
+    local layout = state.layout
+    if not state.schematic or not layout then return wx, wz end
+    local mx, mz = self:_starProject(state, wx, wz)
+    -- Inside (or near) a planet's neighbourhood: magnified about the planet
+    local best, bestShare = nil, math.huge
+    for _, planet in ipairs(layout.planets) do
+        local zone = layout.zone[planet]
+        local d = math.sqrt((wx - planet.pos.x) ^ 2 + (wz - planet.pos.z) ^ 2)
+        local share = d / zone
+        if share < 1.6 and share < bestShare then best, bestShare = planet, share end
+    end
+    if best and layout.planetMap and layout.planetMap[best] then
+        local pm = layout.planetMap[best]
+        local k = self:localScale(state, best)
+        local lx = pm[1] + (wx - best.pos.x) * k
+        local lz = pm[2] + (wz - best.pos.z) * k
+        local w = smooth((bestShare - 1.0) / 0.6)
+        return lx + (mx - lx) * w, lz + (mz - lz) * w
+    end
+    return mx, mz
+end
+
+--- A world point on screen.
+---@param state table
+---@param cx number the map's centre on screen
+---@param cy number
+---@param p Position|table {x, z}
+---@return number, number
+function SystemMap:toScreen(state, cx, cy, p)
+    local mx, mz = self:project(state, p.x, p.z)
+    return cx + (mx + state.panX) * state.zoom, cy + (mz + state.panY) * state.zoom
+end
+
+--- A belt or ring on screen: its centre, and its inner, outer and middle
+--- radii.
+---@return number ocx, number ocy, number inner, number outer, number mid
+function SystemMap:beltOnScreen(state, cx, cy, entry)
+    local half = (entry.beltWidth or entry.orbitRadius * 0.1) * 0.5
+    local ocx, ocy, mid = self:orbitOnScreen(state, cx, cy, entry)
+    local _, _, inner = self:orbitOnScreen(state, cx, cy, entry, math.max(0, entry.orbitRadius - half))
+    local _, _, outer = self:orbitOnScreen(state, cx, cy, entry, entry.orbitRadius + half)
+    -- Never thinner than a stroke, so a narrow belt still reads
+    if outer - inner < 4 then inner, outer = mid - 2, mid + 2 end
+    return ocx, ocy, math.max(1, inner), outer, mid
+end
+
+--- Screen pixels per world unit for an entry's asteroid dots, or nil when
+--- they cannot be drawn (a belt round the star in the schematic layout,
+--- whose compression the dot mesh cannot follow).
+---@return number|nil
+function SystemMap:dotScale(state, entry)
+    if not state.schematic or not state.layout then return state.zoom end
+    if entry._parentPlanet then return state.zoom * self:localScale(state, entry._parentPlanet) end
+    return nil
+end
+
+--- The centre on screen and the radius on screen of an entry's orbit (a
+--- belt's or ring's middle line): about its planet, or the star.
+---@param state table
+---@param cx number
+---@param cy number
+---@param entry table
+---@param radius number|nil world radius (default the entry's orbit)
+---@return number ocx, number ocy, number screenRadius
+function SystemMap:orbitOnScreen(state, cx, cy, entry, radius)
+    radius = radius or entry.orbitRadius or 0
+    local centre = entry.parentPos or (state.layout and state.layout.star and state.layout.star.pos)
+        or { x = 0, z = 0 }
+    local ocx, ocy = self:toScreen(state, cx, cy, centre)
+    if not state.schematic or not state.layout then
+        return ocx, ocy, radius * state.zoom
+    end
+    local parent = entry._parentPlanet
+    if parent then
+        return ocx, ocy, radius * self:localScale(state, parent) * state.zoom
+    end
+    return ocx, ocy, self:_radial(state.layout, radius) * state.zoom
+end
+
 ---@param config table|nil
 ---@return table state
 function SystemMap:create(config)
     config = config or {}
     return {
         enabled    = false,
+        schematic  = true, -- the readable layout (see above); false: true scale
         panX       = 0,
         panY       = 0,
         zoom       = config.zoom or 0.001,
@@ -58,7 +278,9 @@ function SystemMap:collectEntities(state, rootEntity, shipEntity, npcEntries)
         state.entities = {}
         state.shipEntity = shipEntity
         state._planetIdx = 0
+        state._planetEntries = {}
         self:_walk(state, rootEntity, nil)
+        self:_buildLayout(state)
 
         -- Add ship
         if shipEntity then
@@ -134,7 +356,19 @@ function SystemMap:collectEntities(state, rootEntity, shipEntity, npcEntries)
         end
     end
 
+    self:_updateLayout(state)
+
     -- Auto-fit on first open only (not every collectEntities call)
+    if not state.hasAutoFit and #state.entities > 0 and state.schematic and state.layout then
+        -- The whole layout, centred on the star
+        state.hasAutoFit = true
+        local star = state.layout.star
+        state.panX = star and -star.pos.x or 0
+        state.panY = star and -star.pos.z or 0
+        local screenSize = math.min(Window:width(), Window:height()) * 0.85
+        state.zoom = screenSize / (LAYOUT_RADIUS * 2.1)
+        state.zoomTarget = state.zoom
+    end
     if not state.hasAutoFit and #state.entities > 0 then
         state.hasAutoFit = true
         local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
@@ -173,12 +407,15 @@ function SystemMap:_walk(state, entity, parentPos, parentEntity)
         local scale = transform:getScale()
         local label, color, pointSize, isMoon, isBelt = nil, nil, nil, false, false
 
+        local isStar, isPlanet, isRing = false, false, false
         if name:find("StarEntity") then
+            isStar = true
             label = "Star"
             color = { 1.0, 0.9, 0.3 }
             pointSize = 8
         elseif name:find("PlanetEntity") then
             state._planetIdx = state._planetIdx + 1
+            isPlanet = true
             label = "Planet " .. state._planetIdx
             color = { 0.3, 0.6, 1.0 }
             pointSize = 5
@@ -203,6 +440,7 @@ function SystemMap:_walk(state, entity, parentPos, parentEntity)
             isBelt = true
         elseif name:find("AsteroidRingEntity") then
             label = "Asteroid Ring"
+            isRing = true
             color = { 0.6, 0.5, 0.4 }
             pointSize = 3
             isBelt = true  -- reuse belt rendering logic (annulus + dots)
@@ -227,6 +465,7 @@ function SystemMap:_walk(state, entity, parentPos, parentEntity)
                 if beltCmp then orbitRadius = beltCmp:getOrbitRadius() end
             end
 
+            state._planetEntries = state._planetEntries or {}
             table.insert(state.entities, {
                 entity      = entity,
                 label       = label,
@@ -237,10 +476,19 @@ function SystemMap:_walk(state, entity, parentPos, parentEntity)
                 size        = pointSize,
                 isMoon      = isMoon,
                 isBelt      = isBelt,
+                isStar      = isStar,
+                isPlanet    = isPlanet,
+                isRing      = isRing,
+                -- Planets are walked before their children: the planet's entry
+                _parentPlanet = parentEntity and state._planetEntries and state._planetEntries[parentEntity] or nil,
                 beltWidth   = isBelt and (entity:get(SpatialComponents.Width) and entity:get(SpatialComponents.Width):getWidth() or 0) or nil,
                 parentPos   = parentPos,
                 _parentEntity = parentEntity,
             })
+        end
+
+        if label and isPlanet then
+            state._planetEntries[entity] = state.entities[#state.entities]
         end
 
         local childrenCmp = entity:get(CoreComponents.Children)
@@ -276,7 +524,7 @@ function SystemMap:updateInput(state, dt)
     if math.abs(scrollY) > 0.001 then
         state.zoomTarget = Math.Clamp(
             state.zoomTarget * math.exp(state.zoomSpeed * scrollY),
-            state.minZoom, state.maxZoom)
+            state.schematic and 0.02 or state.minZoom, state.schematic and 400 or state.maxZoom)
     end
 
     -- Smooth interpolation in log space
@@ -318,8 +566,8 @@ function SystemMap:updateInput(state, dt)
 
         local targetPanX, targetPanY
         if state.selected.clickPos then
-            targetPanX = -state.selected.clickPos.x
-            targetPanY = -state.selected.clickPos.z
+            local mx, mz = self:project(state, state.selected.clickPos.x, state.selected.clickPos.z)
+            targetPanX, targetPanY = -mx, -mz
         else
             local pos = state.selected.pos
             local rbCmp = state.selected.entity:get(PhysicsComponents.RigidBody)
@@ -327,12 +575,22 @@ function SystemMap:updateInput(state, dt)
                 pos = rbCmp:getRigidBody():getPos()
                 state.selected.pos = pos
             end
-            targetPanX = -pos.x
-            targetPanY = -pos.z
+            local mx, mz = self:project(state, pos.x, pos.z)
+            targetPanX, targetPanY = -mx, -mz
         end
         local f = math.min(1, 6 * dt)
         state.panX = state.panX + (targetPanX - state.panX) * f
         state.panY = state.panY + (targetPanY - state.panY) * f
+    end
+
+    -- The corner label switches the layout (schematic / true scale)
+    local toggle = state.toggleRect
+    if MapActions.Select:isPressed() and toggle and mp.x >= toggle[1] and mp.x <= toggle[1] + toggle[3]
+        and mp.y >= toggle[2] and mp.y <= toggle[2] + toggle[4] then
+        state.schematic = not state.schematic
+        state.hasAutoFit = false
+        state.selected = nil
+        return
     end
 
     -- Click to select nearest entity
@@ -347,28 +605,21 @@ function SystemMap:updateInput(state, dt)
         for _, entry in ipairs(state.entities) do
             -- Skip hidden moons
             if entry.isMoon and entry.orbitRadius then
-                local moonScreenRadius = entry.orbitRadius * state.zoom
-                if moonScreenRadius < 20 then goto next_click end
+                local _, _, moonScreenRadius = self:orbitOnScreen(state, hx, hy, entry)
+                if moonScreenRadius < 14 then goto next_click end
             end
 
             if entry.isBelt and entry.orbitRadius and entry.orbitRadius > 0 then
                 -- Check individual asteroid dots first (higher priority)
                 local beltCmp = entry.entity:get(CelestialComponents.AsteroidBelt)
-                local beltScreenR = entry.orbitRadius * state.zoom
                 -- Center on parent (planet for rings, star for belts)
-                local ocx, ocy
-                if entry.parentPos then
-                    ocx = hx + (entry.parentPos.x + state.panX) * state.zoom
-                    ocy = hy + (entry.parentPos.z + state.panY) * state.zoom
-                else
-                    ocx = hx + state.panX * state.zoom
-                    ocy = hy + state.panY * state.zoom
-                end
+                local ocx, ocy, innerR, outerR, beltScreenR = self:beltOnScreen(state, hx, hy, entry)
+                local dotZoom = self:dotScale(state, entry)
 
                 -- Check individual asteroid dots
                 local isRing = entry.parentPos ~= nil
                 local dotClickThreshold = isRing and 20 or (math.min(Window:width(), Window:height()) * 2)
-                if beltCmp and beltScreenR > dotClickThreshold then
+                if beltCmp and dotZoom and beltScreenR > dotClickThreshold then
                     local asteroids = beltCmp:getAsteroidData()
                     local mdxB = mp.x - ocx
                     local mdyB = mp.y - ocy
@@ -377,8 +628,8 @@ function SystemMap:updateInput(state, dt)
                     local bestAsteroidDist = 400
                     for _, i in ipairs(indices) do
                         local a = asteroids[i]
-                        local ax = ocx + a.px * state.zoom
-                        local ay = ocy + a.pz * state.zoom
+                        local ax = ocx + a.px * dotZoom
+                        local ay = ocy + a.pz * dotZoom
                         local ad = (mp.x - ax)^2 + (mp.y - ay)^2
                         if ad < bestAsteroidDist and ad < bestDist then
                             bestDist = ad
@@ -395,9 +646,6 @@ function SystemMap:updateInput(state, dt)
                 local mdx = mp.x - ocx
                 local mdy = mp.y - ocy
                 local mouseDistFromCenter = math.sqrt(mdx * mdx + mdy * mdy)
-                local beltScreenW = (entry.beltWidth or entry.orbitRadius * 0.1) * state.zoom
-                local innerR = beltScreenR - beltScreenW * 0.5
-                local outerR = beltScreenR + beltScreenW * 0.5
                 local clickPad = 10
                 if mouseDistFromCenter >= innerR - clickPad and mouseDistFromCenter <= outerR + clickPad then
                     local d = 10000  -- very low priority, dots always win
@@ -414,8 +662,7 @@ function SystemMap:updateInput(state, dt)
                     end
                 end
             else
-                local screenX = hx + (entry.pos.x + state.panX) * state.zoom
-                local screenY = hy + (entry.pos.z + state.panY) * state.zoom
+                local screenX, screenY = self:toScreen(state, hx, hy, entry.pos)
                 local dx = mp.x - screenX
                 local dy = mp.y - screenY
                 local d = dx * dx + dy * dy
@@ -461,18 +708,10 @@ function SystemMap:draw(state, x, y, sx, sy)
 
     -- Draw orbit rings using the ring shader with correctly sized quad
     for _, entry in ipairs(state.entities) do
-        if entry.orbitRadius and entry.orbitRadius > 0 then
-            local ringScreenRadius = entry.orbitRadius * state.zoom
+        if entry.orbitRadius and entry.orbitRadius > 0 and not entry.isBelt then
+            -- Orbit center: parent position or star
+            local ocx, ocy, ringScreenRadius = self:orbitOnScreen(state, cx, cy, entry)
             if ringScreenRadius > 2 then
-                -- Orbit center: parent position or star (origin)
-                local ocx, ocy
-                if entry.parentPos then
-                    ocx = cx + (entry.parentPos.x + state.panX) * state.zoom
-                    ocy = cy + (entry.parentPos.z + state.panY) * state.zoom
-                else
-                    ocx = cx + state.panX * state.zoom
-                    ocy = cy + state.panY * state.zoom
-                end
 
                 local c = entry.isMoon
                     and { r = 0.6, g = 0.6, b = 0.7, a = 0.2 }
@@ -496,20 +735,8 @@ function SystemMap:draw(state, x, y, sx, sy)
     -- Draw asteroid belt/ring as solid filled annulus
     for _, entry in ipairs(state.entities) do
         if entry.isBelt and entry.orbitRadius and entry.orbitRadius > 0 then
-            local beltScreenRadius = entry.orbitRadius * state.zoom
-            local beltWidth = (entry.beltWidth or entry.orbitRadius * 0.1) * state.zoom
+            local ocx, ocy, innerR, outerR, beltScreenRadius = self:beltOnScreen(state, cx, cy, entry)
             if beltScreenRadius > 2 then
-                local ocx, ocy
-                if entry.parentPos then
-                    ocx = cx + (entry.parentPos.x + state.panX) * state.zoom
-                    ocy = cy + (entry.parentPos.z + state.panY) * state.zoom
-                else
-                    ocx = cx + state.panX * state.zoom
-                    ocy = cy + state.panY * state.zoom
-                end
-
-                local innerR = math.max(1, beltScreenRadius - beltWidth * 0.5)
-                local outerR = beltScreenRadius + beltWidth * 0.5
 
                 -- Skip if annulus quad is entirely off screen
                 if ocx + outerR > x and ocx - outerR < x + sx
@@ -532,18 +759,12 @@ function SystemMap:draw(state, x, y, sx, sy)
             -- Rings: show dots like moons (orbit > 20px). Belts: only at very high zoom.
             local isRing = entry.parentPos ~= nil
             local dotThreshold = isRing and 20 or (math.min(sx, sy) * 2)
-            if beltCmp2 and beltScreenRadius > dotThreshold then
-                local dotOcx, dotOcy
-                if entry.parentPos then
-                    dotOcx = cx + (entry.parentPos.x + state.panX) * state.zoom
-                    dotOcy = cy + (entry.parentPos.z + state.panY) * state.zoom
-                else
-                    dotOcx = cx + state.panX * state.zoom
-                    dotOcy = cy + state.panY * state.zoom
-                end
+            local dotZoom = self:dotScale(state, entry)
+            if beltCmp2 and dotZoom and beltScreenRadius > dotThreshold then
+                local dotOcx, dotOcy = ocx, ocy
 
                 -- Skip if ring center is far off screen (no dots visible)
-                local rOuter = beltScreenRadius + (entry.beltWidth or 0) * state.zoom * 0.5
+                local rOuter = outerR
                 if dotOcx + rOuter < x or dotOcx - rOuter > x + sx
                     or dotOcy + rOuter < y or dotOcy - rOuter > y + sy then
                     goto skip_dots
@@ -581,7 +802,7 @@ function SystemMap:draw(state, x, y, sx, sy)
                     dotParamsType = dotParamsType or dotShader:blockType('Params')
                     local p = pass:alloc(dotParamsType)
                     p.mapGeom.x, p.mapGeom.y, p.mapGeom.z, p.mapGeom.w = dotOcx, dotOcy, sx, sy
-                    p.mapParams.x, p.mapParams.y = state.zoom, 3.0
+                    p.mapParams.x, p.mapParams.y = dotZoom, 3.0
                     p.dotColor.x, p.dotColor.y, p.dotColor.z, p.dotColor.w = 0.8, 0.6, 0.3, 0.7
                     pass:drawMesh(cache.mesh)
                 end
@@ -593,10 +814,7 @@ function SystemMap:draw(state, x, y, sx, sy)
                 local cp = state.selected.clickPos
                 local ctrX = entry.parentPos and entry.parentPos.x or 0
                 local ctrZ = entry.parentPos and entry.parentPos.z or 0
-                local dotOcx = cx + (ctrX + state.panX) * state.zoom
-                local dotOcy = cy + (ctrZ + state.panY) * state.zoom
-                local ax = dotOcx + cp.x * state.zoom
-                local ay = dotOcy + cp.z * state.zoom
+                local ax, ay = self:toScreen(state, cx, cy, cp)
                 DrawEx.SimpleRect(ax - 3, ay - 3, 6, 6, Color(1.0, 0.8, 0.3, 1.0))
             end
         end
@@ -607,29 +825,21 @@ function SystemMap:draw(state, x, y, sx, sy)
     for _, entry in ipairs(state.entities) do
         -- The player's ship: a marker over everything, after the loop
         if entry.entity == state.shipEntity then
-            shipX = cx + (entry.pos.x + state.panX) * state.zoom
-            shipY = cy + (entry.pos.z + state.panY) * state.zoom
+            shipX, shipY = self:toScreen(state, cx, cy, entry.pos)
             goto next_map_entity
         end
 
         -- Hide moons unless zoomed in close to their parent planet
         if entry.isMoon and entry.parentPos then
-            local parentScreenDist = entry.orbitRadius * state.zoom
-            if parentScreenDist < 20 then goto next_map_entity end
+            local _, _, parentScreenDist = self:orbitOnScreen(state, cx, cy, entry)
+            if parentScreenDist < 14 then goto next_map_entity end
         end
 
         -- Belt entities: draw label at top of ring, not as a point
         if entry.isBelt and entry.orbitRadius and entry.orbitRadius > 0 then
-            local beltScreenR = entry.orbitRadius * state.zoom
+            local ocx, ocy, _, outerR = self:beltOnScreen(state, cx, cy, entry)
+            local beltScreenR = outerR
             if beltScreenR > 10 then
-                local ocx, ocy
-                if entry.parentPos then
-                    ocx = cx + (entry.parentPos.x + state.panX) * state.zoom
-                    ocy = cy + (entry.parentPos.z + state.panY) * state.zoom
-                else
-                    ocx = cx + state.panX * state.zoom
-                    ocy = cy + state.panY * state.zoom
-                end
                 local c = entry.color
                 MapLabels.add(labels, {
                     text = entry.label, x = ocx, y = ocy - beltScreenR, anchor = 2,
@@ -642,8 +852,7 @@ function SystemMap:draw(state, x, y, sx, sy)
         end
 
         local pos = entry.pos
-        local screenX = cx + (pos.x + state.panX) * state.zoom
-        local screenY = cy + (pos.z + state.panY) * state.zoom
+        local screenX, screenY = self:toScreen(state, cx, cy, pos)
 
         if screenX >= x - 50 and screenX <= x + sx + 50 and
            screenY >= y - 50 and screenY <= y + sy + 50 then
@@ -681,8 +890,7 @@ function SystemMap:draw(state, x, y, sx, sy)
     -- Target marker (yellow crosshair on actual target)
     if state.autopilotTargetPos then
         local tp = state.autopilotTargetPos
-        local tpx = cx + (tp.x + state.panX) * state.zoom
-        local tpy = cy + (tp.z + state.panY) * state.zoom
+        local tpx, tpy = self:toScreen(state, cx, cy, tp)
         local ms = 6
         DrawEx.SimpleRect(tpx - ms, tpy - 0.5, ms * 2, 1, Color(1.0, 0.8, 0.3, 0.9))
         DrawEx.SimpleRect(tpx - 0.5, tpy - ms, 1, ms * 2, Color(1.0, 0.8, 0.3, 0.9))
@@ -693,10 +901,10 @@ function SystemMap:draw(state, x, y, sx, sy)
     if state.autopilotPos and state.autopilotTargetPos then
         local ip = state.autopilotPos
         local tp = state.autopilotTargetPos
-        local sep = math.sqrt((ip.x-tp.x)^2 + (ip.z-tp.z)^2) * state.zoom
+        local ipx, ipy = self:toScreen(state, cx, cy, ip)
+        local tpx2, tpy2 = self:toScreen(state, cx, cy, tp)
+        local sep = math.sqrt((ipx - tpx2) ^ 2 + (ipy - tpy2) ^ 2)
         if sep > 10 then
-            local ipx = cx + (ip.x + state.panX) * state.zoom
-            local ipy = cy + (ip.z + state.panY) * state.zoom
             local ms = 4
             DrawEx.SimpleRect(ipx - ms, ipy - 0.5, ms * 2, 1, Color(0.3, 0.8, 1.0, 0.7))
             DrawEx.SimpleRect(ipx - 0.5, ipy - ms, 1, ms * 2, Color(0.3, 0.8, 1.0, 0.7))
@@ -707,8 +915,7 @@ function SystemMap:draw(state, x, y, sx, sy)
     -- Selection marker (when no autopilot, just map selection)
     if not state.autopilotTargetPos and state.selected and state.selected.clickPos then
         local cp = state.selected.clickPos
-        local cpx = cx + (cp.x + state.panX) * state.zoom
-        local cpy = cy + (cp.z + state.panY) * state.zoom
+        local cpx, cpy = self:toScreen(state, cx, cy, cp)
         local ms = 6
         DrawEx.SimpleRect(cpx - ms, cpy - 0.5, ms * 2, 1, Color(1.0, 0.8, 0.3, 0.9))
         DrawEx.SimpleRect(cpx - 0.5, cpy - ms, 1, ms * 2, Color(1.0, 0.8, 0.3, 0.9))
@@ -720,14 +927,12 @@ function SystemMap:draw(state, x, y, sx, sy)
         local shipRb = state.shipEntity:get(PhysicsComponents.RigidBody)
         if shipRb and shipRb:getRigidBody() then
             local shipPos = shipRb:getRigidBody():getPos()
-            local shipSX = cx + (shipPos.x + state.panX) * state.zoom
-            local shipSY = cy + (shipPos.z + state.panY) * state.zoom
+            local shipSX, shipSY = self:toScreen(state, cx, cy, shipPos)
 
             -- Yellow line: ship → actual target position
             if state.autopilotTargetPos then
                 local tp = state.autopilotTargetPos
-                local tSX = cx + (tp.x + state.panX) * state.zoom
-                local tSY = cy + (tp.z + state.panY) * state.zoom
+                local tSX, tSY = self:toScreen(state, cx, cy, tp)
                 local tLen = math.sqrt((tSX-shipSX)^2 + (tSY-shipSY)^2)
                 if tLen > 5 then
                     DrawEx.Line(shipSX, shipSY, tSX, tSY, Color(1.0, 0.8, 0.3, 0.2))
@@ -736,8 +941,7 @@ function SystemMap:draw(state, x, y, sx, sy)
 
             -- White line: ship → predicted intercept position
             local ap = state.autopilotPos
-            local destSX = cx + (ap.x + state.panX) * state.zoom
-            local destSY = cy + (ap.z + state.panY) * state.zoom
+            local destSX, destSY = self:toScreen(state, cx, cy, ap)
 
             local ldx = destSX - shipSX
             local ldy = destSY - shipSY
@@ -778,8 +982,16 @@ function SystemMap:draw(state, x, y, sx, sy)
     end
 
     -- Draw zoom level
-    DrawEx.TextAlpha('Unageo-Medium', string.format("Zoom: %.5f", state.zoom), 10,
-        x + 10, y + sy - 25, 200, 14, 0.7, 0.7, 0.7, 0.7, 0.0, 0.5)
+    -- The layout, and the switch to the other (a click on it)
+    local tx, ty, tw, th = x + 10, y + sy - 30, 330, 20
+    state.toggleRect = { tx, ty, tw, th }
+    local mp = Input:mouse():position()
+    local hover = mp.x >= tx and mp.x <= tx + tw and mp.y >= ty and mp.y <= ty + th
+    DrawEx.SimpleRect(tx - 4, ty, tw, th, Color(0.10, 0.30, 0.50, hover and 0.6 or 0.3))
+    DrawEx.TextAlpha('Unageo-Medium', state.schematic
+        and "SCHEMATIC LAYOUT  ·  click for true scale"
+        or "TRUE SCALE  ·  click for the schematic layout", 11,
+        tx, ty + 3, tw, 14, 0.85, 0.9, 1.0, hover and 1.0 or 0.75, 0.0, 0.5)
 end
 
 --- Draw info panel for selected entity
