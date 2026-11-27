@@ -48,14 +48,31 @@ in vec3 objPos;
    what one band would; from within it, the layers above and below are a
    haze, faint overhead and dense toward the plane's horizon. Light is worked
    out for the ring as a whole.
+
+   Seen from outside the stack, its layers showed as plates, each edge
+   stepped from the next: there the middle layer carries the whole ring and
+   the rest draw nothing. The spread comes in only as the eye nears the
+   stack (`insideStack`).
 */
 
-// This fragment's layer's share of the ring's optical depth: the gaussian at
-// its height, over the sum at every layer's height.
-float layerShare(float y) {
+// The stack spans +-2.5 sigma; a layer is the middle one within half a
+// spacing of the plane.
+float stackSpan() {
+    return 2.5 * max(ringHeight, 1e-6);
+}
+
+bool isMiddleLayer(float y) {
+    return layers <= 1 || abs(y) < stackSpan() / float(layers - 1);
+}
+
+// This fragment's layer's share of the ring's optical depth, `inside` (0..1)
+// being how far the eye is within the stack: outside, all of it on the
+// middle layer; inside, the gaussian at the layer's height over the sum at
+// every layer's height.
+float layerShare(float y, float inside) {
     if (layers <= 1) return 1.0;
     float sigma = max(ringHeight, 1e-6);
-    float span = 2.5 * sigma;
+    float span = stackSpan();
     float spacing = 2.0 * span / float(layers - 1);
     float total = 0.0;
     for (int i = 0; i < layers; i++) {
@@ -63,7 +80,8 @@ float layerShare(float y) {
         total += exp(-0.5 * yi * yi);
     }
     float yn = y / sigma;
-    return exp(-0.5 * yn * yn) / max(total, 1e-6);
+    float spread = exp(-0.5 * yn * yn) / max(total, 1e-6);
+    return mix(isMiddleLayer(y) ? 1.0 : 0.0, spread, inside);
 }
 
 // Per-ring random numbers come from an integer hash of the seed's bits, not
@@ -177,8 +195,22 @@ void main() {
     float nv = dot(N, V);
     float mu = max(abs(nv), 0.06);        // how face-on it is seen
 
+    // How far the eye is within the stack: its height above the ring's
+    // plane, in the ring's own units. The eye's height above this layer
+    // (along the layer's world normal) plus the layer's own height, with the
+    // normal's sense against the ring's +y.
+    float worldScale = length(vec3(mWorld[0][0], mWorld[0][1], mWorld[0][2]));
+    float inside = 0.0;
+    if (layers > 1) {
+        vec3 ringUp = vec3(mWorld[1][0], mWorld[1][1], mWorld[1][2]);
+        float sense = dot(N, ringUp) >= 0.0 ? 1.0 : -1.0;
+        float eyeHeight = objPos.y + sense * dot(toEye, N) / max(worldScale, 1e-6);
+        float span = stackSpan();
+        inside = 1.0 - smoothstep(span, span * 2.0, abs(eyeHeight));
+    }
+
     // Opacity from the optical depth along the line of sight (this layer's)
-    float share = layerShare(objPos.y);
+    float share = layerShare(objPos.y, inside);
     float alpha = 1.0 - exp(-tau * share / mu);
 
     float light;
@@ -198,14 +230,11 @@ void main() {
     // --- Sparkle: ice glinting, close up ---
     // The ring's width in the world (rMin and rMax are in its own space;
     // mWorld carries the body's scale)
-    float worldScale = length(vec3(mWorld[0][0], mWorld[0][1], mWorld[0][2]));
     float ringWidth = (rMax - rMin) * worldScale;
     float nearFade = clamp(1.0 - viewDist / (ringWidth * 4.0), 0.0, 1.0);
     // On the middle layer only: the layers share the cell grid, and glints
     // repeated in each would stack into streaks
-    bool middleLayer = layers <= 1
-        || abs(objPos.y) < 2.5 * max(ringHeight, 1e-6) / float(layers - 1);
-    if (middleLayer && nearFade > 0.0 && tau > 0.05) {
+    if (isMiddleLayer(objPos.y) && nearFade > 0.0 && tau > 0.05) {
         float radialCells = 1400.0;
         int cr = int(floor(rNorm * radialCells));
         float circumference = 6.2831853 * r / max(1e-6, rMax - rMin) * radialCells;
