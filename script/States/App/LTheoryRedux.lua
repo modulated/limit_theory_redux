@@ -160,6 +160,8 @@ end
 
 ---@diagnostic disable-next-line: duplicate-set-field
 function LimitTheoryRedux:onInit()
+    -- Two actions on one key: said once, at start-up (Input/BindingConflicts)
+    require("Input.BindingConflicts").report()
     -- Expose the scene builder to the main menu (New Game button)
     GameState.startGame = function(seed, scenario) self:startGame(seed, scenario) end
 
