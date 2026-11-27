@@ -15,6 +15,7 @@ local DEFAULT_COLOR = { 1.0, 0.9, 0.7 }
 --- (explosion flash, sun, muzzle flash); draw(entity, ...) is a thin
 --- entity-bound wrapper over it.
 ---@class LensFlareSystem
+local warnedNaN = false
 local LensFlareSystem = {}
 
 ---@class LensFlareOptions
@@ -66,7 +67,16 @@ function LensFlareSystem:drawAt(worldPos, opts)
 
     local maxDist = opts.maxDist or 5000000
     local dist = rel:length()
-    if dist > maxDist then return end
+    -- Written so a NaN fails it: a position that is not a number gets past
+    -- every comparison above (each is false), and normalising it asserts
+    if not (dist > 1e-6 and dist <= maxDist) then
+        if dist ~= dist and not warnedNaN then
+            warnedNaN = true
+            Log.Warn("LensFlareSystem: light or camera position is not a number " ..
+                "(light %s, camera %s); flare skipped", tostring(worldPos), tostring(camPos))
+        end
+        return
+    end
 
     -- Geometric occlusion: check if any occluder disc covers the light's screen position
     local lightDir = rel:normalize()
