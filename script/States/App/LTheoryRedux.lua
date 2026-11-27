@@ -1055,8 +1055,9 @@ function LimitTheoryRedux:toggleMining(mountId)
         self:notify("Undock first.", { 1.0, 0.7, 0.3 })
         return
     end
-    local def = self:miningMount(mountId)
+    local def, laserMount = self:miningMount(mountId)
     if not def then return end
+    mountId = laserMount
     local info = self.rockTarget
     if info and (not info.entity:isValid() or info.rock.yield < 1) then
         self.rockTarget, info = nil, nil
@@ -1076,10 +1077,25 @@ function LimitTheoryRedux:toggleMining(mountId)
     end
     self.rockTarget = info
     self.miningJob = { mountId = mountId, rock = info, progress = 0 }
-    MiningBeam:start(self.playerShip, info.entity)
+    MiningBeam:start(self.playerShip, info.entity, function()
+        return self:mountPosition(mountId)
+    end)
     self:notify(string.format("Mining %s: a cycle every %.1fs",
         self:knowsRock(info) and info.rock.item or "an unsurveyed rock", self:miningCycle(def)),
         { 0.5, 1.0, 0.7 })
+end
+
+--- Where a mount on the player's ship is in the world now, or nil.
+---@param mountId string|nil
+---@return Position|nil
+function LimitTheoryRedux:mountPosition(mountId)
+    local mount = mountId and self.playerMounts and self.playerMounts[mountId]
+    local rbCmp = self.playerShip and self.playerShip:isValid()
+        and self.playerShip:get(PhysicsComponents.RigidBody)
+    if not mount or not rbCmp or not rbCmp:getRigidBody() then return nil end
+    local localPos = mount.bodyLocalPosition or mount.localPosition
+    if not localPos then return nil end
+    return rbCmp:toWorldScaled(localPos)
 end
 
 --- Stop the mining laser, with a word why (nil: say nothing).
@@ -3047,6 +3063,9 @@ function LimitTheoryRedux:createPlayerShip(position, shipType, hullIdx, seed)
         -- Only the mounts with a gun in them shoot: an empty mount has no
         -- weapon to resolve, so the battery is built from the armed ones. A
         -- ship with nothing fitted flies unarmed.
+        -- Every mount, tools included (the battery has only the guns): the
+        -- mining beam starts from its laser's
+        self.playerMounts = gunship and gunship.turretsById or nil
         local armed = self:armedConstruction(gunship)
         if armed then
             self.playerBattery = self.weaponCombat:addBattery(WeaponBattery(armed, {

@@ -6,8 +6,8 @@ local CameraManager = require("Modules.Cameras.Managers.CameraManager")
 local Pipelines = require("Render.Pipelines")
 local ffi = require("ffi")
 
---- The mining laser, seen: while the laser runs, a beam from the ship's nose
---- to the rock, cutting at one spot on the face toward the ship, then
+--- The mining laser, seen: while the laser runs, a beam from the laser's
+--- mount (the ship's nose when that is not known) to the rock, cutting at one spot on the face toward the ship, then
 --- lifting and striking another. Each strike flares in, holds with a
 --- flicker, and the hit point glows (a point light at the cut).
 ---
@@ -72,8 +72,8 @@ local function endpoints(s)
     local shipPos, shipRadius, shipRot = place(s.ship)
     local rockPos, rockRadius = place(s.rock)
     if not shipPos or not rockPos or not s.spot then return nil, nil end
-    local from = shipPos
-    if shipRot then
+    local from = s.source and s.source() or shipPos
+    if from == shipPos and shipRot then
         local f = shipRot:getForward()
         local k = shipRadius * 0.6
         from = Position(shipPos.x + f.x * k, shipPos.y + f.y * k, shipPos.z + f.z * k)
@@ -131,10 +131,11 @@ end
 --- Start the beam (mining began), or keep it on the same rock.
 ---@param ship Entity
 ---@param rock Entity
-function MiningBeam:start(ship, rock)
+---@param source (fun(): Position|nil)|nil where the laser's mount is now (else the ship's nose)
+function MiningBeam:start(ship, rock, source)
     if self.state and self.state.rock == rock and self.state.ship == ship then return end
     self:stop()
-    self.state = { ship = ship, rock = rock, t = 0 }
+    self.state = { ship = ship, rock = rock, t = 0, source = source }
     newSpot(self.state)
     self.entity = Entity.Create("MiningBeamEntity",
         Physics.Transform(),
