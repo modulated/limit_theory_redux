@@ -62,7 +62,9 @@ function TravelDriveSystem:bodyAhead(rb, reach, margin)
                 if missSq < safe * safe then
                     -- How far to where the path enters the margin
                     local entry = along - math.sqrt(safe * safe - missSq)
-                    if entry < range then return b.kind end
+                    if entry < range then
+                        return require("Modules.CelestialObjects.Managers.CelestialNames"):of(b.entity, b.kind)
+                    end
                 end
             end
         end

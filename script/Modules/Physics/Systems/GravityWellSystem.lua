@@ -31,12 +31,13 @@ function GravityWellSystem:_walkForZones(entity, parentEntity, parentName)
     -- Detect zone type from entity name
     local zoneType = nil
     local bodyName = nil
+    local CelestialNames = require("Modules.CelestialObjects.Managers.CelestialNames")
     if name:find("StarEntity") then
-        zoneType = "star"; bodyName = "Star"
+        zoneType = "star"; bodyName = CelestialNames:of(entity, "Star")
     elseif name:find("PlanetEntity") then
-        zoneType = "planet"; bodyName = name:match("^(.-)%(") or "Planet"
+        zoneType = "planet"; bodyName = CelestialNames:of(entity, name:match("^(.-)%(") or "Planet")
     elseif name:find("MoonEntity") then
-        zoneType = "moon"; bodyName = "Moon"
+        zoneType = "moon"; bodyName = CelestialNames:of(entity, "Moon")
     end
 
     -- Find zone radius: use the declared zone, but for planets expand to cover all moons

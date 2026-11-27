@@ -2876,6 +2876,7 @@ function LimitTheoryRedux:generateUniverse(ruleset, seed)
     self.beltEntities = {}
     self.starEntity = nil
     self.travelBodies = {}
+    self:nameCelestials()
     self:collectEntities(self.universe)
     -- The planets, moons and star the travel drive drops out short of
     require("Modules.Constructs.Systems.TravelDriveSystem"):setBodies(self.travelBodies)
@@ -3079,19 +3080,37 @@ function LimitTheoryRedux:destroyScene(keepShip)
     releaseGpuMemory()
 end
 
+--- Name the system's celestials (Vega, Vega II, Vega II a) after its star
+--- system; everything that shows one asks CelestialNames. Run when the
+--- system is built, and again once a new game's galaxy exists (it is made
+--- after the first system, and gives the system its name): the labels in
+--- space and the overview take the names then.
+function LimitTheoryRedux:nameCelestials()
+    if not self.universe then return end
+    local CelestialNames = require("Modules.CelestialObjects.Managers.CelestialNames")
+    local system = self.galaxy and self.galaxy.systems and self.galaxy.systems[self.currentSystemId]
+    CelestialNames:name(self.universe, system and system.name or nil)
+    for _, entry in ipairs(self.labeledEntities or {}) do
+        entry.label = CelestialNames:of(entry.entity, entry.label)
+    end
+    SystemOverview:invalidate()
+end
+
 --- Walk the generated universe and collect planets/labels/star/belts.
 ---@param entity Entity
 function LimitTheoryRedux:collectEntities(entity)
     local name = tostring(entity)
+    -- The label in space: the celestial's name (its type name otherwise)
+    local label = require("Modules.CelestialObjects.Managers.CelestialNames"):of(entity, name)
 
     local bodies = self.travelBodies or {}
     self.travelBodies = bodies
     if name:find("PlanetEntity") then
         table.insert(self.planets, entity)
-        table.insert(self.labeledEntities, { entity = entity, label = name })
+        table.insert(self.labeledEntities, { entity = entity, label = label })
         table.insert(bodies, { entity = entity, kind = "planet" })
     elseif name:find("MoonEntity") then
-        table.insert(self.labeledEntities, { entity = entity, label = name })
+        table.insert(self.labeledEntities, { entity = entity, label = label })
         table.insert(bodies, { entity = entity, kind = "moon" })
     elseif name:find("StarEntity") then
         self.starEntity = entity
@@ -3958,6 +3977,8 @@ function LimitTheoryRedux:spawnJumpGates()
         for _, line in ipairs(GalaxyGenerator:describe(self.galaxy)) do
             Log.Info("Galaxy: %s", line)
         end
+        -- The first system has its name now
+        self:nameCelestials()
     end
 
     local system = self.galaxy.systems[self.currentSystemId]

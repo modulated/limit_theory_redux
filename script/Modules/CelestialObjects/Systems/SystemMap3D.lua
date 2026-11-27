@@ -157,6 +157,10 @@ function SystemMap3D:_walk(state, entity, parentPos)
     end
 
     if label then
+        -- Celestials by their names (Vega II, Vega II a)
+        if not name:find("SpaceStationEntity") and not name:find("JumpGateEntity") then
+            label = require("Modules.CelestialObjects.Managers.CelestialNames"):of(entity, label)
+        end
         local rbCmp = entity:get(PhysicsComponents.RigidBody)
         if rbCmp and rbCmp:getRigidBody() then pos = rbCmp:getRigidBody():getPos() end
 

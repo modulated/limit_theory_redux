@@ -282,6 +282,8 @@ local function walkCelestials(root, systemName)
             else
                 name = string.format("Belt %d", n)
             end
+            -- The shared names (CelestialNames) when the system was named
+            name = require("Modules.CelestialObjects.Managers.CelestialNames"):of(entity, name)
             found[#found + 1] = { entity = entity, name = name, kind = kind }
         end
         local children = entity:get(CoreComponents.Children)
