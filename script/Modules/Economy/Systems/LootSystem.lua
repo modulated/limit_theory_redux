@@ -55,7 +55,7 @@ function LootSystem.createEntity(position, seed)
     local c = cfg().color
     local entity = PhysicalEntity("LootCanister", seed,
         PhysicsComponents.RigidBody(),
-        Rendering.PointLight(Vec3f(c[1], c[2], c[3]), cfg().lightRadius, cfg().lightIntensity),
+        Rendering.PointLight(Color(c[1], c[2], c[3], 1.0), cfg().lightRadius, cfg().lightIntensity),
         Rendering.Render(canisterModel()))
     local rb = RigidBody.CreateBox()
     rb:setKinematic(true)

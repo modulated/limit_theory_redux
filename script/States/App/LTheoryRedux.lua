@@ -2926,7 +2926,11 @@ end
 --- (res/data/loot.toml). The player's own ships leave nothing.
 ---@param record table NpcSystem's record
 function LimitTheoryRedux:onNpcDestroyed(record)
-    if record.unit or not record.body then return end
+    -- Only a ship that was shot to pieces: one whose entity is already gone
+    -- (removed, not killed) has no wreck, and its body may be freed with it
+    if record.unit or not record.body or not record.entity:isValid() then return end
+    local health = record.entity:get(CoreComponentsAll.Health)
+    if not (health and health:isDestroyed()) then return end
     self.lootRng = self.lootRng or RNG.Create((self.seed or 1) + 77)
     local ok, contents = pcall(LootData.roll, record.role, self.lootRng)
     if not ok then

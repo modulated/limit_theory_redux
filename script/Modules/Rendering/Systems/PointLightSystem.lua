@@ -29,9 +29,19 @@ local function getEntityPosition(entity)
     return transform and transform.getPos and transform:getPos() or nil
 end
 
+-- Reading a field an FFI struct does not have raises an error rather than
+-- giving nil, so a Vec3f (x, y, z) and a Color (r, g, b) are told apart by
+-- their type, not by trying `.r`.
+local ffi = require("ffi")
+local vec3fType
+
 local function copyColor(color)
     if not color then
         return nil
+    end
+    vec3fType = vec3fType or ffi.typeof(Vec3f())
+    if type(color) == "cdata" and ffi.istype(vec3fType, color) then
+        return Vec3f(color.x, color.y, color.z)
     end
     local red = color.r ~= nil and color.r or color.x
     local green = color.g ~= nil and color.g or color.y
