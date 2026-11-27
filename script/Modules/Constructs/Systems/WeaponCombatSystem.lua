@@ -214,6 +214,11 @@ local function selectCandidates(battery, live)
     -- A contact the battery was told to attack whatever its team (the
     -- player attacking a ship that is not hostile: WeaponBattery.attackEntity)
     local attackId = battery.attackEntity and battery.attackEntity.id
+    local attackIds = nil
+    if battery.attackEntities and #battery.attackEntities > 0 then
+        attackIds = {}
+        for _, e in ipairs(battery.attackEntities) do attackIds[tostring(e.id)] = true end
+    end
     for _, record in ipairs(live) do
         local engages
         if battery.hostileTeams then
@@ -222,6 +227,7 @@ local function selectCandidates(battery, live)
             engages = battery.team == nil or record.team ~= battery.team
         end
         if attackId and record.id == attackId then engages = true end
+        if attackIds and attackIds[tostring(record.id)] then engages = true end
         if record.id ~= shipId and engages then
             local dx = record.position.x - origin.x
             local dy = record.position.y - origin.y

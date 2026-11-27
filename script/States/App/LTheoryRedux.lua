@@ -1038,6 +1038,8 @@ end
 function LimitTheoryRedux:targetRock(entity, name)
     local info = self:rockInfoFor(entity)
     if not info then return end
+    if not self:addTarget({ entity = entity, kind = "rock", rock = info,
+        name = self:knowsRock(info) and info.rock.item or (name or "Rock") }) then return end
     self.rockTarget = info
     self:notify(string.format("Rock targeted: %s%s", self:knowsRock(info) and info.rock.item or (name or "an unsurveyed rock"),
         self:rockInReach(info) and "" or "  ·  out of the laser's reach"), { 0.8, 0.68, 0.52 })
@@ -1060,23 +1062,25 @@ function LimitTheoryRedux:toggleMining(mountId)
     mountId = laserMount
     local info = self.rockTarget
     if info and (not info.entity:isValid() or info.rock.yield < 1) then
-        self.rockTarget, info = nil, nil
+        self:releaseTarget(info.entity, true)
+        info = nil
     end
-    -- The targeted rock (often just the last one mined) out of reach: the
-    -- nearest rock that is in reach instead, which becomes the target
-    local tooFar = info and not self:rockInReach(info)
-    if tooFar then info = nil end
+    -- The rock targeted for mining, if there is one (targets are only ever
+    -- the player's choice); else the nearest in reach, untargeted
+    if info and not self:rockInReach(info) then
+        self:notify("The targeted rock is out of the laser's reach: approach it, or clear it from the targets to mine the nearest.",
+            { 1.0, 0.7, 0.3 })
+        return
+    end
     info = info or self:mineableRock()
     if not info then
-        self:notify(tooFar and "The targeted rock is out of the laser's reach, and no other is in it."
-            or "No rock in the mining laser's reach.", { 1.0, 0.7, 0.3 })
+        self:notify("No rock in the mining laser's reach.", { 1.0, 0.7, 0.3 })
         return
     end
     if PlayerCargo:get():getRoomFor(info.rock.itemId) < 1 then
         self:notify("The hold is full.", { 1.0, 0.4, 0.3 })
         return
     end
-    self.rockTarget = info
     self.miningJob = { mountId = mountId, rock = info, progress = 0 }
     MiningBeam:start(self.playerShip, info.entity, function()
         return self:mountPosition(mountId)
@@ -1493,6 +1497,9 @@ function LimitTheoryRedux:dismissOpenUI()
     if require("UI.HmGui.Views.Gameplay.OverviewPanel").closeMenu() then
         return true
     end
+    if require("UI.HmGui.Views.Gameplay.TargetsPanel").closeMenu() then
+        return true
+    end
     local closed = false
     if self:windowsShowing() then
         for id, open in pairs(self.windows) do
@@ -1859,6 +1866,9 @@ end
 function LimitTheoryRedux:lockTarget(entity, name, faction)
     if not entity or not entity:isValid() then return end
     if SystemOverview.same(entity, self.playerShip) then return end
+    if not self:addTarget({ entity = entity, kind = "ship", name = name or "target", faction = faction }) then
+        return
+    end
     self.target = entity
     self.targetName = name or "target"
     self.targetFaction = faction
@@ -1878,25 +1888,187 @@ end
 function LimitTheoryRedux:attackTarget(entity, name, faction)
     if not entity or not entity:isValid() then return end
     self:lockTarget(entity, name, faction)
+    if not SystemOverview.same(self.target, entity) then return end
     self.attacking = true
+    local entry = self:findTarget(entity)
+    if entry then entry.attack = true end
     local who = faction and Factions.name(faction) or "its faction"
     self:notify(string.format("Attacking %s: every hit costs standing with %s", self.targetName, who),
         { 1.0, 0.45, 0.35 })
 end
 
---- Let go of the target.
+--- Let go of the active ship target.
 function LimitTheoryRedux:clearTarget()
     if self.target then
-        self:notify("Target released.", { 0.75, 0.8, 0.85 })
+        self:releaseTarget(self.target)
     end
     self.target, self.targetName, self.targetFaction, self.attacking = nil, nil, nil, false
 end
 
---- Whether a given entity is the locked target.
+--- Whether an entity is among the targets.
 ---@param entity Entity|nil
 ---@return boolean
 function LimitTheoryRedux:isTarget(entity)
-    return SystemOverview.same(self.target, entity)
+    return self:findTarget(entity) ~= nil
+end
+
+------------------------------------------------------------------------------
+-- The target list (TargetsPanel): what the player has targeted, ships and
+-- rocks, only ever by their own choice (the overview's Target, Tab). One
+-- ship is the active target -- the guns' focus, `self.target` -- and one
+-- rock the mining laser's, `self.rockTarget`. A target goes when it is
+-- cleared (its X, or Clear target), destroyed or mined out, and they all go
+-- on docking or jumping.
+------------------------------------------------------------------------------
+
+---@return table[] { entity, kind = "ship"|"rock", name, faction, rock }
+function LimitTheoryRedux:targetList()
+    self.targets = self.targets or {}
+    return self.targets
+end
+
+---@param entity Entity|nil
+---@return table|nil entry, integer|nil index
+function LimitTheoryRedux:findTarget(entity)
+    if not entity then return nil end
+    for i, t in ipairs(self:targetList()) do
+        if SystemOverview.same(t.entity, entity) then return t, i end
+    end
+    return nil
+end
+
+--- Add a target (or refresh it). With the list full, the oldest that is not
+--- active makes room. Returns the entry.
+---@param entry table
+---@return table|nil
+function LimitTheoryRedux:addTarget(entry)
+    if not entry.entity or not entry.entity:isValid() then return nil end
+    local list = self:targetList()
+    local existing = self:findTarget(entry.entity)
+    if existing then
+        for k, v in pairs(entry) do existing[k] = v end
+        return existing
+    end
+    local max = self:maxTargets()
+    if #list >= max then
+        for i, t in ipairs(list) do
+            if not self:isActiveTarget(t) then
+                table.remove(list, i)
+                break
+            end
+        end
+        if #list >= max then
+            self:notify("The target list is full.", { 1.0, 0.7, 0.3 })
+            return nil
+        end
+    end
+    list[#list + 1] = entry
+    return entry
+end
+
+--- How many targets the ship can hold: more for a ship with more mounts
+--- (Config.game.targeting) -- a bigger, better-armed hull tracks more, and
+--- its guns spread over them.
+---@return integer
+function LimitTheoryRedux:maxTargets()
+    local cfg = Config.game.targeting or {}
+    local mounts = 0
+    local loadout = self.playerShip and self.playerShip:isValid()
+        and self.playerShip:get(ConstructComponents.Loadout)
+    if loadout then
+        for _ in pairs(loadout.weapons or {}) do mounts = mounts + 1 end
+    end
+    local n = (cfg.base or 1) + (cfg.perMount or 1) * mounts
+    return math.max(cfg.min or 2, math.min(cfg.cap or 8, math.floor(n)))
+end
+
+--- Whether a target entry is the active ship target or the mining target.
+---@param entry table
+---@return boolean
+function LimitTheoryRedux:isActiveTarget(entry)
+    if entry.kind == "rock" then
+        return self.rockTarget ~= nil and SystemOverview.same(self.rockTarget.entity, entry.entity)
+    end
+    return SystemOverview.same(self.target, entry.entity)
+end
+
+--- Make a target the active one of its kind.
+---@param entry table
+function LimitTheoryRedux:activateTarget(entry)
+    if not entry or not entry.entity:isValid() then return end
+    if entry.kind == "rock" then
+        self.rockTarget = entry.rock or self:rockInfoFor(entry.entity)
+    elseif not SystemOverview.same(self.target, entry.entity) then
+        self.target, self.targetName, self.targetFaction = entry.entity, entry.name, entry.faction
+        self.attacking = false
+    end
+end
+
+--- Clear a target (its X). Clearing the rock being mined stops the laser;
+--- clearing the active ship stops the attack on it.
+---@param entity Entity
+---@param quiet boolean|nil say nothing
+function LimitTheoryRedux:releaseTarget(entity, quiet)
+    local entry, index = self:findTarget(entity)
+    if index then table.remove(self:targetList(), index) end
+    if SystemOverview.same(self.target, entity) then
+        self.target, self.targetName, self.targetFaction, self.attacking = nil, nil, nil, false
+    end
+    if self.rockTarget and SystemOverview.same(self.rockTarget.entity, entity) then
+        self.rockTarget = nil
+    end
+    local job = self.miningJob
+    if job and job.rock and SystemOverview.same(job.rock.entity, entity) then
+        self:stopMining()
+    end
+    if entry and not quiet then
+        self:notify(string.format("Target cleared: %s", entry.name or "target"), { 0.75, 0.8, 0.85 })
+    end
+end
+
+--- Stop shooting at a target the player chose to attack (it stays a target).
+---@param entry table
+function LimitTheoryRedux:holdFire(entry)
+    entry.attack = false
+    if SystemOverview.same(self.target, entry.entity) then self.attacking = false end
+    self:notify(string.format("Holding fire on %s.", entry.name or "the target"), { 0.75, 0.8, 0.85 })
+end
+
+--- Every target gone (docking, a jump, a new scene).
+function LimitTheoryRedux:clearAllTargets()
+    self.targets = {}
+    self.rockTarget = nil
+    self.target, self.targetName, self.targetFaction, self.attacking = nil, nil, nil, false
+end
+
+--- Each frame: targets that have gone (destroyed, mined out) leave the list.
+function LimitTheoryRedux:pruneTargets()
+    local list = self:targetList()
+    if #list == 0 then return end
+    if self.docked or self.jump then
+        self:clearAllTargets()
+        return
+    end
+    -- A smaller ship (a change of hull, a gun taken out) holds fewer
+    local max = self:maxTargets()
+    for i = #list, 1, -1 do
+        if #list <= max then break end
+        if not self:isActiveTarget(list[i]) then table.remove(list, i) end
+    end
+    for i = #list, 1, -1 do
+        local t = list[i]
+        local gone = not t.entity:isValid()
+        local minedOut = not gone and t.kind == "rock" and t.rock and t.rock.rock and t.rock.rock.yield < 1
+        if gone or minedOut then
+            table.remove(list, i)
+            if self.rockTarget and SystemOverview.same(self.rockTarget.entity, t.entity) then
+                self.rockTarget = nil
+            end
+            if minedOut then
+                self:notify(string.format("Target cleared: %s, mined out", t.name or "rock"), { 0.75, 0.8, 0.85 })
+            end
+        end
+    end
 end
 
 --- Lock the nearest hostile ship (Tab). Pressed again with one locked, the
@@ -1926,7 +2098,7 @@ function LimitTheoryRedux:targetNearestHostile()
     table.sort(hostiles, function(a, b) return a.d < b.d end)
     local pick = 1
     for i, h in ipairs(hostiles) do
-        if self:isTarget(h.npc.entity) then
+        if SystemOverview.same(self.target, h.npc.entity) then
             pick = i % #hostiles + 1
             break
         end
@@ -2009,6 +2181,7 @@ end
 --- one that has not. The battery is rebuilt with the ship (an undock, a
 --- jump, a change of ship), so this is set every frame rather than once.
 function LimitTheoryRedux:updateTargeting()
+    self:pruneTargets()
     if self.target and (not self.target:isValid() or self.docked or self.jump) then
         local name = self.targetName
         local destroyed = not self.target:isValid()
@@ -2038,7 +2211,40 @@ function LimitTheoryRedux:updateTargeting()
     if battery then
         battery.focusTargetEntity = self.target
         battery.attackEntity = firing and self.target or nil
+        -- The guns spread over every ship target they may shoot: hostile
+        -- ones, and the others the player chose to attack (once any question
+        -- of turning their faction hostile is answered). The active target
+        -- comes first, so with more mounts than targets it gets the spare.
+        local engaged, extra = {}, battery.attackEntities
+        for i = #extra, 1, -1 do extra[i] = nil end
+        if self.target and (firing or self:isHostileFaction(self.targetFaction)) then
+            engaged[1] = self.target
+        end
+        for _, t in ipairs(self:targetList()) do
+            if t.kind == "ship" and t.entity:isValid() and not SystemOverview.same(t.entity, self.target) then
+                if self:isHostileFaction(t.faction) then
+                    engaged[#engaged + 1] = t.entity
+                elseif t.attack and t.faction and (self.hostilityAccepted[t.faction]
+                        or not self:attackRisksHostility(t.faction)) then
+                    engaged[#engaged + 1] = t.entity
+                    extra[#extra + 1] = t.entity
+                end
+            end
+        end
+        local focus = battery.mountFocus
+        for k in pairs(focus) do focus[k] = nil end
+        if #engaged > 1 then
+            for i, mountId in ipairs(battery.mountIds or {}) do
+                focus[mountId] = engaged[(i - 1) % #engaged + 1]
+            end
+        end
     end
+end
+
+---@param faction string|nil
+---@return boolean
+function LimitTheoryRedux:isHostileFaction(faction)
+    return faction ~= nil and Factions.isHostile(faction, Factions.Player) == true
 end
 
 --- What the HUD says about the target: its name, how far, and how much
@@ -2783,7 +2989,7 @@ function LimitTheoryRedux:destroyScene(keepShip)
     -- The overview's list and anything it set going belong to this system
     SystemOverview:invalidate()
     self.lookingAt, self.arrivalAction = nil, nil
-    self.target, self.targetName, self.targetFaction, self.attacking = nil, nil, nil, false
+    self:clearAllTargets()
     self.confirmation = nil
     if self.scenario and self.scenario.teardown then
         self.scenario.teardown(self)
@@ -4110,8 +4316,6 @@ function LimitTheoryRedux:drawNavigation()
     -- The target and the notifications go nearer the middle of the screen
     -- (below the reticle), the standing lines above the action bar
     local centre = {}
-    local targetText, targetColor = self:targetReadout()
-    if targetText then table.insert(centre, { text = targetText, color = targetColor }) end
     if self.docked then
         local missing, cost = self:hullRepairQuote()
         local repair = missing > 0 and string.format("hull repair %s on the station screen", PlayerWallet.format(cost))

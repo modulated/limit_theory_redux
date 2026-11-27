@@ -398,6 +398,16 @@ Config.game = {
         spawnSpread = 1.5,
     },
 
+    -- The player's targets (LimitTheoryRedux:maxTargets, TargetsPanel): how
+    -- many the ship can hold, base + perMount for each weapon or tool mount,
+    -- kept within min..cap. The guns spread over the ones being attacked.
+    targeting = {
+        base     = 1,
+        perMount = 1,
+        min      = 2,
+        cap      = 8,
+    },
+
     -- Mining (Modules/NPC/Managers/MiningField.lua, Jobs/Mining.lua): rocks
     -- picked from each belt, their ore by weight, units by rock size.
     mining = {

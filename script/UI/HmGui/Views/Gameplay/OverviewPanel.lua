@@ -167,7 +167,7 @@ local function actionsFor(entry)
             if not game.attacking and not entry.hostile then
                 add("Attack", function() game:attackTarget(entry.entity, entry.name, entry.faction) end)
             end
-            add("Release target", function() game:clearTarget() end)
+            add("Clear target", function() game:releaseTarget(entry.entity) end)
         else
             add("Target", function() game:lockTarget(entry.entity, entry.name, entry.faction) end)
             if not entry.hostile then
@@ -178,9 +178,8 @@ local function actionsFor(entry)
 
     -- Rocks: the mining laser's target
     if entry.category == "asteroid" then
-        local current = game.rockTarget and game.rockTarget.entity
-        if current and same(current, entry.entity) then
-            add("Targeted for mining", function() end, false)
+        if game:isTarget(entry.entity) then
+            add("Clear target", function() game:releaseTarget(entry.entity) end)
         else
             add("Target for mining", function() game:targetRock(entry.entity, entry.name) end)
         end

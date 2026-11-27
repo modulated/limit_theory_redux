@@ -129,6 +129,14 @@ local WeaponBattery = Class("WeaponBattery", function(self, construction, option
     --- Attack on a ship that is not hostile); WeaponCombatSystem adds it to
     --- the candidates
     self.attackEntity = nil
+    ---@type Entity[] more contacts to engage whatever their team (the
+    --- player's other attacked targets); added to the candidates like
+    --- `attackEntity`
+    self.attackEntities = {}
+    ---@type table<string, Entity> per mount, the contact it should take when
+    --- it can (the player's targets spread over the mounts); else the
+    --- battery's `focusTargetEntity`
+    self.mountFocus = {}
 
     -- Per-mount combat role, for spreading the mounts over the contacts
     self.weaponRoleByMount = {}
@@ -316,7 +324,7 @@ function WeaponBattery:assignTargets()
                 origin,
                 range,
                 self.weaponRoleByMount[mountId],
-                self.focusTargetEntity)
+                self.mountFocus[mountId] or self.focusTargetEntity)
                 -- Nothing in range: track the nearest so the turret stays ready
                 or WeaponSystem:selectNearestTarget(origin, candidates, math.huge)
             if chosen then
