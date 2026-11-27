@@ -43,6 +43,7 @@ function Loader.defineType()
             void             RigidBody_GetToLocalMatrixInto              (RigidBody const*, Position const* cameraPos, Matrix* out);
             void             RigidBody_GetVelocity                       (RigidBody const*, Vec3f* out);
             void             RigidBody_GetVelocityA                      (RigidBody const*, Vec3f* out);
+            void             RigidBody_SetVelocityA                      (RigidBody*, Vec3f const* velocity);
             void             RigidBody_SetCollidable                     (RigidBody*, bool collidable);
             void             RigidBody_SetCollisionGroup                 (RigidBody*, uint32 group);
             void             RigidBody_SetCollisionMask                  (RigidBody*, uint32 mask);
@@ -132,6 +133,7 @@ function Loader.defineType()
                 getToLocalMatrixInto        = libphx.RigidBody_GetToLocalMatrixInto,
                 getVelocity                 = libphx.RigidBody_GetVelocity,
                 getVelocityA                = libphx.RigidBody_GetVelocityA,
+                setVelocityA                = libphx.RigidBody_SetVelocityA,
                 setCollidable               = libphx.RigidBody_SetCollidable,
                 setCollisionGroup           = libphx.RigidBody_SetCollisionGroup,
                 setCollisionMask            = libphx.RigidBody_SetCollisionMask,

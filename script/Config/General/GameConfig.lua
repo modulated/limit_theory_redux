@@ -104,6 +104,12 @@ Config.game = {
             -- eases into it.
             maxTurnRate    = 1.8,
             turnRateGain   = 6.0,
+            -- How fast the turn rate can change (rad/s²; fitted modules
+            -- scale it), and the roll rate as a share of maxTurnRate. The
+            -- rate is set on the body directly, so the hull's size and
+            -- shape do not change how it handles.
+            maxTurnAccel   = 8.0,
+            rollRateShare  = 0.6,
 
             -- How the mouse steers in the chase camera.
             --   "movement": push the mouse to hold a turn, which decays back

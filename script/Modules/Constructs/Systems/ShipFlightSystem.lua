@@ -41,16 +41,15 @@ local function applyInversion(yaw, pitch)
     return yaw, pitch
 end
 
---- How much a ship's turning torque is scaled: a bigger hull of the same
---- mass turns slower (inertia grows with the radius squared), so a ship can
---- carry a multiplier that keeps the reference fighter's feel
---- (ShipFlightControl.torqueScale, set when the ship is built; default 1).
---- ...times whatever is fitted: a module that helps the ship turn, or
---- armour plate that does not (ShipFittingSystem writes `fitTurnScale`).
-local function torqueScale(shipEntity)
+--- How much what is fitted helps the ship turn: a module that helps it, or
+--- armour plate that does not (ShipFittingSystem writes `fitTurnScale`). It
+--- scales how quickly the ship reaches the rate asked for.
+---@param shipEntity Entity
+---@return number
+local function fitTurnScale(shipEntity)
     local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
     if not flightCtrl then return 1 end
-    return (flightCtrl.torqueScale or 1) * (flightCtrl.fitTurnScale or 1)
+    return flightCtrl.fitTurnScale or 1
 end
 
 --- How much the ship's thrust is scaled by what is fitted: engines up,
@@ -95,18 +94,24 @@ end
 
 --- Steer the ship toward the turn rate the input asks for.
 ---
---- Torque used to be applied straight from the input, which made the input a
---- request for *angular acceleration*: holding a turn wound the rotation up
---- until drag caught it, and `torqueScale` (up to 400x on a big hull) decided
---- how fast that was. Chase steering holds its input for as long as the
---- cursor is off centre, so that wind-up became a spin the player could not
---- stop, fast enough for the chase camera to swing through its own up axis.
+--- The input asks for a *rate* (a share of `maxTurnRate`), and the ship's
+--- turn rate is moved toward it directly: by `turnRateGain` of the difference
+--- a second, never faster than `maxTurnAccel` (scaled by what is fitted), and
+--- set on the body as an angular velocity.
 ---
---- Now the input asks for a *rate*: the torque is proportional to the
---- difference between the rate asked for and the rate the ship is actually
---- turning at, so the ship accelerates to that rate and then holds it, no
---- input can exceed `maxTurnRate`, and letting go brakes it (which also
---- recovers from a spin a collision started).
+--- It used to be done with torque, converting the acceleration wanted into a
+--- torque through an *estimate* of the hull's inertia (a sphere's). The
+--- physics works out the real inertia from the collider's shape, and a long
+--- hull's about its roll axis is a small fraction of a sphere's: every
+--- correction there landed many times too hard, overshot, and the next one
+--- harder still, until the ship span at whatever the torque limit allowed
+--- (with `torqueScale` up to 400). The chase camera turns with the ship's up,
+--- so the whole view span with it: the "slight mouse movement and the camera
+--- goes wild" bug. Setting the rate needs no inertia at all, so it cannot
+--- ring, whatever the hull.
+---
+--- Letting go brings the ship back to straight at the same pace, which also
+--- recovers from a spin a collision started.
 ---@param shipEntity Entity
 ---@param rb RigidBody
 ---@param pitch number -1..1
@@ -117,50 +122,32 @@ end
 local function applySteering(shipEntity, rb, pitch, yaw, roll, dt, rateScale)
     local cfg = Config.game.shipFlight
     local rot = rb:getRot()
-    local k = torqueScale(shipEntity)
     local maxRate = (cfg.maxTurnRate or 1.8) * (rateScale or 1)
+    local rollRate = maxRate * (cfg.rollRateShare or 0.6)
     local gain = cfg.turnRateGain or 6.0
+    local step = math.max(dt or 0, 1e-4)
+    local accelLimit = (cfg.maxTurnAccel or 8.0) * fitTurnScale(shipEntity) * step
 
     -- Where the ship is turning now, in its own axes
     local spin = rot:inverse():mulV(rb:getVelocityA())
 
-    -- The most torque worth applying this step. torqueScale reaches 400 on a
-    -- big hull, which is far more than the rate error can absorb in one step:
-    -- the surplus would overshoot the rate and ring around it. A solid
-    -- sphere's inertia is a good enough estimate of the hull's to cap it at
-    -- "exactly enough to arrive at the rate asked for".
-    local radius = math.max(rb:getBoundingRadius(), 1e-4)
-    local inertia = 0.4 * math.max(rb:getMass(), 1e-6) * radius * radius
-    local step = math.max(dt or 0, 1e-4)
-
-    -- Angular drag pulls the rotation back toward a stop, so holding a rate
-    -- costs torque. Cancelling the drag at the rate the ship is turning at
-    -- now leaves the controller steering a body that simply holds whatever
-    -- rate it is given, which is what makes it settle *on* the rate asked
-    -- for instead of somewhere short of it.
-    local drag = cfg.angularDrag or 0
-
-    --- The torque for one axis. The controller asks for an acceleration
-    --- proportional to the rate error, never more than would arrive exactly
-    --- on the rate this step (so it cannot overshoot and ring), and the
-    --- torque is that plus the drag at the current rate, within what the
-    --- ship's engines can actually produce.
-    local function axisTorque(input, current, torqueMax)
-        local desired = Math.Clamp(input, -1, 1) * maxRate
-        local err = desired - current
-        local accel = err * gain
-        local arrival = math.abs(err) / step
-        accel = Math.Clamp(accel, -arrival, arrival)
-        local available = torqueMax * k
-        return Math.Clamp(inertia * (accel + drag * current), -available, available)
+    --- The new rate about one axis: toward the rate asked for, by the gain's
+    --- share of the difference, at most the acceleration limit this step.
+    local function axisRate(input, current, limit)
+        local desired = Math.Clamp(input, -1, 1) * limit
+        local change = (desired - current) * math.min(1, gain * step)
+        return current + Math.Clamp(change, -accelLimit, accelLimit)
     end
 
-    local localTorque = Vec3f(
-        axisTorque(pitch, spin.x, cfg.torquePitch),
-        axisTorque(-yaw, spin.y, cfg.torqueYaw),
-        axisTorque(-roll, spin.z, cfg.torqueRoll * 0.5)
-    )
-    rb:applyTorque(rot:mulV(localTorque))
+    local x = axisRate(pitch, spin.x, maxRate)
+    local y = axisRate(-yaw, spin.y, maxRate)
+    local z = axisRate(-roll, spin.z, rollRate)
+
+    -- The physics damps angular velocity by angularDrag during the step that
+    -- follows (rapier: by 1 / (1 + dt * damping)); set it that much higher so
+    -- the rate the ship turns at is the one worked out here
+    local undamp = 1 + step * (cfg.angularDrag or 0)
+    rb:setVelocityA(rot:mulV(Vec3f(x * undamp, y * undamp, z * undamp)))
 
     if DEBUG_INPUT then logSteering(rb, yaw, pitch, spin, dt) end
 end

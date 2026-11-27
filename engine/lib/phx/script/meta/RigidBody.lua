@@ -129,6 +129,13 @@ function RigidBody:getVelocity(result) end
 ---@param result Vec3f [out]
 function RigidBody:getVelocityA(result) end
 
+-- Set how fast the body turns (world axes, radians a second). Steering
+-- that asks for a turn rate sets it here directly instead of working
+-- out a torque, which would need the body's inertia (from its collider's
+-- shape, and very different about each axis for a long hull).
+---@param velocity Vec3f
+function RigidBody:setVelocityA(velocity) end
+
 -- When disabled, the object will pass through others without colliding
 -- and will not be returned from ray or shape casts.
 ---@param collidable boolean
