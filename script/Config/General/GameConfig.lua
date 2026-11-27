@@ -620,11 +620,15 @@ Config.game = {
     -- placed off by noiseShare x (1.5 - loud) of the distance. The fit's
     -- scanRange widens both ranges, signatureRange the second,
     -- signatureAccuracy divides the error.
+    --
+    -- To scale: 1 AU is about 15 million game units, so these are a planet's
+    -- neighbourhood (identify, ~1M km) and a good part of the system (detect,
+    -- ~3 AU for an ordinary ship, ~1.4 AU for a pirate hiding in a field).
     sensors = {
-        range       = 400,
-        detectRange = 8000,
+        range       = 1.0e5,  -- 1M km
+        detectRange = 6.0e7,  -- 4 AU
         noiseShare  = 0.10,
-        maxNoise    = 1500,
+        maxNoise    = 1.0e6,  -- 10M km
         refresh     = 5,
         markers     = 6,   -- signatures marked at the screen's edge, nearest first
         -- Loudness under each threshold reads as this word
