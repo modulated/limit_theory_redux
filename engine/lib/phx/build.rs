@@ -7,8 +7,14 @@ fn main() {
     // cross-compiling (e.g. building Windows binaries on Linux).
     let target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS is not set");
 
-    let phx_version = env::var("PHX_VERSION").unwrap_or_else(|_| "0.0.0".to_string());
+    // CI stamps the build number in PHX_VERSION; a local build is the
+    // workspace's version (Cargo.toml), marked as a development build.
+    let phx_version = env::var("PHX_VERSION")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| format!("{}-dev", env!("CARGO_PKG_VERSION")));
     println!("cargo::rustc-env=PHX_VERSION={phx_version}");
+    println!("cargo::rerun-if-env-changed=PHX_VERSION");
 
     // Link dependencies.
     if target_os != "windows" {

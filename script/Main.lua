@@ -30,7 +30,13 @@ function InitSystem()
 
         dofile('./script/Config/Version.lua')
 
-        if Config.gameVersion ~= "0.0.0" and Config.gameVersion ~= Core.FFI.Engine.GetVersion() then
+        -- Not stamped by CI (a local build): the engine's version, which is
+        -- the workspace's (Cargo.toml) with "-dev"
+        if Config.gameVersion == "0.0.0" then
+            Config.gameVersion = Core.FFI.Engine.GetVersion()
+        end
+
+        if Config.gameVersion ~= Core.FFI.Engine.GetVersion() then
             Log.Error("Engine and script version mismatch. Engine: %s. Script: %s.", Core.FFI.Engine.GetVersion(),
                 Config.gameVersion)
         end
