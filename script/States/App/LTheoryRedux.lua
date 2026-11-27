@@ -59,6 +59,7 @@ local ConstructManager = require('Modules.Constructs.Managers.ConstructManager')
 local StationGenerator = require('Modules.Constructs.Managers.Generators.StationGenerator')
 local PlayerStations = require('Modules.Economy.Managers.PlayerStations')
 local ActionBar = require('Modules.Constructs.Managers.ActionBar')
+local MiningBeam = require('Modules.Constructs.Systems.MiningBeam')
 local BountyBoard = require('Modules.Economy.Managers.BountyBoard')
 local PlayerForces = require('Modules.Economy.Managers.PlayerForces')
 local LootSystem = require('Modules.Economy.Systems.LootSystem')
@@ -876,7 +877,7 @@ function LimitTheoryRedux:mineableRock(ignoreLaser, reachScale)
     for _, info in ipairs(AsteroidFieldSystem:getSpawnedEntities()) do
         if info.field and info.asteroid then
             -- A better sensor reaches further (Survey Scanner, Ship Sensor)
-            local reach = info.scale
+            local reach = self:rockRadius(info)
                 + cfg.playerRange * self:fitStat("scanRange", 1) * (reachScale or 1)
             local d = pos:distance(info.pos)
             if d <= reach and (not bestDist or d < bestDist) then
@@ -922,6 +923,7 @@ function LimitTheoryRedux:updateMining(dt)
 
     local job = self.miningJob
     if not job then return end
+    MiningBeam:update(dt)
     -- The laser has to still be there, and the rock still in reach with
     -- something left in it
     local def, mountId = self:miningMount(job.mountId)
@@ -1001,8 +1003,16 @@ function LimitTheoryRedux:rockInReach(info)
     local rbCmp = self.playerShip and self.playerShip:get(PhysicsComponents.RigidBody)
     local body = rbCmp and rbCmp:getRigidBody()
     if not body or not info.pos then return false end
-    local reach = (info.scale or 0) + Config.game.mining.playerRange * self:fitStat("scanRange", 1)
+    local reach = self:rockRadius(info) + Config.game.mining.playerRange * self:fitStat("scanRange", 1)
     return body:getPos():distance(info.pos) <= reach * 1.05
+end
+
+--- How far a rock's surface reaches from its centre: the reach is measured
+--- from there, so a big rock is mined from as far off its face as a small one.
+---@param info table
+---@return number
+function LimitTheoryRedux:rockRadius(info)
+    return (info.scale or 0) * (Config.game.mining.rockRadiusScale or 1.4)
 end
 
 --- The rock an asteroid entity is, as mineableRock describes it (nil if it
@@ -1066,6 +1076,7 @@ function LimitTheoryRedux:toggleMining(mountId)
     end
     self.rockTarget = info
     self.miningJob = { mountId = mountId, rock = info, progress = 0 }
+    MiningBeam:start(self.playerShip, info.entity)
     self:notify(string.format("Mining %s: a cycle every %.1fs",
         self:knowsRock(info) and info.rock.item or "an unsurveyed rock", self:miningCycle(def)),
         { 0.5, 1.0, 0.7 })
@@ -1076,6 +1087,7 @@ end
 ---@param color table|nil
 function LimitTheoryRedux:stopMining(why, color)
     self.miningJob = nil
+    MiningBeam:stop()
     if why then self:notify(why, color or { 0.75, 0.8, 0.85 }) end
 end
 

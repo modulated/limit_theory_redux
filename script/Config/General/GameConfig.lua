@@ -406,7 +406,9 @@ Config.game = {
         regrowPerSecond = 0.02,  -- units a rock grows back per second
         timePerUnit     = 3.0,   -- seconds a miner takes per unit
         sellTime        = 8.0,   -- seconds docked to sell the hold
-        playerRange     = 0.45,  -- how close the player's ship mines a rock from (plus its radius)
+        playerRange     = 0.9,   -- how close the player's ship mines a rock from (beyond its surface)
+        rockRadiusScale = 1.4,   -- a rock's surface reaches this far out, in its scale (the
+                                 -- meshes are lumpy: well past a sphere of radius `scale`)
         playerTimePerUnit = 3.0, -- seconds the player's laser takes per unit (as the NPC miners)
         playerScanInterval = 0.3, -- seconds between looks for a rock in reach
         -- What the rocks hold is data: res/data/ores.toml
