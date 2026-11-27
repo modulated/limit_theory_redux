@@ -2259,8 +2259,11 @@ function LimitTheoryRedux:mapNpcs()
             -- drawn afresh), a strength by how loud it is, nothing else. A
             -- contracted ship is tracked wherever it is.
             local noise = math.min(d * cfg.noiseShare * (1.5 - loud), cfg.maxNoise) / accuracy
+            -- Entity ids are 64-bit integers (FFI cdata): reduced and made a
+            -- plain number before any maths
+            local idNum = tonumber(npc.entity.id % 1000003) or 0
             local function jitter(channel)
-                local v = math.sin((npc.entity.id % 1000003) * 12.9898 + bucket * 78.233 + channel * 37.719) * 43758.5453
+                local v = math.sin(idNum * 12.9898 + bucket * 78.233 + channel * 37.719) * 43758.5453
                 return (v - math.floor(v)) * 2 - 1
             end
             local strength = "Moderate"
