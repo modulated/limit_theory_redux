@@ -111,18 +111,23 @@ Config.game = {
             maxTurnAccel   = 8.0,
             rollRateShare  = 0.6,
 
-            -- How the mouse steers in the chase camera.
+            -- How the mouse steers (chase and first person).
+            --   "virtual": a virtual joystick. Moving the mouse moves a stick
+            --     (shown on the HUD); how far it is from the centre is the
+            --     turn rate, so centred is straight ahead and the same place
+            --     is always the same turn. It stays where it is left. Full
+            --     deflection is `stickRadius` of the window height of mouse
+            --     travel; within `stickDeadZone` of the centre the ship holds
+            --     its heading. Reads only the mouse's movement, so it works
+            --     with a confined cursor and over remote desktop.
             --   "movement": push the mouse to hold a turn, which decays back
-            --     to straight when the mouse stops (`steeringDecay`, in
-            --     shares of the turn a second). Depends on nothing but the
-            --     mouse's movement, so it survives a confined cursor and a
-            --     remote desktop session placing the pointer.
-            --   "cursor": the cursor's distance from the middle of the screen
-            --     is the turn rate (the Legacy scheme). Flies well with a
-            --     cursor that stays where it is put, and badly otherwise:
-            --     there is no neutral to return to but the screen's middle.
-            -- First person always steers by movement.
-            chaseSteering  = "movement",
+            --     to straight when the mouse stops (`steeringDecay`).
+            --   "cursor": the OS cursor's distance from the middle of the
+            --     screen is the turn rate (chase only; needs a cursor that
+            --     stays where it is put).
+            chaseSteering  = "virtual",
+            stickRadius    = 0.22,
+            stickDeadZone  = 0.08,
             steeringDecay  = 4.0,
 
             -- Input inversion

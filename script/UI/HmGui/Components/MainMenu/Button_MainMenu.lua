@@ -64,6 +64,8 @@ function Button:new(args)
             highlight = args.color and args.color.highlight or Color(0.3, 0.3, 0.3, 1.0)
         },
         font = args.font or { name = "Unageo-Regular", size = 13 },
+        -- Lit as if hovered: the button the keyboard is on (a menu's focus)
+        focused = args.focused,
         callback = args.callback or function() Log.Warn("undefined button callback function: " .. args.title) end
     }
 
@@ -79,10 +81,15 @@ function Button:new(args)
         Gui:setOpacity(1.0)
 
         local isMouseOver = Gui:isMouseOver(FocusType.Mouse)
-        if isMouseOver then
+        local focused = self.state.focused and self.state.focused()
+        if isMouseOver or focused then
             Gui:setBackgroundColor(self.state.color().highlight)
         else
             Gui:setBackgroundColor(self.state.color().background)
+        end
+        if focused then
+            Gui:setBorderWidth(2)
+            Gui:setBorderColor(Color(0.35, 0.70, 1.00, 0.95))
         end
 
         if self.state.size then

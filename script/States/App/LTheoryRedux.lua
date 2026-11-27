@@ -37,6 +37,7 @@ local CameraEntity = require('Modules.Cameras.Entities').Camera
 local RenderCoreSystem = require('Modules.Rendering.Systems.RenderCoreSystem')
 local PlayerController = require('Modules.Constructs.Systems.PlayerController')
 local AutoPilotSystem = require('Modules.Constructs.Systems.AutoPilotSystem')
+local ShipFlightSystem = require('Modules.Constructs.Systems.ShipFlightSystem')
 local GravityWellSystem = require('Modules.Physics.Systems.GravityWellSystem')
 local CelestialLightingSystem = require('Modules.Rendering.Systems.CelestialLightingSystem')
 local LensFlareSystem = require('Modules.Rendering.Systems.LensFlareSystem')
@@ -346,6 +347,8 @@ end
 function LimitTheoryRedux:closePauseMenu()
     self.pauseMenuOpen = false
     self.controlsOpen = false
+    self.settingsOpen = false
+    require("UI.HmGui.Views.MainMenu.Settings").exit = nil
     self.saveSlotsMode = nil
     GameState:Unpause()
     if self.docked then
@@ -362,6 +365,21 @@ function LimitTheoryRedux:closePauseMenu()
 end
 
 --- Show the Controls (help) screen; the game stays paused.
+--- The Settings screen from the pause menu (Options); its Back comes here.
+function LimitTheoryRedux:openSettings()
+    local SettingsView = require("UI.HmGui.Views.MainMenu.Settings")
+    self.settingsOpen = true
+    SettingsView.exit = function() self:closeSettings() end
+    UIPageGameplay:setView("Settings")
+end
+
+function LimitTheoryRedux:closeSettings()
+    local SettingsView = require("UI.HmGui.Views.MainMenu.Settings")
+    self.settingsOpen = false
+    SettingsView.exit = nil
+    UIPageGameplay:setView("Paused")
+end
+
 function LimitTheoryRedux:openControls()
     self.controlsOpen = true
     UIPageGameplay:setView("Controls")
@@ -3771,8 +3789,11 @@ function LimitTheoryRedux:drawNavigation()
     local lines = {}
     table.insert(lines, { text = string.format("%s  ·  %s", name, level.name), color = c })
     -- The locked target, under the system line: who, how far, how hurt
+    -- The target and the notifications go nearer the middle of the screen
+    -- (below the reticle), the standing lines above the action bar
+    local centre = {}
     local targetText, targetColor = self:targetReadout()
-    if targetText then table.insert(lines, { text = targetText, color = targetColor }) end
+    if targetText then table.insert(centre, { text = targetText, color = targetColor }) end
     if self.docked then
         local missing, cost = self:hullRepairQuote()
         local repair = missing > 0 and string.format("hull repair %s on the station screen", PlayerWallet.format(cost))
@@ -3845,12 +3866,42 @@ function LimitTheoryRedux:drawNavigation()
         table.insert(lines, { text = "Course: " .. table.concat(names, " > "), color = { 0.6, 0.9, 1.0 } })
     end
     for _, message in ipairs(self.messages or {}) do
-        table.insert(lines, { text = message.text, color = message.color, alpha = math.min(1, message.time) })
+        table.insert(centre, { text = message.text, color = message.color, alpha = math.min(1, message.time) })
     end
-    local top = h - 140 - math.max(0, #lines - 3) * 20
+    -- Above the action bar (bottom centre: its slots and margin, at the
+    -- HUD's scale), growing upward
+    local hudScale = math.max(0.7, math.min(1.3, h / 1080)) * GameState.ui.hudScale
+    local bottom = h - (26 + 64 + 18) * hudScale
+    local top = bottom - #lines * 20
     for i, line in ipairs(lines) do
         DrawEx.TextAlpha(font, line.text, 14, 0, top + (i - 1) * 20, w, 18,
             line.color[1], line.color[2], line.color[3], 0.9 * (line.alpha or 1), 0.5, 0.5)
+    end
+    -- The target and the notifications: a block from just below the middle
+    local centreTop = math.min(h * 0.60, top - #centre * 20 - 10)
+    for i, line in ipairs(centre) do
+        DrawEx.TextAlpha(font, line.text, 15, 0, centreTop + (i - 1) * 21, w, 19,
+            line.color[1], line.color[2], line.color[3], 0.95 * (line.alpha or 1), 0.5, 0.5)
+    end
+
+    -- The virtual stick (shipFlight.chaseSteering = "virtual"): where the
+    -- mouse has the stick, about the centre, and the dead zone round it
+    if self.player and self.player:isPiloting() and not self.player.mouseSteeringOff
+        and (Config.game.shipFlight.chaseSteering or "virtual") == "virtual"
+        and not require("Modules.Cameras.FreeLook").held
+        and not AutoPilotSystem:isActive(self.playerShip) then
+        local sx, sy, dead = ShipFlightSystem:stick(self.playerShip)
+        local radius = h * (Config.game.shipFlight.stickRadius or 0.22)
+        local cx, cy = w / 2, h / 2
+        DrawEx.Ring(cx, cy, math.max(4, dead * radius), { r = 0.6, g = 0.85, b = 1.0, a = 0.35 }, false)
+        DrawEx.Ring(cx, cy, radius, { r = 0.6, g = 0.85, b = 1.0, a = 0.10 }, false)
+        local live = math.sqrt(sx * sx + sy * sy) >= dead
+        local px, py = cx + sx * radius, cy - sy * radius
+        if live then
+            DrawEx.Line(cx, cy, px, py, { r = 0.6, g = 0.85, b = 1.0, a = 0.30 }, false)
+        end
+        DrawEx.Point(px, py, 5, live and { r = 0.5, g = 1.0, b = 0.75, a = 0.9 }
+            or { r = 0.6, g = 0.85, b = 1.0, a = 0.6 })
     end
 
     -- Credits, the hold and the standings are in their windows (I, U, Y);
@@ -4004,6 +4055,9 @@ function LimitTheoryRedux:onInput(data)
     if Input:isPressed(ApplicationBindings.Escape) then
         if self.controlsOpen then
             self:closeControls()
+        elseif self.settingsOpen then
+            -- Back, asking about unsaved changes first
+            require("UI.HmGui.Views.MainMenu.Settings").back()
         elseif self.saveSlotsMode then
             self:closeSaveSlots()
         elseif self.mapMode ~= 0 and not self.pauseMenuOpen then

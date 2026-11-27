@@ -185,14 +185,73 @@ local function movementSteering(shipEntity, dt)
     return yaw, pitch
 end
 
---- What the mouse is asking the ship to do, by the scheme in force.
+--- The virtual joystick: the mouse's movement moves a stick (kept on the
+--- ship's flight control, in shares of full deflection), and where the stick
+--- is *is* the turn rate. Centred, the ship flies straight; it stays where
+--- it was left, so the same place always means the same turn. Nothing reads
+--- the OS cursor, so a confined cursor or a remote desktop cannot wedge it.
+--- The HUD shows the stick (LimitTheoryRedux's flight HUD).
+---@param shipEntity Entity
+---@return number yaw
+---@return number pitch
+local function virtualSteering(shipEntity)
+    local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return 0, 0 end
+    local cfg = Config.game.shipFlight
+    local delta = Input:mouse():delta()
+    -- Full deflection is this many pixels of mouse travel from the centre
+    local radius = math.max(1, Window:height() * (cfg.stickRadius or 0.22))
+    local sens = UserSettings.mouseSensitivityFactor()
+    local x = flightCtrl:getTargetYaw() + delta.x / radius * sens
+    local y = flightCtrl:getTargetPitch() - delta.y / radius * sens
+    local len = math.sqrt(x * x + y * y)
+    if len > 1 then
+        x, y, len = x / len, y / len, 1
+    end
+    flightCtrl:setTargetYaw(x)
+    flightCtrl:setTargetPitch(y)
+
+    -- Within the dead zone (where "centred" is) the ship holds its heading;
+    -- the rate starts from 0 at its edge
+    local dead = cfg.stickDeadZone or 0.08
+    if len < dead then return 0, 0 end
+    local k = (len - dead) / (1 - dead) / len
+    return x * k, y * k
+end
+
+--- Where the virtual stick is (shares of full deflection, y up), and the
+--- dead zone, for the HUD.
+---@param shipEntity Entity
+---@return number x, number y, number deadZone
+function ShipFlightSystem:stick(shipEntity)
+    local flightCtrl = shipEntity and shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return 0, 0, 0 end
+    return flightCtrl:getTargetYaw() or 0, flightCtrl:getTargetPitch() or 0,
+        Config.game.shipFlight.stickDeadZone or 0.08
+end
+
+--- The stick back to the centre (the mouse handed to a panel, a new ship).
+---@param shipEntity Entity
+function ShipFlightSystem:centreStick(shipEntity)
+    local flightCtrl = shipEntity and shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return end
+    flightCtrl:setTargetYaw(0)
+    flightCtrl:setTargetPitch(0)
+end
+
+--- What the mouse is asking the ship to do, by the scheme in force
+--- (shipFlight.chaseSteering): the virtual stick by default, in both
+--- piloting cameras.
 ---@param shipEntity Entity
 ---@param dt number
----@param useDelta boolean first person: always by movement
+---@param useDelta boolean first person
 ---@return number yaw
 ---@return number pitch
 local function mouseSteering(shipEntity, dt, useDelta)
-    local scheme = Config.game.shipFlight.chaseSteering or "movement"
+    local scheme = Config.game.shipFlight.chaseSteering or "virtual"
+    if scheme == "virtual" then
+        return virtualSteering(shipEntity)
+    end
     if useDelta or scheme ~= "cursor" then
         return movementSteering(shipEntity, dt)
     end
@@ -234,6 +293,10 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
     if mouseAim then
         yaw, pitch = mouseSteering(shipEntity, dt, useDelta)
         yaw, pitch = applyInversion(yaw, pitch)
+    else
+        -- The mouse is elsewhere (a panel, free look): the stick recentres,
+        -- so taking it back is not a sudden turn
+        ShipFlightSystem:centreStick(shipEntity)
     end
 
     -- Boost (matches legacy: 1.0 + 2.0 * boost)
@@ -275,6 +338,8 @@ function ShipFlightSystem:updateSteeringOnly(dt, shipEntity, mouseAim, useDelta)
     if mouseAim then
         yaw, pitch = mouseSteering(shipEntity, dt, useDelta)
         yaw, pitch = applyInversion(yaw, pitch)
+    else
+        ShipFlightSystem:centreStick(shipEntity)
     end
 
     -- A tenth of the turn rate under travel drive: the ship is covering

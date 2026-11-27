@@ -419,7 +419,13 @@ local tabs = { interfaceTab, graphicsTab, audioTab, keybindingTab }
 
 -- SCREEN
 
+--- Where Back goes: the main menu, or (opened from the pause menu in game)
+--- whatever `SettingsView.exit` says.
 local function switchToMainScreen()
+    if SettingsView.exit then
+        SettingsView.exit()
+        return
+    end
     UIRouter:getCurrentPage():setView("Main")
 end
 
@@ -435,6 +441,15 @@ local function back()
     else
         switchToMainScreen()
     end
+end
+
+--- Back, as Escape asks for it in game (the unsaved-changes question first).
+function SettingsView.back()
+    if confirmBack then
+        confirmBack = false
+        return
+    end
+    back()
 end
 
 -- The "unsaved changes" modal, centred.
