@@ -358,86 +358,115 @@ impl WgpuCommandExecutor {
     /// The bind group of group `g` for the state `gs` under `layout`:
     /// created on a cache miss, shared with every state that has the same
     /// content.
+    ///
+    /// The cache key is worked out first, from ids and sizes, in a key buffer
+    /// kept between calls; the wgpu buffers, views and samplers are gathered
+    /// only on a miss. Most calls are hits (a material bound again), so they
+    /// cost the key and one lookup, with nothing allocated or cloned but the
+    /// texture views `sampling_view` hands back.
     pub(super) fn resolve_group(
         &mut self,
         g: u8,
         gs: &GroupState,
         layout: &Arc<GroupLayout>,
     ) -> BoundBg {
-        enum Res {
-            Buffer(wgpu::Buffer, u64, u64),
-            View(wgpu::TextureView),
-            Sampler(wgpu::Sampler),
+        /// What one binding of the layout takes, before anything is cloned.
+        enum Plan {
+            Ring {
+                slot: u8,
+                chunk: u16,
+                size: u64,
+            },
+            Static {
+                buffer: BufferId,
+                offset: u64,
+                size: u64,
+            },
+            Zero {
+                size: u64,
+            },
+            Tex {
+                view: wgpu::TextureView,
+                sampler: SamplerId,
+            },
+            DefaultTex {
+                dim: TexDim,
+            },
         }
-        let mut key: Vec<u64> =
-            Vec::with_capacity(4 + layout.blocks.len() * 4 + layout.textures.len() * 8);
+
+        let mut key = std::mem::take(&mut self.bg_key_scratch);
+        key.clear();
         key.push(layout.id as u64);
-        // (binding, resource) in layout order.
-        let mut resources: Vec<(u32, Res)> = Vec::new();
-        self.defaults();
+        let mut blocks: Vec<(u32, Plan)> = Vec::with_capacity(layout.blocks.len());
+        let mut textures: Vec<(u8, bool, Plan)> = Vec::with_capacity(layout.textures.len());
 
         for block in &layout.blocks {
             let binding = wgpu_block_binding(block.index);
             if block.dynamic {
-                if let Some(((slot, chunk), buffer)) = gs.ring.and_then(|(slot, chunk)| {
-                    self.ring_uniform[slot as usize]
-                        .get(chunk as usize)
-                        .map(|b| ((slot, chunk), b))
+                if let Some((slot, chunk)) = gs.ring.filter(|(slot, chunk)| {
+                    self.ring_uniform[*slot as usize]
+                        .get(*chunk as usize)
+                        .is_some()
                 }) {
                     key.extend([1, slot as u64, chunk as u64, block.size as u64]);
-                    resources.push((binding, Res::Buffer(buffer.clone(), 0, block.size as u64)));
+                    blocks.push((
+                        binding,
+                        Plan::Ring {
+                            slot,
+                            chunk,
+                            size: block.size as u64,
+                        },
+                    ));
                     continue;
                 }
             } else if let Some((buffer_id, offset, size)) = gs.statics[block.index as usize] {
-                if let Some(buffer) = self.buffers.get(&buffer_id) {
+                if self.buffers.contains_key(&buffer_id) {
                     let size = (size.max(block.size)) as u64;
                     key.extend([2, buffer_id.0 as u64, offset as u64, size]);
-                    resources.push((binding, Res::Buffer(buffer.clone(), offset as u64, size)));
+                    blocks.push((
+                        binding,
+                        Plan::Static {
+                            buffer: buffer_id,
+                            offset: offset as u64,
+                            size,
+                        },
+                    ));
                     continue;
                 }
             }
             // Nothing was bound: a block of zeros, so the result is
             // deterministic.
             key.extend([3, block.size as u64]);
-            let zero = self.defaults.as_ref().expect("defaults").zero.clone();
-            resources.push((binding, Res::Buffer(zero, 0, block.size as u64)));
+            blocks.push((
+                binding,
+                Plan::Zero {
+                    size: block.size as u64,
+                },
+            ));
         }
 
         for tex in &layout.textures {
-            let tex_binding = wgpu_texture_binding(tex.index);
-            let bound = gs.textures[tex.index as usize];
-            let mut view = None;
-            let mut sampler = None;
-            if let Some((tv, sampler_id)) = bound {
+            let mut plan = None;
+            if let Some((tv, sampler_id)) = gs.textures[tex.index as usize] {
                 if let Some((v, view_key)) = self.sampling_view(&tv, tex.dim) {
                     key.extend(view_key);
-                    view = Some(v);
-                    sampler = self.samplers.get(&sampler_id).cloned();
                     key.push(sampler_id.0 as u64);
+                    if self.samplers.contains_key(&sampler_id) {
+                        plan = Some(Plan::Tex {
+                            view: v,
+                            sampler: sampler_id,
+                        });
+                    }
                 }
             }
-            let (view, sampler) = match (view, sampler) {
-                (Some(v), Some(s)) => (v, s),
-                _ => {
-                    let defaults = self.defaults.as_ref().expect("defaults");
-                    key.extend([5, dim_code(tex.dim)]);
-                    let v = match tex.dim {
-                        TexDim::D1 => defaults.d1.clone(),
-                        TexDim::D2 => defaults.d2.clone(),
-                        TexDim::D3 => defaults.d3.clone(),
-                        TexDim::Cube => defaults.cube.clone(),
-                    };
-                    (v, defaults.sampler.clone())
-                }
-            };
-            let sampler = if tex.filterable {
-                sampler
-            } else {
+            let plan = plan.unwrap_or_else(|| {
+                key.extend([5, dim_code(tex.dim)]);
+                Plan::DefaultTex { dim: tex.dim }
+            });
+            if !tex.filterable {
                 key.push(6);
-                self.defaults.as_ref().expect("defaults").point.clone()
-            };
-            resources.push((tex_binding, Res::View(view)));
-            resources.push((wgpu_sampler_binding(tex.index), Res::Sampler(sampler)));
+            }
+            textures.push((tex.index, tex.filterable, plan));
         }
 
         let frame = self.frame_index;
@@ -445,10 +474,67 @@ impl WgpuCommandExecutor {
             // Diagnostics: a key no other resolve has, so nothing is shared.
             key.push(self.next_bg_serial);
         }
-        if let Some(hit) = self.bg_cache.get_mut(&key) {
+        if let Some(hit) = self.bg_cache.get_mut(key.as_slice()) {
             hit.last_used = frame;
-            return hit.bound.clone();
+            let bound = hit.bound.clone();
+            self.bg_key_scratch = key;
+            return bound;
         }
+
+        // A miss: now the wgpu objects themselves
+        self.defaults();
+        let defaults = self.defaults.as_ref().expect("defaults");
+        enum Res {
+            Buffer(wgpu::Buffer, u64, u64),
+            View(wgpu::TextureView),
+            Sampler(wgpu::Sampler),
+        }
+        let mut resources: Vec<(u32, Res)> = Vec::with_capacity(blocks.len() + textures.len() * 2);
+        for (binding, plan) in blocks {
+            let res = match plan {
+                Plan::Ring { slot, chunk, size } => Res::Buffer(
+                    self.ring_uniform[slot as usize][chunk as usize].clone(),
+                    0,
+                    size,
+                ),
+                Plan::Static {
+                    buffer,
+                    offset,
+                    size,
+                } => Res::Buffer(self.buffers[&buffer].clone(), offset, size),
+                _ => {
+                    let size = match plan {
+                        Plan::Zero { size } => size,
+                        _ => unreachable!("blocks are buffers"),
+                    };
+                    Res::Buffer(defaults.zero.clone(), 0, size)
+                }
+            };
+            resources.push((binding, res));
+        }
+        for (index, filterable, plan) in textures {
+            let (view, sampler) = match plan {
+                Plan::Tex { view, sampler } => (view, self.samplers[&sampler].clone()),
+                Plan::DefaultTex { dim } => (
+                    match dim {
+                        TexDim::D1 => defaults.d1.clone(),
+                        TexDim::D2 => defaults.d2.clone(),
+                        TexDim::D3 => defaults.d3.clone(),
+                        TexDim::Cube => defaults.cube.clone(),
+                    },
+                    defaults.sampler.clone(),
+                ),
+                _ => unreachable!("textures are views"),
+            };
+            let sampler = if filterable {
+                sampler
+            } else {
+                defaults.point.clone()
+            };
+            resources.push((wgpu_texture_binding(index), Res::View(view)));
+            resources.push((wgpu_sampler_binding(index), Res::Sampler(sampler)));
+        }
+
         let entries: Vec<wgpu::BindGroupEntry> = resources
             .iter()
             .map(|(binding, res)| wgpu::BindGroupEntry {
@@ -482,12 +568,13 @@ impl WgpuCommandExecutor {
         };
         self.next_bg_serial += 1;
         self.bg_cache.insert(
-            key,
+            key.clone(),
             CachedBg {
                 bound: bound.clone(),
                 last_used: frame,
             },
         );
+        self.bg_key_scratch = key;
         bound
     }
 

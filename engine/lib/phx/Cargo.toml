@@ -49,6 +49,8 @@ parley = { version = "0.13", default-features = false, features = ["std"] }
 swash = "0.2"
 rapier3d-f64 = { version = "0.22", features = ["simd-stable", "debug-render"] }
 regex = "1.13"
+# A fast non-cryptographic hasher for the render thread's per-draw lookups
+rustc-hash = "2.1"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 tiny_http = { version = "0.12", optional = true }

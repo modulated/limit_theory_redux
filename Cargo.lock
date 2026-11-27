@@ -2843,6 +2843,7 @@ dependencies = [
  "rapier3d-f64",
  "rayon",
  "regex",
+ "rustc-hash 2.1.1",
  "serde",
  "strum",
  "strum_macros",
