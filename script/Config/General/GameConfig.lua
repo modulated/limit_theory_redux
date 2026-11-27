@@ -245,6 +245,13 @@ Config.game = {
         homeLevel    = 1,
         distanceBias = 0.6,
         levels = {
+            -- Level 0, below the rest: only a start asks for it (the Sandbox's
+            -- home system). Index 0 keeps it out of the random picks for the
+            -- other systems, which go through levels 1 and up.
+            [0] = { name = "Peaceful", description = "Quiet space. The odd pirate scout, easily seen off.",
+              color = { 0.55, 0.95, 0.85 }, weight = 0,
+              npcs = { security = 2, trader = 3, pirate = 0, pirateScout = 1, pirateMerchant = 0,
+                       miner = 3, worker = 4 } },
             { name = "Secure", description = "Security patrols. Pirates are rarely seen.",
               color = { 0.35, 0.75, 1.0 }, weight = 3,
               npcs = { security = 3, trader = 3, pirate = 0, pirateMerchant = 0, miner = 2, worker = 4 } },
@@ -327,6 +334,14 @@ Config.game = {
                 maxSpeed = 0.7, accel = 0.25, turnRate = 1.2,
                 detectRange = 6.0,
             },
+            -- A green pirate in a light ship: what a peaceful system sees
+            pirateScout = {
+                faction = "pirate", label = "Pirate scout",
+                gunship = true, scale = 0.02, sizeClass = "small",
+                maxHealth = 220, maxShield = 30, shieldRegen = 3,
+                maxSpeed = 0.55, accel = 0.2, turnRate = 1.0,
+                detectRange = 3.5,
+            },
             pirateMerchant = {
                 faction = "pirate", label = "Pirate merchant",
                 gunship = false, hull = 3, scale = 0.03, sizeClass = "medium",
@@ -367,7 +382,7 @@ Config.game = {
         startingCredits = 1000,
         hullRepairCost  = 2.0,   -- credits per point of hull; shields recharge free
         bountyIssuer    = "security",
-        bounties        = { pirate = 600, pirateMerchant = 300 },
+        bounties        = { pirate = 600, pirateMerchant = 300, pirateScout = 200 },
         defaultBounty   = 250,   -- an outlaw of a role not listed
     },
 

@@ -532,7 +532,7 @@ function NpcSystem:spawnWithEscorts(role, spot)
 end
 
 -- The roles in the order a system is filled and topped up
-local ROLES = { "security", "trader", "miner", "pirate", "pirateMerchant" }
+local ROLES = { "security", "trader", "miner", "pirate", "pirateScout", "pirateMerchant" }
 
 --- Fill the system with the NPCs its hostility level calls for.
 ---@param level table Config.game.hostility.levels[n]
@@ -563,7 +563,7 @@ end
 function NpcSystem:replenishOne()
     local level = self.level
     if not level or #self.places.gates == 0 then return end
-    for _, role in ipairs({ "pirate", "pirateMerchant", "trader", "miner", "security" }) do
+    for _, role in ipairs({ "pirate", "pirateScout", "pirateMerchant", "trader", "miner", "security" }) do
         if self:count(role) < (level.npcs[role] or 0) then
             local gate = self.places.gates[self.rng:getInt(1, #self.places.gates)]
             self:spawnWithEscorts(role, self:near(gate.position, gate.radius * 3))

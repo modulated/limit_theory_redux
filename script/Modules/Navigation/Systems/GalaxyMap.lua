@@ -217,16 +217,25 @@ function GalaxyMap:draw(state, x, y, sx, sy)
     MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 
     self:drawInfo(state, x + 10, y + sy - 170, 360)
-    self:drawLegend(x + sx - 200, y + sy - 130)
+    self:drawLegend(x + sx - 200, y + sy - 130, state)
 end
 
 --- What the colours mean, in the bottom-right corner.
-function GalaxyMap:drawLegend(x, y)
+function GalaxyMap:drawLegend(x, y, state)
     local levels = Config.game.hostility.levels
-    DrawEx.Rect(x - 8, y - 8, 196, 26 + #levels * 18, Color(0.1, 0.1, 0.12, 0.9))
+    -- Level 0 (Peaceful) only where a start put it: list it then
+    local first = 1
+    if levels[0] and state and state.galaxy then
+        for _, system in ipairs(state.galaxy.systems) do
+            if system.hostility == 0 then first = 0 break end
+        end
+    end
+    local rows = #levels - first + 1
+    DrawEx.Rect(x - 8, y - 8, 196, 26 + rows * 18, Color(0.1, 0.1, 0.12, 0.9))
     DrawEx.TextAlpha(FONT, "Hostility", 12, x, y, 180, 16, 0.85, 0.85, 0.85, 0.9, 0.0, 0.5)
-    for i, level in ipairs(levels) do
-        local ly = y + 4 + i * 18
+    for i = first, #levels do
+        local level = levels[i]
+        local ly = y + 4 + (i - first + 1) * 18
         local c = level.color
         DrawEx.Rect(x + 2, ly + 4, 8, 8, Color(c[1], c[2], c[3], 1.0))
         DrawEx.TextAlpha(FONT, level.name, 11, x + 18, ly, 160, 16, c[1], c[2], c[3], 0.95, 0.0, 0.5)

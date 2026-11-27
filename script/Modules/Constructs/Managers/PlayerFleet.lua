@@ -246,6 +246,19 @@ function PlayerFleet:grantModule(def, slot)
     return true
 end
 
+--- Give the flown ship a weapon (a new game's starting gun). Its mounts are
+--- only known once the ship is built, so the gun waits on the ship and goes
+--- in the first free mount that takes it, smallest first (`restore`).
+---@param def FittingDefinition a weapon
+---@return boolean
+function PlayerFleet:grantWeapon(def)
+    local ship = self:active()
+    if not ship or not def or not def:isWeapon() then return false end
+    ship.pendingWeapons = ship.pendingWeapons or {}
+    table.insert(ship.pendingWeapons, def.id)
+    return true
+end
+
 --- Note what the flown entity is fitted with, so the ship keeps it.
 ---@param entity Entity|nil
 function PlayerFleet:record(entity)
@@ -301,6 +314,29 @@ function PlayerFleet:restore(entity, turrets, spare)
         elseif def then
             handBack(def)
         end
+    end
+    -- A starting gun: in the smallest free mount that takes it
+    if ship.pendingWeapons then
+        local ordered = ShipFittingSystem:mounts(entity)
+        local order = { sm = 1, m = 2, l = 3, xl = 4 }
+        table.sort(ordered, function(a, b)
+            local sa, sb = order[a.sizeClass] or 9, order[b.sizeClass] or 9
+            if sa ~= sb then return sa < sb end
+            return a.mountId < b.mountId
+        end)
+        for _, id in ipairs(ship.pendingWeapons) do
+            local def = Fittings:get(id)
+            local placed = false
+            for _, mount in ipairs(ordered) do
+                if def and not loadout:getWeapon(mount.mountId) and ShipFittingSystem:weaponFits(def, mount.sizeClass) then
+                    loadout:setWeapon(mount.mountId, def)
+                    placed = true
+                    break
+                end
+            end
+            if def and not placed then handBack(def) end
+        end
+        ship.pendingWeapons = nil
     end
     for slot, id in pairs(ship.modules) do
         local def = Fittings:get(id)

@@ -2045,6 +2045,9 @@ function LimitTheoryRedux:resetGalaxy()
     -- Which factions the player chose to turn against: asked afresh each game
     self.hostilityAccepted = {}
     PlayerWallet:reset()
+    -- What the start gives (Config/Scenarios: `start`), else GameConfig's
+    local start = self.scenario and self.scenario.start or {}
+    if start.credits then PlayerWallet.balance = start.credits end
     PlayerCargo:reset()
     PlayerFactories:reset()
     PlayerStations:reset()
@@ -2054,13 +2057,21 @@ function LimitTheoryRedux:resetGalaxy()
     self.surveyedRocks = {}
     -- The ship a new game starts in: empty slots but for what it comes with
     AbilitySystem:reset()
-    PlayerFleet:reset(Config.game.fitting.startingHull)
-    for _, name in ipairs(Config.game.fitting.startingModules) do
+    PlayerFleet:reset(start.hull or Config.game.fitting.startingHull)
+    for _, name in ipairs(start.modules or Config.game.fitting.startingModules) do
         local def = Fittings:getByName(name)
         if def then
             PlayerFleet:grantModule(def)
         else
-            Log.Warn("Config.game.fitting.startingModules names no fitting: %s", tostring(name))
+            Log.Warn("The starting modules name no fitting: %s", tostring(name))
+        end
+    end
+    -- Guns go in mounts, which only exist once the ship is built: they are
+    -- put in the first that takes them then (PlayerFleet:restore)
+    for _, name in ipairs(start.weapons or Config.game.fitting.startingWeapons or {}) do
+        local def = Fittings:getByName(name)
+        if not (def and PlayerFleet:grantWeapon(def)) then
+            Log.Warn("The starting weapons name no weapon: %s", tostring(name))
         end
     end
     self.simTime = 0
@@ -2981,7 +2992,9 @@ function LimitTheoryRedux:assignHostility()
     local cfg = Config.game.hostility
     for _, system in ipairs(self.galaxy.systems) do
         if system.id == 1 then
-            system.hostility = cfg.homeLevel
+            -- The start may ask for its own (the Sandbox's: Peaceful)
+            local start = self.scenario and self.scenario.start
+            system.hostility = start and start.homeLevel or cfg.homeLevel
         else
             local route = GalaxyGenerator:route(self.galaxy, 1, system.id)
             local jumps = route and #route or 1
