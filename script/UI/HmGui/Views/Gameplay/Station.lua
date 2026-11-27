@@ -54,12 +54,17 @@ local GREEN = Color(0.45, 0.90, 0.55, 1.00)
 local BUTTON_BG = Color(0.06, 0.09, 0.13, 1.00)
 local BUTTON_HI = Color(0.10, 0.30, 0.50, 1.00)
 
---- Column widths at 1920 px, scaled down on smaller windows.
+--- Column widths at the design size (1500 x 950), scaled to the window.
 local COL_ITEM, COL_NUM, COL_BUTTON = 260, 90, 54
+--- The tab's column and the sidebar beside it, at the design size.
+local MAIN_WIDTH, SIDE_WIDTH = 1000, 380
 
+--- The screen grows with the window (it used to stop at 1920 px wide's
+--- size, and sat small in the middle of anything bigger): as big as fits
+--- both ways, between 0.7 and 1.5.
 ---@return number
 local function scale()
-    return math.max(0.7, math.min(1.0, Window:width() / 1920))
+    return math.max(0.7, math.min(1.5, Window:width() / 1500, Window:height() / 950))
 end
 
 ---@return Entity|nil station the station the player is docked at
@@ -444,6 +449,56 @@ local function market(station, s)
     end
     local panel = orderPanel(station, s)
     if panel then rows[#rows + 1] = panel end
+
+    -- What the player has here that this station does not deal in: it only
+    -- buys that as scrap
+    local key = stationKey()
+    local hangarStock = key and PlayerFactories:hangar(key)
+    local listed = {}
+    for _, row in ipairs(listing) do listed[row.item.id] = true end
+    local untraded = {}
+    for _, store in ipairs({ hangarStock, PlayerCargo:get() }) do
+        for _, row in ipairs(store and store:list() or {}) do
+            if not listed[row.item.id] then
+                untraded[row.item.id] = untraded[row.item.id] or { item = row.item, units = 0 }
+                untraded[row.item.id].units = untraded[row.item.id].units + row.units
+            end
+        end
+    end
+    local ids = {}
+    for id in pairs(untraded) do ids[#ids + 1] = id end
+    table.sort(ids)
+    if #ids > 0 then
+        rows[#rows + 1] = text(string.format("NOT TRADED HERE     sold only as scrap, at %d%% of base price",
+                math.floor(Config.game.market.scrapFactor * 100)),
+            "Unageo-Medium", headerSize, DIM)
+        rows[#rows + 1] = UIComponent.Divider { color = RULE }
+        local size = math.floor(14 * s)
+        for _, id in ipairs(ids) do
+            local u = untraded[id]
+            local inHangar = hangarStock and hangarStock:count(id) or 0
+            rows[#rows + 1] = Grid {
+                fixedHeight = math.floor(24 * s),
+                cells = { Grid.Fixed(COL_ITEM * s), Grid.Fixed(COL_NUM * 2 * s), Grid.Fixed(COL_NUM * 2 * s),
+                          Grid.Fixed((COL_BUTTON + 40) * s) },
+                contents = {
+                    text(u.item.displayName, "Unageo-Regular", size, GREY),
+                    text(string.format("%d held (%d in hangar)", u.units, inHangar), "Unageo-Regular", size, DIM,
+                        AlignHorizontal.Right),
+                    text(string.format("scrap ~%d a unit", math.max(1, math.floor(
+                        (u.item.startEquilibriumPrice or 0) * Config.game.market.scrapFactor))),
+                        "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+                    smallButton("Scrap all", s, inHangar > 0, function()
+                        sellAtMarket(station, id, inHangar)
+                    end),
+                }
+            }
+        end
+        rows[#rows + 1] = text("A station deals in what its recipes use and make, and the ores of its system. "
+            .. "Move goods to the hangar to sell them; better prices are where they are made or used (Nearby tab).",
+            "Unageo-Regular", math.floor(12 * s), DIM)
+    end
+
     local mine = myOrders(station, s)
     if mine then rows[#rows + 1] = mine end
 
@@ -1161,13 +1216,109 @@ end
 --- The whole screen.
 ---@param s number
 ---@return UILayoutGrid
+--- The sidebar: the ship and what it carries, and what this station is, so
+--- the state of things is on screen whichever tab is up.
+---@param station Entity|nil
+---@param s number
+---@return UILayoutGrid
+local function sidebar(station, s)
+    local game = LimitTheoryRedux
+    local rows = {}
+    local head = math.floor(13 * s)
+    local size = math.floor(14 * s)
+    local function heading(value)
+        rows[#rows + 1] = text(value, "Unageo-Medium", head, DIM)
+        rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    end
+    local function pair(label, value, color)
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(20 * s),
+            cells = { Grid.Fixed(170 * s), Grid.Fixed((SIDE_WIDTH - 190) * s) },
+            contents = {
+                text(label, "Unageo-Regular", size, GREY),
+                text(value, "Unageo-Regular", size, color or WHITE, AlignHorizontal.Right),
+            }
+        }
+    end
+
+    heading("YOUR SHIP")
+    local ship = PlayerFleet:active()
+    rows[#rows + 1] = text(ship and ship.name or "-", "Unageo-Semibold", math.floor(16 * s), WHITE)
+    local entity = game.playerShip
+    local CoreComponents = require("Modules.Core.Components")
+    local ConstructComponents = require("Modules.Constructs.Components")
+    local health = entity and entity:isValid() and entity:get(CoreComponents.Health)
+    local defense = entity and entity:isValid() and entity:get(ConstructComponents.Defense)
+    if health then
+        pair("Hull", string.format("%d / %d", math.floor(health:getCurrentHealth()), math.floor(health:getMaxHealth())),
+            health:getCurrentHealth() < health:getMaxHealth() and GOLD or GREEN)
+    end
+    if defense and defense:getMaxShield() > 0 then
+        pair("Shields", string.format("%d / %d", math.floor(defense:getCurrentShield()),
+            math.floor(defense:getMaxShield())))
+    end
+    pair("Credits", PlayerWallet.format(PlayerWallet:get()), GOLD)
+
+    local used, capacity = PlayerCargo:getLoad()
+    heading(string.format("HOLD  %d / %d t", math.floor(used), math.floor(capacity)))
+    local holdRows = PlayerCargo:list()
+    if #holdRows == 0 then rows[#rows + 1] = text("Empty", "Unageo-Regular", size, DIM) end
+    for i, row in ipairs(holdRows) do
+        if i > 10 then
+            rows[#rows + 1] = text(string.format("... and %d more (Hangar tab)", #holdRows - 10),
+                "Unageo-Regular", size, DIM)
+            break
+        end
+        pair(row.item.displayName, tostring(row.units))
+    end
+
+    local key = stationKey()
+    local hangarStock = key and PlayerFactories:hangar(key)
+    local hangarRows = hangarStock and hangarStock:list() or {}
+    heading(string.format("HANGAR HERE  %d kind(s)", #hangarRows))
+    for i, row in ipairs(hangarRows) do
+        if i > 6 then
+            rows[#rows + 1] = text(string.format("... and %d more", #hangarRows - 6), "Unageo-Regular", size, DIM)
+            break
+        end
+        pair(row.item.displayName, tostring(row.units))
+    end
+
+    if station then
+        heading("THIS STATION")
+        local productionCmp = station:get(EconomyComponents.Production)
+        local makes, seen = {}, {}
+        for _, recipe in ipairs(productionCmp and productionCmp:getRecipes() or {}) do
+            for _, out in ipairs(recipe.outputs) do
+                if out.item.group ~= "Waste" and not seen[out.item.id] then
+                    seen[out.item.id] = true
+                    makes[#makes + 1] = out.item.displayName
+                end
+            end
+        end
+        rows[#rows + 1] = text(#makes > 0 and ("Makes: " .. table.concat(makes, ", ")) or "Makes nothing of its own",
+            "Unageo-Regular", size, GREY)
+        rows[#rows + 1] = text(string.format("Deals in %d goods (Market tab)", #MarketSystem:listing(station)),
+            "Unageo-Regular", size, DIM)
+    end
+
+    return Grid {
+        layoutType = GuiLayoutType.Vertical,
+        spacing = math.floor(3 * s),
+        cells = Grid.Fit(),
+        color = { background = Color(0.03, 0.05, 0.09, 0.85) },
+        padding = { math.floor(12 * s), math.floor(10 * s) },
+        contents = rows
+    }
+end
+
 local function screen(s)
     local station = dockedStation()
     local used, capacity = PlayerCargo:getLoad()
     local missing, repairCost = LimitTheoryRedux:hullRepairQuote()
 
     local headline = Grid {
-        cells = { Grid.Fixed(700 * s), Grid.Fixed(420 * s) },
+        cells = { Grid.Fixed((MAIN_WIDTH + SIDE_WIDTH - 420) * s), Grid.Fixed(420 * s) },
         contents = {
             text(stationName(), "Unageo-Semibold", math.floor(34 * s), WHITE),
             text(string.format("%s   ·   hold %d / %d t", PlayerWallet.format(PlayerWallet:get()),
@@ -1204,19 +1355,27 @@ local function screen(s)
     local contents = { headline, UIComponent.Divider { color = RULE } }
     if station then
         contents[#contents + 1] = tabs(s)
+        local body
         if Station.tab == "factory" then
-            contents[#contents + 1] = factory(station, s)
+            body = factory(station, s)
         elseif Station.tab == "hangar" then
-            contents[#contents + 1] = hangar(station, s)
+            body = hangar(station, s)
         elseif Station.tab == "nearby" then
-            contents[#contents + 1] = nearby(s)
+            body = nearby(s)
         elseif Station.tab == "refit" then
-            contents[#contents + 1] = refit(s)
+            body = refit(s)
         elseif Station.tab == "forces" and PlayerStations.isOwnedKey(stationKey()) then
-            contents[#contents + 1] = forces(s)
+            body = forces(s)
         else
-            contents[#contents + 1] = market(station, s)
+            body = market(station, s)
         end
+        -- The tab on the left, the ship and the station on the right
+        contents[#contents + 1] = Grid {
+            spacing = math.floor(20 * s),
+            cells = { Grid.Fixed(MAIN_WIDTH * s), Grid.Fixed(SIDE_WIDTH * s) },
+            cellAlign = { AlignHorizontal.Left, AlignVertical.Top },
+            contents = { body, sidebar(station, s) },
+        }
     else
         contents[#contents + 1] = text("Not docked.", "Unageo-Regular", math.floor(16 * s), DIM)
     end
