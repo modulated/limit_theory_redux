@@ -2640,7 +2640,10 @@ function LimitTheoryRedux:generateUniverse(ruleset, seed)
     self.labeledEntities = {}
     self.beltEntities = {}
     self.starEntity = nil
+    self.travelBodies = {}
     self:collectEntities(self.universe)
+    -- The planets, moons and star the travel drive drops out short of
+    require("Modules.Constructs.Systems.TravelDriveSystem"):setBodies(self.travelBodies)
 end
 
 --- Something a scenario added to the scene: it is removed with the scene
@@ -2846,13 +2849,18 @@ end
 function LimitTheoryRedux:collectEntities(entity)
     local name = tostring(entity)
 
+    local bodies = self.travelBodies or {}
+    self.travelBodies = bodies
     if name:find("PlanetEntity") then
         table.insert(self.planets, entity)
         table.insert(self.labeledEntities, { entity = entity, label = name })
+        table.insert(bodies, { entity = entity, kind = "planet" })
     elseif name:find("MoonEntity") then
         table.insert(self.labeledEntities, { entity = entity, label = name })
+        table.insert(bodies, { entity = entity, kind = "moon" })
     elseif name:find("StarEntity") then
         self.starEntity = entity
+        table.insert(bodies, { entity = entity, kind = "star" })
     elseif name:find("AsteroidBeltEntity") then
         table.insert(self.beltEntities, entity)
     end

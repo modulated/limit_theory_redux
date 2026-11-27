@@ -168,6 +168,16 @@ Config.game = {
             star      = 8000,
             openSpace = 40000,
         },
+
+        -- The drive drops out by itself just short of a planet, moon or star
+        -- in the ship's path (TravelDriveSystem): far enough out that the
+        -- ship, coasting down under its drag, stops clear of the surface.
+        -- Smaller things -- stations, rocks, ships -- the ship passes
+        -- through while the drive is engaged.
+        dropOut = {
+            margin   = 0.25, -- clearance kept above the surface, in radii
+            reaction = 0.4,  -- seconds of travel allowed on top of the coast
+        },
     },
 
     -- The galaxy around the played star system: other systems as nodes, and
