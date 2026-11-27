@@ -432,8 +432,15 @@ Station, at 1,550,000 t, only ever travels that way).
   cheapest listings up to `traderMaxMarkup` of base, spending up to `traderBudget` a visit. The
   sales tax an NPC pays on a sale there is the owner's; the Factory tab shows what it has earned.
 
-Outposts are saved with the game, and built again from their records whenever the player comes
-back to the system.
+- **Defences** (`outposts.defense`): an armed platform beside the outpost, in the player's
+  colours, that engages every faction the player is hostile to (pirates, and anyone the player
+  has turned on) and pays the player the bounty on the outlaws it kills, without moving any
+  standing. The outpost itself cannot be destroyed; the platform can. Its hull and shields show
+  on the Factory tab, where it is repaired at the hull rate or, once shot down, rebuilt for
+  `rebuildCost`.
+
+Outposts, with the state of their defences, are saved with the game, and built again from their
+records whenever the player comes back to the system.
 
 ## 7. Tuning it without running the game
 

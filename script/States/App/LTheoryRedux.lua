@@ -725,6 +725,15 @@ function LimitTheoryRedux:onReputationChanged(faction, old, new)
         for _, team in ipairs(Factions.hostileTeams(Factions.Player)) do set[team] = true end
         self.playerBattery.hostileTeams = set
     end
+    -- The outposts' guns engage whom the player is hostile to
+    for _, entry in ipairs(self.playerStationEntities or {}) do
+        local battery = entry.defense and entry.defense.battery
+        if battery then
+            local set = {}
+            for _, team in ipairs(Factions.hostileTeams(Factions.Player)) do set[team] = true end
+            battery.hostileTeams = set
+        end
+    end
     local r, g, b = Factions.color(faction)
     local delta = new - old
     self:notify(string.format("%s standing %s%.2f (%s)", Factions.name(faction),
@@ -750,7 +759,20 @@ end
 --- faction the bounty issuer is hostile to) bounty is paid.
 ---@param event table
 function LimitTheoryRedux:onCombatKill(event)
-    if not self.playerShip or event.attacker ~= self.playerShip or not self.npcs then return end
+    if not self.npcs then return end
+    -- An outpost's guns: an outlaw's bounty is the owner's; no standing moves
+    if self:isOutpostDefense(event.attacker) then
+        local record = self.npcs:recordOf(event.target)
+        local economy = Config.game.economy
+        if record and Factions.isHostile(economy.bountyIssuer, record.faction) then
+            local bounty = economy.bounties[record.role] or economy.defaultBounty
+            PlayerWallet:add(bounty, "Bounty (outpost defences): " .. record.label)
+            self:notify(string.format("Your outpost's guns destroyed %s: bounty +%s", record.label,
+                PlayerWallet.format(bounty)), { 1.0, 0.85, 0.35 })
+        end
+        return
+    end
+    if not self.playerShip or event.attacker ~= self.playerShip then return end
     local record = self.npcs:recordOf(event.target)
     if not record then return end
     local economy = Config.game.economy
@@ -2248,6 +2270,7 @@ function LimitTheoryRedux:destroyScene(keepShip)
     end
     self.stations = {}
     for _, entry in ipairs(self.playerStationEntities or {}) do
+        self:removeOutpostDefense(entry)
         MarketSystem:park(entry.entity, PlayerStations.keyOf(entry.record.id))
         local rbCmp = entry.entity:get(PhysicsComponents.RigidBody)
         if rbCmp and rbCmp:getRigidBody() then
@@ -2648,10 +2671,189 @@ function LimitTheoryRedux:buildPlayerStation(record)
     end
     station:add(EconomyComponents.Stock())
     station:add(EconomyComponents.OrderBook())
-    table.insert(self.playerStationEntities, { entity = station, record = record })
+    local entry = { entity = station, record = record }
+    table.insert(self.playerStationEntities, entry)
     local r, g, b = Factions.color(Factions.Player)
     table.insert(self.labeledEntities, { entity = station, label = record.name, color = { r, g, b } })
+    self:buildOutpostDefense(entry)
     return station
+end
+
+------------------------------------------------------------------------------
+-- An outpost's defences: an armed platform beside it. The station is safe;
+-- its guns can fall, and are repaired or rebuilt at the station.
+------------------------------------------------------------------------------
+
+local DEFENSE_SIZE_CLASS = {
+    small = Enums.Target.SizeClass.Small,
+    medium = Enums.Target.SizeClass.Medium,
+    large = Enums.Target.SizeClass.Large,
+}
+
+--- Build an outpost's defence platform, unless it was shot down (then it
+--- waits for a rebuild). Its hull and shields are the record's, as saved.
+---@param entry table { entity, record }
+function LimitTheoryRedux:buildOutpostDefense(entry)
+    local record = entry.record
+    record.defense = record.defense or {}
+    if record.defense.destroyed or not self.weaponCombat or not self.constructManager then return end
+    local cfg = Config.game.outposts.defense
+    local rbCmp = entry.entity:get(PhysicsComponents.RigidBody)
+    local body = rbCmp and rbCmp:getRigidBody()
+    if not body then return end
+    local p, radius = body:getPos(), body:getBoundingRadius()
+    local position = Position(p.x + radius * cfg.offset, p.y, p.z)
+    local ok, construction = pcall(function()
+        return ArmedShipBuilder:build(GunshipRecipe.build(1000003 * record.id + 29, Factions.Player, cfg), {
+            constructManager = self.constructManager,
+            shipConfig = { position = position, scale = cfg.scale, isKinematic = true },
+        })
+    end)
+    if not ok then
+        Log.Error("Outpost %s: its defences could not be built: %s", record.name, tostring(construction))
+        return
+    end
+    construction.shipBody:setCollidable(true)
+    local ship = construction.ship
+    ship:add(ConstructComponents.Targetable(Factions.Player,
+        DEFENSE_SIZE_CLASS[cfg.sizeClass] or Enums.Target.SizeClass.Large))
+    local battery = self.weaponCombat:addBattery(WeaponBattery(construction, {
+        name = record.name .. " defences",
+        aiActive = true,
+        team = Factions.Player,
+        hostileTeams = Factions.hostileTeams(Factions.Player),
+    }))
+    -- As saved: a battered platform comes back battered
+    local health = ship:get(CoreComponentsAll.Health)
+    local defense = ship:get(ConstructComponents.Defense)
+    if health and record.defense.hull then
+        health:setCurrentHealth(math.max(1, math.min(record.defense.hull, health:getMaxHealth())))
+    end
+    if defense and record.defense.shield then
+        defense:setCurrentShield(math.min(record.defense.shield, defense:getMaxShield()))
+    end
+    local r, g, b = Factions.color(Factions.Player)
+    local label = { entity = ship, label = record.name .. " Defences", color = { r, g, b } }
+    table.insert(self.labeledEntities, label)
+    entry.defense = { handle = construction.shipHandle, entity = ship, battery = battery, label = label }
+end
+
+--- Take an outpost's platform out of the scene (a jump, or a wreck cleared).
+---@param entry table
+function LimitTheoryRedux:removeOutpostDefense(entry)
+    local d = entry.defense
+    if not d then return end
+    entry.defense = nil
+    for i = #(self.labeledEntities or {}), 1, -1 do
+        if self.labeledEntities[i] == d.label then table.remove(self.labeledEntities, i) end
+    end
+    if d.battery then d.battery:setAIActive(false) end
+    if self.player and self.player:getOrbitTarget() == d.entity then self.player:setOrbitTarget(nil) end
+    if self.constructManager and d.handle then self.constructManager:destroy(d.handle) end
+end
+
+--- Each frame: the platforms' shields recharge, their state is kept on the
+--- records (what a save writes), and one shot down goes after its wreck.
+---@param dt number
+function LimitTheoryRedux:updateOutpostDefenses(dt)
+    for _, entry in ipairs(self.playerStationEntities or {}) do
+        local d = entry.defense
+        if d then
+            if d.wreck then
+                d.wreck = d.wreck - dt
+                if d.wreck <= 0 then self:removeOutpostDefense(entry) end
+            elseif d.entity:isValid() then
+                local health = d.entity:get(CoreComponentsAll.Health)
+                local defense = d.entity:get(ConstructComponents.Defense)
+                if defense then defense:update(dt) end
+                local state = entry.record.defense
+                state.hull = health and health:getCurrentHealth() or state.hull
+                state.shield = defense and defense:getCurrentShield() or state.shield
+                if health and health:isDestroyed() then
+                    state.destroyed, state.hull, state.shield = true, 0, 0
+                    if d.battery then d.battery:setAIActive(false) end
+                    d.wreck = Config.game.npc.wreckTime
+                    self:notify(string.format("%s: its defences have been destroyed. Rebuild them there.",
+                        entry.record.name), { 1.0, 0.4, 0.3 })
+                end
+            end
+        end
+    end
+end
+
+--- Whether an entity is one of the outposts' defence platforms.
+---@param entity Entity|nil
+---@return boolean
+function LimitTheoryRedux:isOutpostDefense(entity)
+    if not entity then return false end
+    for _, entry in ipairs(self.playerStationEntities or {}) do
+        if entry.defense and entry.defense.entity.id == entity.id then return true end
+    end
+    return false
+end
+
+--- The scene entry of the outpost at `key`, if it is in this system.
+---@param key string
+---@return table|nil
+function LimitTheoryRedux:outpostEntry(key)
+    for _, entry in ipairs(self.playerStationEntities or {}) do
+        if PlayerStations.keyOf(entry.record.id) == key then return entry end
+    end
+    return nil
+end
+
+--- The state of an outpost's defences and what putting them right costs.
+---@param key string
+---@return table|nil { destroyed, hull, maxHull, shield, maxShield, cost }
+function LimitTheoryRedux:outpostDefenseQuote(key)
+    local entry = self:outpostEntry(key)
+    if not entry then return nil end
+    local cfg = Config.game.outposts.defense
+    local state = entry.record.defense or {}
+    if state.destroyed or not entry.defense then
+        return { destroyed = true, hull = 0, maxHull = cfg.maxHealth, shield = 0,
+                 maxShield = cfg.maxShield, cost = cfg.rebuildCost }
+    end
+    local health = entry.defense.entity:get(CoreComponentsAll.Health)
+    local defense = entry.defense.entity:get(ConstructComponents.Defense)
+    local hull = health and health:getCurrentHealth() or 0
+    local maxHull = health and health:getMaxHealth() or cfg.maxHealth
+    return {
+        destroyed = false, hull = hull, maxHull = maxHull,
+        shield = defense and defense:getCurrentShield() or 0,
+        maxShield = defense and defense:getMaxShield() or cfg.maxShield,
+        cost = math.ceil((maxHull - hull) * Config.game.economy.hullRepairCost),
+    }
+end
+
+--- Repair an outpost's platform, or rebuild one that was shot down.
+---@param key string
+function LimitTheoryRedux:repairOutpostDefense(key)
+    local entry = self:outpostEntry(key)
+    local quote = self:outpostDefenseQuote(key)
+    if not entry or not quote then return end
+    if quote.cost <= 0 then
+        self:notify("The defences need no repair.", { 0.6, 0.9, 1.0 })
+        return
+    end
+    if not PlayerWallet:remove(quote.cost, quote.destroyed and "Outpost defences rebuilt"
+            or "Outpost defences repaired") then
+        self:notify("Not enough credits.", { 1.0, 0.4, 0.3 })
+        return
+    end
+    if quote.destroyed then
+        self:removeOutpostDefense(entry)
+        entry.record.defense = {}
+        self:buildOutpostDefense(entry)
+        self:notify(string.format("%s: defences rebuilt for %s", entry.record.name,
+            PlayerWallet.format(quote.cost)), { 0.3, 1.0, 0.45 })
+    else
+        local health = entry.defense.entity:get(CoreComponentsAll.Health)
+        health:setCurrentHealth(health:getMaxHealth())
+        entry.record.defense.hull = health:getMaxHealth()
+        self:notify(string.format("%s: defences repaired for %s", entry.record.name,
+            PlayerWallet.format(quote.cost)), { 0.6, 0.9, 1.0 })
+    end
 end
 
 --- The dock record of an outpost, as `npcs.places.docks` keeps them.
@@ -3540,6 +3742,7 @@ function LimitTheoryRedux:onStateSim(data)
     -- NPC ships fly (kinematic) before the physics step, like scenario things
     Profiler.Begin('Sim.NPCs')
     self.npcs:update(dt)
+    self:updateOutpostDefenses(dt)
     Profiler.End()
     -- The stations' factory floors, and the goods they cannot make arriving
     Profiler.Begin('Sim.Economy')

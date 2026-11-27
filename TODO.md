@@ -68,8 +68,9 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          its stations' ring) or a belt. Each has storage (the hangar), a market of the owner's
          orders with no fees, where NPCs not hostile to the player trade (miners sell into the
          owner's bids, traders buy the listings) and pay the owner their sales tax, and the
-         lines of its specialisation, free. Still to do: its defence battery (guns that can be
-         shot down and repaired; the station itself cannot be destroyed).
+         lines of its specialisation, free. Its defences are an armed platform beside it that
+         engages whatever the player is hostile to and earns the bounties it takes; the platform
+         can be shot down (the station cannot) and is repaired or rebuilt at the outpost.
    - [ ] Balance: tune with `luajit tools/economy-sim.lua --seeds 8 --prospector --trader`
          (it runs the economy headless). Income swings more than tenfold between systems
          depending on whether the local refineries want the local ore; mining and hauling pay

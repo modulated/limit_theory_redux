@@ -518,6 +518,27 @@ local function factory(station, s)
                 PlayerWallet.format(income.sales or 0), PlayerWallet.format(income.purchases or 0),
                 PlayerWallet.format(income.taxes or 0)),
             "Unageo-Regular", size, DIM)
+        -- Its guns: the station cannot fall, they can
+        local quote = LimitTheoryRedux:outpostDefenseQuote(key)
+        if quote then
+            local state = quote.destroyed and "DEFENCES            destroyed"
+                or string.format("DEFENCES            hull %d/%d  ·  shields %d/%d",
+                    math.floor(quote.hull), math.floor(quote.maxHull),
+                    math.floor(quote.shield), math.floor(quote.maxShield))
+            rows[#rows + 1] = Grid {
+                fixedHeight = math.floor(30 * s),
+                cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
+                contents = {
+                    text(state, "Unageo-Medium", math.floor(13 * s), quote.destroyed and GOLD or DIM),
+                    text(quote.cost > 0 and PlayerWallet.format(quote.cost) or "",
+                        "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+                    wideButton(quote.destroyed and "Rebuild" or "Repair", s, 110,
+                        quote.cost > 0 and PlayerWallet:has(quote.cost), false, function()
+                            LimitTheoryRedux:repairOutpostDefense(key)
+                        end),
+                }
+            }
+        end
     end
 
     -- The station's own lines first: what the floor is busy with

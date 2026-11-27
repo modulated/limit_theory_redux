@@ -537,6 +537,17 @@ Config.game = {
         traderBudget = 20000,
         -- An outpost's size, as a share of a generated station's
         scale = 0.8,
+        -- Its defences: an armed platform beside it, in the player's colours,
+        -- that engages whatever the player is hostile to. The outpost itself
+        -- cannot be destroyed; the platform can. Repairs at the outpost cost
+        -- the hull rate (economy.hullRepairCost), and a platform shot down
+        -- costs `rebuildCost` to put back.
+        defense = {
+            maxHealth = 1500, maxShield = 400, shieldRegen = 12,
+            scale = 0.04, sizeClass = "large",
+            offset = 2.2,         -- from the outpost's centre, in its radii
+            rebuildCost = 60000,
+        },
     },
 
     -- The overview (O): what is in the system, nearest first
