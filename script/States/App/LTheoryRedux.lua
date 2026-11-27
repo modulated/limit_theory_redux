@@ -1405,6 +1405,23 @@ function LimitTheoryRedux:overviewShowing()
     return self.overviewShown == true and self:overviewAvailable()
 end
 
+--- The in-flight windows (WindowsPanel): which are open.
+---@param id string "inventory", "character" or "standings"
+function LimitTheoryRedux:toggleWindow(id)
+    self.windows = self.windows or {}
+    self.windows[id] = not self.windows[id]
+end
+
+--- Whether any window is on the screen now (in flight, no map or menu).
+---@return boolean
+function LimitTheoryRedux:windowsShowing()
+    if not (self.windows and self:overviewAvailable()) then return false end
+    for _, open in pairs(self.windows) do
+        if open then return true end
+    end
+    return false
+end
+
 --- Open or close the overview.
 ---@param shown boolean
 function LimitTheoryRedux:setOverview(shown)
@@ -1420,7 +1437,7 @@ end
 function LimitTheoryRedux:updateOverview(dt)
     -- The cursor is the UI's while the overview or a question is on screen
     local overview = self:overviewShowing()
-    local showing = overview or self:confirmationShowing()
+    local showing = overview or self:confirmationShowing() or self:windowsShowing()
     if showing ~= (self.overviewHoldsCursor == true) then
         self.overviewHoldsCursor = showing
         if self.player then self.player:setMouseSteering(not showing) end
@@ -3836,44 +3853,8 @@ function LimitTheoryRedux:drawNavigation()
             line.color[1], line.color[2], line.color[3], 0.9 * (line.alpha or 1), 0.5, 0.5)
     end
 
-    -- Credits and standing with each faction, top right
-    if self:isTravelGame() then
-        DrawEx.TextAlpha(font, PlayerWallet.format(PlayerWallet:get()), 15,
-            w - 290, 48, 270, 18, 1.0, 0.85, 0.35, 0.95, 1.0, 0.5)
-        local hold = PlayerCargo:describeLoad()
-        if not PlayerCargo:isEmpty() then
-            local rows = PlayerCargo:list()
-            hold = string.format("%s  ·  %s", hold, rows[1].item.displayName)
-            if #rows > 1 then hold = hold .. string.format(" +%d", #rows - 1) end
-        end
-        DrawEx.TextAlpha(font, hold, 12, w - 290, 66, 270, 16, 0.75, 0.85, 0.9, 0.85, 1.0, 0.5)
-        -- The modules on the number keys, and what they are doing
-        local modules = AbilitySystem:status(self.playerShip)
-        local moduleY = 84
-        for _, row in ipairs(modules) do
-            local label, cr, cg, cb
-            if row.active > 0 then
-                label = string.format("%d  %s  %.0fs", row.slot, row.fitting.displayName, row.active)
-                cr, cg, cb = 0.5, 1.0, 0.7
-            elseif row.ready then
-                label = string.format("%d  %s", row.slot, row.fitting.displayName)
-                cr, cg, cb = 0.85, 0.9, 0.95
-            else
-                label = string.format("%d  %s  %.0fs", row.slot, row.fitting.displayName, row.remaining)
-                cr, cg, cb = 0.55, 0.57, 0.62
-            end
-            DrawEx.TextAlpha(font, label, 12, w - 290, moduleY, 270, 16, cr, cg, cb, 0.9, 1.0, 0.5)
-            moduleY = moduleY + 16
-        end
-        local y = math.max(88, moduleY + 4)
-        for _, faction in ipairs({ Factions.Security, Factions.Trader, Factions.Pirate }) do
-            local r, g, b = Factions.color(faction)
-            DrawEx.TextAlpha(font, string.format("%s  %+.2f  %s", Factions.name(faction),
-                Reputation:get(faction), Reputation:describe(faction)), 12,
-                w - 290, y, 270, 16, r, g, b, 0.85, 1.0, 0.5)
-            y = y + 18
-        end
-    end
+    -- Credits, the hold and the standings are in their windows (I, U, Y);
+    -- the modules are on the action bar
 end
 
 ---@param data EventData
@@ -4043,6 +4024,9 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.Dock:update(dt)
     GeneralActions.Cloak:update(dt)
     GeneralActions.Overview:update(dt)
+    GeneralActions.Inventory:update(dt)
+    GeneralActions.Character:update(dt)
+    GeneralActions.Standings:update(dt)
     GeneralActions.TargetNearest:update(dt)
     GeneralActions.QuickSave:update(dt)
     GeneralActions.QuickLoad:update(dt)
@@ -4142,6 +4126,11 @@ function LimitTheoryRedux:onInput(data)
     if GeneralActions.Jump:isPressed() and not self.docked then
         local gate = self:gateInRange()
         if gate then self:startJump(gate) end
+    end
+
+    for _, w in ipairs({ { GeneralActions.Inventory, "inventory" }, { GeneralActions.Character, "character" },
+                         { GeneralActions.Standings, "standings" } }) do
+        if w[1]:isPressed() and self:overviewAvailable() and self:isTravelGame() then self:toggleWindow(w[2]) end
     end
 
     if GeneralActions.Overview:isPressed() and self:overviewAvailable() then

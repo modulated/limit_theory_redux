@@ -124,6 +124,26 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardKey8) },
     }),
 
+    --- The windows: each opens and closes on its key; while one is open the
+    --- cursor is free (UI/HmGui/Views/Gameplay/WindowsPanel.lua)
+    ---@type ActionBinding
+    Inventory = ActionBinding({
+        label = "Inventory (hold and credits)", group = "General",
+        keyboard = { Control.Single(Button.KeyboardI) },
+    }),
+
+    ---@type ActionBinding
+    Character = ActionBinding({
+        label = "Character (ship, fit, holdings)", group = "General",
+        keyboard = { Control.Single(Button.KeyboardU) },
+    }),
+
+    ---@type ActionBinding
+    Standings = ActionBinding({
+        label = "Faction standings", group = "General",
+        keyboard = { Control.Single(Button.KeyboardY) },
+    }),
+
     ---@type ActionBinding
     ReloadShaders = ActionBinding({
         label = "Reload shaders", group = "Debug",

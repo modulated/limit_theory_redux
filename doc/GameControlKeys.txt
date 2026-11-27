@@ -13,6 +13,7 @@ Space         -- moves your ship up
 [, ]          -- in System Map, zoom in/out
 1 - 8         -- use the action bar slot (active modules, the mining laser); drag slots to rearrange
 R             -- expand / shrink the overview (always shown in brief)
+I, U, Y       -- inventory (hold and credits), character (ship and holdings), faction standings
 Right mouse   -- hold to look around the ship (chase and first-person cameras)
 Tab           -- toggle System Map on/off
 Return        -- Activate the overlay panel for the currently focused panel icon

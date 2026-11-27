@@ -374,7 +374,12 @@ InGame:addContent({ state = {}, render = function() UIMouse.beginFrame() end })
 local ActionBarPanel = require("UI.HmGui.Views.Gameplay.ActionBarPanel")
 InGame:addContent({ state = {}, render = function() ActionBarPanel.render() end })
 
--- The overview (O): drawn after the bar, so its context menu sits over it
+-- The windows (I, U, Y), left of the screen
+local WindowsPanel = require("UI.HmGui.Views.Gameplay.WindowsPanel")
+InGame:addContent({ state = {}, render = function() WindowsPanel.render() end })
+
+-- The overview (R): drawn after the bar and the windows, so its context menu
+-- sits over them
 local OverviewPanel = require("UI.HmGui.Views.Gameplay.OverviewPanel")
 InGame:addContent({
     state = {},
