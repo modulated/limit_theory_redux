@@ -1062,13 +1062,14 @@ function LimitTheoryRedux:toggleMining(mountId)
     if info and (not info.entity:isValid() or info.rock.yield < 1) then
         self.rockTarget, info = nil, nil
     end
-    if info and not self:rockInReach(info) then
-        self:notify("The targeted rock is out of the laser's reach.", { 1.0, 0.7, 0.3 })
-        return
-    end
+    -- The targeted rock (often just the last one mined) out of reach: the
+    -- nearest rock that is in reach instead, which becomes the target
+    local tooFar = info and not self:rockInReach(info)
+    if tooFar then info = nil end
     info = info or self:mineableRock()
     if not info then
-        self:notify("No rock in the mining laser's reach.", { 1.0, 0.7, 0.3 })
+        self:notify(tooFar and "The targeted rock is out of the laser's reach, and no other is in it."
+            or "No rock in the mining laser's reach.", { 1.0, 0.7, 0.3 })
         return
     end
     if PlayerCargo:get():getRoomFor(info.rock.itemId) < 1 then
