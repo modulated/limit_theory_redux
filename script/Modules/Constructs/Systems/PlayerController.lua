@@ -134,6 +134,8 @@ local modeToCamera = {
 --- Switch to a camera mode
 ---@param mode integer Enums.CameraMode value
 function PlayerController:setMode(mode)
+    -- A new camera looks straight ahead
+    require("Modules.Cameras.FreeLook").reset()
     -- Disable all controllers
     for _, controller in pairs(self.controllers) do
         controller:disable()
@@ -249,13 +251,17 @@ function PlayerController:update(dt)
         self:cycleMode()
     end
 
+    -- Free look: the right button held turns the camera, not the ship
+    local FreeLook = require("Modules.Cameras.FreeLook")
+    FreeLook.update(dt, self:isPiloting())
+
     -- Manual flight only when piloting AND not on autopilot. The mouse
     -- steers in both piloting cameras: by its movement in first person, and
     -- toward the cursor in chase.
     if self:isPiloting() and not AutoPilotSystem:isActive(self.ship) then
         local isFPS = (self.mode == Enums.CameraMode.FirstPerson)
         local drive = self.ship:get(ConstructComponents.TravelDrive)
-        local mouseAim = not self.mouseSteeringOff
+        local mouseAim = not self.mouseSteeringOff and not FreeLook.held
         if drive and drive:isActive() then
             ShipFlightSystem:updateSteeringOnly(dt, self.ship, mouseAim, isFPS)
         else

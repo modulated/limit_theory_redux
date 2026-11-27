@@ -11,7 +11,9 @@ Space         -- moves your ship up
 \             -- [backslash] enable flight mode overlay panels
 -, =          -- in System Map, decrease/increase panning speed
 [, ]          -- in System Map, zoom in/out
-1 - 8         -- select a weapon group (can't change what's in a group yet, this is just group selection)
+1 - 8         -- use the action bar slot (active modules, the mining laser); drag slots to rearrange
+R             -- expand / shrink the overview (always shown in brief)
+Right mouse   -- hold to look around the ship (chase and first-person cameras)
 Tab           -- toggle System Map on/off
 Return        -- Activate the overlay panel for the currently focused panel icon
 G             -- disable target lock (HUD or System Map)

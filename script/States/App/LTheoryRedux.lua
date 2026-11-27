@@ -1433,8 +1433,9 @@ function LimitTheoryRedux:updateOverview(dt)
     if showing then
         -- Freed every frame, since a camera switch re-grabs it
         CursorManager:free()
-        if overview then SystemOverview:update(self, dt) end
     end
+    -- The list is kept current whenever it is on screen, brief or expanded
+    if self:overviewAvailable() then SystemOverview:update(self, dt) end
 
     -- A look at something ends when it goes, or when the camera leaves it.
     -- Docking and jumping take the camera themselves: the look is just
@@ -3757,7 +3758,7 @@ function LimitTheoryRedux:drawNavigation()
     if targetText then table.insert(lines, { text = targetText, color = targetColor }) end
     if self.docked then
         local missing, cost = self:hullRepairQuote()
-        local repair = missing > 0 and string.format("R: repair hull (%s)", PlayerWallet.format(cost))
+        local repair = missing > 0 and string.format("hull repair %s on the station screen", PlayerWallet.format(cost))
             or "Hull intact"
         table.insert(lines, { text = "Docked  ·  " .. repair .. "  ·  F: undock", color = { 0.6, 0.9, 1.0 } })
     elseif self:isTravelGame() then
@@ -4045,7 +4046,6 @@ function LimitTheoryRedux:onInput(data)
     GeneralActions.TargetNearest:update(dt)
     GeneralActions.QuickSave:update(dt)
     GeneralActions.QuickLoad:update(dt)
-    GeneralActions.Repair:update(dt)
     for slot, binding in ipairs({ GeneralActions.Module1, GeneralActions.Module2,
                                   GeneralActions.Module3, GeneralActions.Module4,
                                   GeneralActions.Module5, GeneralActions.Module6,
@@ -4173,10 +4173,6 @@ function LimitTheoryRedux:onInput(data)
                 self:notify(Factions.name(refused.faction) .. " refuse you docking.", { 1.0, 0.4, 0.3 })
             end
         end
-    end
-
-    if GeneralActions.Repair:isPressed() and self.docked then
-        self:repairHull()
     end
 
     if GeneralActions.Cloak:isPressed() and self:isTravelGame() then

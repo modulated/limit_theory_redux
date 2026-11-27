@@ -34,11 +34,6 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardF) },
     }),
 
-    ---@type ActionBinding
-    Repair = ActionBinding({
-        label = "Repair the hull (docked; costs credits)", group = "Flight",
-        keyboard = { Control.Single(Button.KeyboardR) },
-    }),
 
     ---@type ActionBinding
     Cloak = ActionBinding({
@@ -70,12 +65,13 @@ local GeneralActions = {
         keyboard = { Control.Single(Button.KeyboardTab) },
     }),
 
-    --- The overview: what is in the system, nearest first. While it is open
-    --- the cursor is free for it and the mouse does not steer.
+    --- The overview: what is in the system, nearest first. Always on screen
+    --- in brief; expanded, the cursor is free for it and the mouse does not
+    --- steer.
     ---@type ActionBinding
     Overview = ActionBinding({
-        label = "Overview on / off", group = "Map",
-        keyboard = { Control.Single(Button.KeyboardO) },
+        label = "Overview: expand / shrink", group = "Map",
+        keyboard = { Control.Single(Button.KeyboardR) },
     }),
 
     --- The action bar's slots: whatever is in a slot (an active module, the

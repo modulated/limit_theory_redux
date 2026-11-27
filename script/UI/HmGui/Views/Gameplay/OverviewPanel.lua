@@ -90,6 +90,7 @@ local scroll = 0
 local drag = nil
 
 local same = SystemOverview.same
+local drawBrief -- below
 
 ---@param value string
 ---@param limit integer
@@ -424,11 +425,53 @@ local function followDrag(total, rows, s)
     scroll = drag.scroll + math.floor(moved * (total - rows) / travel + 0.5)
 end
 
+--- The overview in brief, always on screen: the nearest few entries (the
+--- filters and the sort still apply), and the key that expands it. It takes
+--- no clicks, so it never holds the mouse.
+local BRIEF_ROWS = 8
+drawBrief = function()
+    local s = hudScale()
+    local list = SystemOverview:visible()
+    Gui:beginStackContainer()
+    Gui:setScale(s)
+    Gui:setAlignment(AlignHorizontal.Stretch, AlignVertical.Stretch)
+    Gui:setChildrenAlignment(AlignHorizontal.Right, AlignVertical.Top)
+    Gui:setPadding(20, math.floor(Window:height() * 0.27 / s))
+    Gui:beginVerticalContainer()
+    Gui:setFixedWidth(300)
+    Gui:setBackgroundColor(Color(0.02, 0.04, 0.07, 0.55))
+    Gui:setBorderWidth(1)
+    Gui:setBorderColor(PANEL_BORDER)
+    Gui:setPadding(6, 5)
+    Gui:setSpacing(1)
+    Gui:beginHorizontalContainer()
+    cell("OVERVIEW", 120, ACCENT, 13, AlignHorizontal.Left)
+    cell("R to expand", 300 - 12 - 120, DIM, 11, AlignHorizontal.Right)
+    Gui:endContainer()
+    for i = 1, math.min(#list, BRIEF_ROWS) do
+        local entry = list[i]
+        Gui:beginHorizontalContainer()
+        cell(clip(entry.name, 24), 200, colorOf(entry), 12)
+        cell(entry.distance and UniverseScaleConfig:formatDistance(entry.distance) or "",
+            300 - 12 - 200, GREY, 12, AlignHorizontal.Right)
+        Gui:endContainer()
+    end
+    if #list == 0 then cell("Nothing in range", 288, DIM, 12) end
+    Gui:endContainer()
+    Gui:endContainer()
+end
+
 --- The whole panel, and the menu over it.
 function OverviewPanel.render()
     local game = LimitTheoryRedux
-    if not (game and game.overviewShowing and game:overviewShowing()) then
+    if not (game and game.overviewAvailable and game:overviewAvailable() and game:isTravelGame()) then
         menu = nil
+        return
+    end
+    if not game:overviewShowing() then
+        -- In brief: the nearest few, nothing to click
+        menu = nil
+        drawBrief()
         return
     end
 
@@ -477,7 +520,7 @@ function OverviewPanel.render()
     -- Heading
     Gui:beginHorizontalContainer()
     cell("OVERVIEW", 150, ACCENT, 15, AlignHorizontal.Left)
-    cell("O to close  ·  right click for actions", WIDTH - 16 - 150, DIM, 11, AlignHorizontal.Right)
+    cell("R to shrink  ·  right click for actions", WIDTH - 16 - 150, DIM, 11, AlignHorizontal.Right)
     Gui:endContainer()
 
     drawFilters()

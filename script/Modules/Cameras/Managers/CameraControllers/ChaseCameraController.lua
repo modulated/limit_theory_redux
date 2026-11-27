@@ -2,6 +2,7 @@ local CameraController = require("Modules.Cameras.Managers").CameraController
 local PhysicsComponents = require("Modules.Physics.Components")
 
 local UIMouse = require("Input.UIMouse")
+local FreeLook = require("Modules.Cameras.FreeLook")
 --- NaN is the only value that is not equal to itself; infinities compare
 --- out of range.
 ---@param v number
@@ -98,7 +99,9 @@ function ChaseCameraController:onPreRender(dt)
     -- a 1 GU object and push the camera hundreds of ship-lengths away.
     local shipRadius = math.max(rb:getBoundingRadius(), 1e-4)
     local scale = 0.25 * self.radius * shipRadius
-    local pr = self.posRel
+    -- Free look (right button held) swings the camera round the ship
+    local prx, pry, prz = FreeLook.apply(self.posRel.x, self.posRel.y, self.posRel.z)
+    local pr = { x = prx, y = pry, z = prz }
 
     -- Transform posRel from ship-local to world space (matches legacy toWorld)
     self.posT = Position(
