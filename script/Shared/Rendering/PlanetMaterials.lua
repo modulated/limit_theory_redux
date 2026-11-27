@@ -38,11 +38,17 @@ end
 ---@param innerRadius number
 ---@param outerRadius number
 ---@param seed integer the ring entity's seed
-function PlanetMaterials.ring(matRing, innerRadius, outerRadius, seed)
+---@param layers integer|nil the mesh's stacked annuli (default 1: a flat band)
+---@param sigma number|nil with layers: how its matter spreads about the plane
+function PlanetMaterials.ring(matRing, innerRadius, outerRadius, seed, layers, sigma)
     local p = matRing:params()
     p.rMin = innerRadius
     p.rMax = outerRadius
     p.seed = seed
+    if layers and layers > 1 then
+        p.layers = layers
+        p.ringHeight = sigma
+    end
     matRing:commit()
 end
 

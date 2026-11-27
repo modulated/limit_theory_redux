@@ -17,6 +17,7 @@ layout(std140) uniform MaterialParams {
   float twistFactor;
   int enableDebug;
   int debugMode;
+  int layers;        // stacked annuli in the mesh (1: a flat band)
 };
 
 in vec3 objPos;
@@ -39,7 +40,31 @@ in vec3 objPos;
    so the ring is thin and see-through face-on and solid edge-on.
 
    Sparkle: individual ice particles glint, tiny specks that twinkle, close up.
+
+   Depth: a flat band is a line edge-on, and vanishes from inside the ring.
+   The mesh can be a stack of `layers` annuli spread over +-2.5 sigma about
+   the plane (sigma is `ringHeight`), the matter's gaussian spread. Each layer
+   draws its share of the optical depth, so face-on the stack composites to
+   what one band would; from within it, the layers above and below are a
+   haze, faint overhead and dense toward the plane's horizon. Light is worked
+   out for the ring as a whole.
 */
+
+// This fragment's layer's share of the ring's optical depth: the gaussian at
+// its height, over the sum at every layer's height.
+float layerShare(float y) {
+    if (layers <= 1) return 1.0;
+    float sigma = max(ringHeight, 1e-6);
+    float span = 2.5 * sigma;
+    float spacing = 2.0 * span / float(layers - 1);
+    float total = 0.0;
+    for (int i = 0; i < layers; i++) {
+        float yi = (-span + float(i) * spacing) / sigma;
+        total += exp(-0.5 * yi * yi);
+    }
+    float yn = y / sigma;
+    return exp(-0.5 * yn * yn) / max(total, 1e-6);
+}
 
 // Per-ring random numbers come from an integer hash of the seed's bits, not
 // from `noise()`. `noise()` is `fract(sin(x) * 4137.3)`: a change in the last
@@ -152,8 +177,9 @@ void main() {
     float nv = dot(N, V);
     float mu = max(abs(nv), 0.06);        // how face-on it is seen
 
-    // Opacity from the optical depth along the line of sight
-    float alpha = 1.0 - exp(-tau / mu);
+    // Opacity from the optical depth along the line of sight (this layer's)
+    float share = layerShare(objPos.y);
+    float alpha = 1.0 - exp(-tau * share / mu);
 
     float light;
     if (nl * nv >= 0.0) {
@@ -175,7 +201,11 @@ void main() {
     float worldScale = length(vec3(mWorld[0][0], mWorld[0][1], mWorld[0][2]));
     float ringWidth = (rMax - rMin) * worldScale;
     float nearFade = clamp(1.0 - viewDist / (ringWidth * 4.0), 0.0, 1.0);
-    if (nearFade > 0.0 && tau > 0.05) {
+    // On the middle layer only: the layers share the cell grid, and glints
+    // repeated in each would stack into streaks
+    bool middleLayer = layers <= 1
+        || abs(objPos.y) < 2.5 * max(ringHeight, 1e-6) / float(layers - 1);
+    if (middleLayer && nearFade > 0.0 && tau > 0.05) {
         float radialCells = 1400.0;
         int cr = int(floor(rNorm * radialCells));
         float circumference = 6.2831853 * r / max(1e-6, rMax - rMin) * radialCells;
