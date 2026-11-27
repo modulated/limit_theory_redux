@@ -23,12 +23,25 @@ function WorldLabelRenderSystem:draw(labeledEntities, moonDistThreshold)
     local resX = Window:width()
     local resY = Window:height()
 
+    -- The camera is the same for every label: its axes and projection once
+    -- per frame, not once per label
+    local camRot = CameraManager:getViewRot()
+    local camFwd = camRot:getForward()
+    local camRight = camRot:getRight()
+    local camUp = camRot:getUp()
+    local fx, fy, fz = camFwd.x, camFwd.y, camFwd.z
+    local rx, ry, rz = camRight.x, camRight.y, camRight.z
+    local ux, uy, uz = camUp.x, camUp.y, camUp.z
+    local tanHalfFov = math.tan(math.rad(CameraManager:getFov()) / 2)
+    local aspect = resX / resY
+    local cx, cy, cz = camPos.x, camPos.y, camPos.z
+
     for _, entry in ipairs(labeledEntities) do
         -- Hide moon labels unless camera is near the parent planet
         if entry.isMoon and entry.parentPos then
-            local dx = camPos.x - entry.parentPos.x
-            local dy = camPos.y - entry.parentPos.y
-            local dz = camPos.z - entry.parentPos.z
+            local dx = cx - entry.parentPos.x
+            local dy = cy - entry.parentPos.y
+            local dz = cz - entry.parentPos.z
             local distToParent = math.sqrt(dx * dx + dy * dy + dz * dz)
             if distToParent > moonDistThreshold then goto next_label end
         end
@@ -40,27 +53,16 @@ function WorldLabelRenderSystem:draw(labeledEntities, moonDistThreshold)
         if not transform then goto next_label end
         local pos = transform:getPos()
 
-        -- Compute relative position from camera
-        local rel = Vec3f(pos.x - camPos.x, pos.y - camPos.y, pos.z - camPos.z)
-        local dist = rel:length()
-
-        -- Get camera axes
-        local camRot = CameraManager:getViewRot()
-        local camFwd = camRot:getForward()
-        local camRight = camRot:getRight()
-        local camUp = camRot:getUp()
+        -- Relative position from the camera
+        local relX, relY, relZ = pos.x - cx, pos.y - cy, pos.z - cz
 
         -- Skip if behind camera
-        local dot = rel.x * camFwd.x + rel.y * camFwd.y + rel.z * camFwd.z
+        local dot = relX * fx + relY * fy + relZ * fz
         if dot < 0 then goto next_label end
 
         -- Project onto screen axes
-        local fovRad = math.rad(CameraManager:getFov())
-        local tanHalfFov = math.tan(fovRad / 2)
-        local aspect = resX / resY
-
-        local screenX = (rel.x * camRight.x + rel.y * camRight.y + rel.z * camRight.z) / (dot * tanHalfFov * aspect)
-        local screenY = (rel.x * camUp.x + rel.y * camUp.y + rel.z * camUp.z) / (dot * tanHalfFov)
+        local screenX = (relX * rx + relY * ry + relZ * rz) / (dot * tanHalfFov * aspect)
+        local screenY = (relX * ux + relY * uy + relZ * uz) / (dot * tanHalfFov)
 
         -- Convert from [-1,1] to screen pixels
         local px = (screenX + 1) * 0.5 * resX
@@ -68,11 +70,19 @@ function WorldLabelRenderSystem:draw(labeledEntities, moonDistThreshold)
 
         -- Only draw if on screen
         if px >= -100 and px <= resX + 100 and py >= -50 and py <= resY + 50 then
-            local distStr = " [" .. UniverseScaleConfig:formatDistance(dist) .. "]"
-            local text = label .. distStr
+            -- The text is remade only when the label or the distance moved
+            -- enough to show (half a percent): formatting it every frame for
+            -- every label is most of what this costs
+            local dist = math.sqrt(relX * relX + relY * relY + relZ * relZ)
+            local shown = entry.shownDist
+            if entry.shownLabel ~= label or not shown or math.abs(dist - shown) > shown * 0.005 then
+                entry.shownLabel = label
+                entry.shownDist = dist
+                entry.shownText = label .. " [" .. UniverseScaleConfig:formatDistance(dist) .. "]"
+            end
             -- An entry may have its own colour {r, g, b} (an NPC's faction)
             local c = entry.color
-            DrawEx.TextAdditive('Unageo-Medium', text, 12, px - 50, py - 8, 200, 16,
+            DrawEx.TextAdditive('Unageo-Medium', entry.shownText, 12, px - 50, py - 8, 200, 16,
                 c and c[1] or 1.0, c and c[2] or 1.0, c and c[3] or 0.5, 0.9, 0.5, 0.5)
         end
 
