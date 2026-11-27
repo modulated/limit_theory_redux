@@ -282,6 +282,27 @@ function ShipFlightSystem:updateSteeringOnly(dt, shipEntity, mouseAim, useDelta)
     applySteering(shipEntity, rb, pitch, yaw, roll, dt, 0.1)
 end
 
+--- Turn a ship at a rate (shares of maxTurnRate), the way manual flight
+--- does: for the autopilot, which must not steer by torque either.
+---@param shipEntity Entity
+---@param pitch number -1..1
+---@param yaw number -1..1
+---@param dt number
+function ShipFlightSystem:steer(shipEntity, pitch, yaw, dt)
+    local rbCmp = shipEntity and shipEntity:get(PhysicsComponents.RigidBody)
+    local rb = rbCmp and rbCmp:getRigidBody()
+    if not rb then return end
+    applySteering(shipEntity, rb, pitch, yaw, 0, dt)
+end
+
+--- How much the ship's thrust is scaled by what is fitted (and an
+--- afterburner): for the autopilot's engine limit.
+---@param shipEntity Entity
+---@return number
+function ShipFlightSystem:thrustScale(shipEntity)
+    return thrustScale(shipEntity)
+end
+
 ---@param shipEntity Entity
 ---@return number
 function ShipFlightSystem:getSpeed(shipEntity)

@@ -637,6 +637,10 @@ Config.game = {
 
     autoPilot = {
         arrivalRange      = 500,    -- distance to target to consider arrived
+        -- The nearest the autopilot stops to a target, in game units (10 km
+        -- each), whatever its size, unless the caller asks for closer (a
+        -- dock, a gate, a deploy). Otherwise it stops at 1.5 target radii.
+        minStandOff       = 0.5,
         travelDriveDelay  = 5.0,    -- seconds before auto-engaging travel drive
         enableTravelDrive = true,   -- auto-engage travel drive during autopilot
     },

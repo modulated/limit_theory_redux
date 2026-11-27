@@ -1288,8 +1288,9 @@ end
 --- Fly to something on the autopilot. It stops short of it by its size.
 ---@param entity Entity
 ---@param name string|nil for the message
+---@param arrivalRange number|nil stop this close (default: by the target's size)
 ---@return boolean engaged
-function LimitTheoryRedux:approach(entity, name)
+function LimitTheoryRedux:approach(entity, name, arrivalRange)
     if not entity or not entity:isValid() or not self.playerShip then return false end
     if self.docked then
         self:notify("Undock first.", { 1.0, 0.7, 0.3 })
@@ -1298,7 +1299,7 @@ function LimitTheoryRedux:approach(entity, name)
     self.arrivalAction = nil
     -- A course between systems is left alone: if this is the course's gate
     -- the jump keeps it, and any other gate drops it (startJump)
-    AutoPilotSystem:engageEntity(self.playerShip, entity)
+    AutoPilotSystem:engageEntity(self.playerShip, entity, arrivalRange)
     if name then self:notify("Autopilot: approaching " .. name, AUTOPILOT_MESSAGE_COLOR) end
     return true
 end
@@ -1318,7 +1319,8 @@ function LimitTheoryRedux:dockAt(dock)
         self:notify(Factions.name(refused.faction) .. " refuse you docking.", { 1.0, 0.4, 0.3 })
         return
     end
-    if self:approach(dock.entity) then
+    -- Stop well inside docking range, so the dock happens on arrival
+    if self:approach(dock.entity, nil, dock.radius * Config.game.docking.rangeFactor * 0.7) then
         self.arrivalAction = { kind = "dock", entity = dock.entity }
         self:notify(string.format("Autopilot: docking at %s", dock.label), AUTOPILOT_MESSAGE_COLOR)
     end
@@ -1334,7 +1336,8 @@ function LimitTheoryRedux:jumpVia(gate)
         self:startJump(near)
         return
     end
-    if self:approach(gate.entity) then
+    -- Into the gate's activation range, where the jump happens
+    if self:approach(gate.entity, nil, Config.game.jumpGates.activationRange * 0.5) then
         self.arrivalAction = { kind = "jump", entity = gate.entity }
         self:notify(string.format("Autopilot: jumping to %s", gate.destination.name),
             AUTOPILOT_MESSAGE_COLOR)
