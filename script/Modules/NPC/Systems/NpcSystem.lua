@@ -202,6 +202,30 @@ function NpcSystem:nearestDock(npc)
     return best
 end
 
+--- The nearest station a miner may sell a hold of `itemId` at: any
+--- generated station (it takes all of it into its store), or one of the
+--- player's outposts if the owner bids for at least `units` of it at the
+--- miners' floor price or better (an outpost buys only what is bid for).
+---@param npc table
+---@param itemId integer|nil
+---@param units integer
+function NpcSystem:sellDock(npc, itemId, units)
+    local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
+    local best, bestDist = nil, math.huge
+    for _, dock in ipairs(self.places.docks or {}) do
+        local ok = self:canDock(npc, dock)
+        if ok and dock.outpost then
+            ok = itemId ~= nil and MarketSystem:playerDemand(dock.entity, itemId,
+                MarketSystem:minerFloor(itemId)) >= math.max(1, units)
+        end
+        if ok then
+            local d = self:distance(npc, dock.position)
+            if d < bestDist then best, bestDist = dock, d end
+        end
+    end
+    return best
+end
+
 local function showLabel(self, record, shown)
     local labels = self.game.labeledEntities
     for i = #labels, 1, -1 do

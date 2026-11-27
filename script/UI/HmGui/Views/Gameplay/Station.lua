@@ -10,6 +10,7 @@ local PlayerCargo = require("Modules.Economy.Managers.PlayerCargo")
 local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
 local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
 local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
+local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
 local EconomyComponents = require("Modules.Economy.Components")
 local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
 local ShipFittingSystem = require("Modules.Constructs.Systems.ShipFittingSystem")
@@ -257,7 +258,9 @@ local function orderPanel(station, s)
     local size = math.floor(14 * s)
 
     local value = order.price * order.units
-    local fee = math.ceil(value * cfg.brokerFee)
+    -- No broker and no tax at the player's own outpost
+    local owned = PlayerStations.isOwnedKey(key)
+    local fee = owned and 0 or math.ceil(value * cfg.brokerFee)
     local needed = order.side == "buy" and value + fee or fee
     local can = order.side == "buy" and PlayerWallet:has(needed) or (held >= order.units
         and PlayerWallet:has(fee))
@@ -328,7 +331,7 @@ local function orderPanel(station, s)
                             quote.ask and order.price >= quote.ask and "  ·  fills at once" or "")
                         or string.format("%d of %d in the hangar, %s broker's fee, %d%% tax on the sale",
                             held, order.units, PlayerWallet.format(fee),
-                            math.floor(cfg.salesTax * 100)),
+                            owned and 0 or math.floor(cfg.salesTax * 100)),
                         "Unageo-Regular", size, can and GREY or GOLD),
                     wideButton("Place", s, can, false, function()
                         local result = MarketSystem:placeOrder(station, key, order.side,
@@ -503,12 +506,28 @@ local function factory(station, s)
     local size = math.floor(14 * s)
     local rows = {}
 
+    -- The player's own outpost: every line is theirs, and free
+    local outpost = PlayerStations:byKey(key)
+    local kindCfg = outpost and PlayerStations.kindOf(outpost.kind)
+    if outpost then
+        local income = outpost.income
+        rows[#rows + 1] = text(string.format("YOUR %s", string.upper(kindCfg.name)),
+            "Unageo-Medium", math.floor(13 * s), ACCENT)
+        rows[#rows + 1] = text(kindCfg.description or "", "Unageo-Regular", size, GREY)
+        rows[#rows + 1] = text(string.format("Market: %s sold, %s bought, %s in taxes from NPC trade",
+                PlayerWallet.format(income.sales or 0), PlayerWallet.format(income.purchases or 0),
+                PlayerWallet.format(income.taxes or 0)),
+            "Unageo-Regular", size, DIM)
+    end
+
     -- The station's own lines first: what the floor is busy with
-    local own = production(station, s)
+    local own = not outpost and production(station, s)
     if own then rows[#rows + 1] = own end
 
-    rows[#rows + 1] = text(string.format("YOUR LINES          %d of %d rented",
-            key and #PlayerFactories:leases(key) or 0, Config.game.factory.rentableLines),
+    local total = outpost and PlayerStations:lines(key) or Config.game.factory.rentableLines
+    rows[#rows + 1] = text(string.format(outpost and "YOUR LINES          %d of %d running a recipe"
+                or "YOUR LINES          %d of %d rented",
+            key and #PlayerFactories:leases(key) or 0, total),
         "Unageo-Medium", math.floor(13 * s), DIM)
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
 
@@ -532,38 +551,49 @@ local function factory(station, s)
                 cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
                 contents = {
                     text(lease.recipe:describe(), "Unageo-Regular", size, GREY),
-                    text(string.format("%s  ·  fee %d", state, lease.fee), "Unageo-Regular", size,
+                    text(outpost and state or string.format("%s  ·  fee %d", state, lease.fee),
+                        "Unageo-Regular", size,
                         lease.running and ACCENT or (not lease.crewed and GOLD or DIM),
                         AlignHorizontal.Right),
-                    wideButton("Give back", s, 110, true, false, function()
+                    wideButton(outpost and "Stop" or "Give back", s, 110, true, false, function()
                         PlayerFactories:release(key, index)
-                        LimitTheoryRedux:notify("The line is the station's again.", { 0.6, 0.9, 1.0 })
+                        LimitTheoryRedux:notify(outpost and "The line is idle."
+                            or "The line is the station's again.", { 0.6, 0.9, 1.0 })
                     end),
                 }
             }
         end
 
         local free = PlayerFactories:freeLines(key)
-        rows[#rows + 1] = text(free > 0
+        local heading
+        if outpost then
+            heading = total == 0 and "This outpost has no production lines: it is a market and storage."
+                or (free > 0 and string.format("SET UP              %d line(s) idle, no fees", free)
+                    or "SET UP              every line is busy")
+        else
+            heading = free > 0
                 and string.format("TO RENT             %d line(s) free, the station takes %d%% of each run",
                     free, math.floor(Config.game.factory.rentShare * 100))
-                or "TO RENT             no lines free",
+                or "TO RENT             no lines free"
+        end
+        rows[#rows + 1] = text(heading,
             "Unageo-Medium", math.floor(13 * s), DIM)
         rows[#rows + 1] = UIComponent.Divider { color = RULE }
-        for _, recipe in ipairs(PlayerFactories:offered(station)) do
-            local fee = PlayerFactories:feeFor(recipe)
+        for _, recipe in ipairs(PlayerFactories:offered(station, key)) do
+            local fee = PlayerFactories:feeFor(recipe, key)
             rows[#rows + 1] = Grid {
                 fixedHeight = math.floor(26 * s),
                 cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
                 contents = {
                     text(recipe:describe(), "Unageo-Regular", size, GREY),
-                    text(string.format("%.0fs a run  ·  fee %d", recipe.duration, fee),
+                    text(outpost and string.format("%.0fs a run", recipe.duration)
+                            or string.format("%.0fs a run  ·  fee %d", recipe.duration, fee),
                         "Unageo-Regular", size, DIM, AlignHorizontal.Right),
-                    wideButton("Rent", s, 110, free > 0, false, function()
+                    wideButton(outpost and "Run" or "Rent", s, 110, free > 0, false, function()
                         local ok, reason = PlayerFactories:lease(key, recipe.id)
                         LimitTheoryRedux:notify(ok
-                            and ("Rented a line for the " .. recipe.displayName)
-                            or ("Cannot rent: " .. (reason or "no")),
+                            and ((outpost and "A line set up for the " or "Rented a line for the ") .. recipe.displayName)
+                            or ((outpost and "Cannot set up: " or "Cannot rent: ") .. (reason or "no")),
                             ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
                     end),
                 }

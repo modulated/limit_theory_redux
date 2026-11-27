@@ -5,6 +5,7 @@ local Items = require("Shared.Registries.Items")
 local Productions = require("Shared.Registries.Productions")
 local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
+local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
 
 --- The player's own industry: a hangar at every station they have used, and
 --- the production lines they have rented there.
@@ -70,7 +71,10 @@ end
 ---@param key string
 ---@return integer
 function PlayerFactories:freeLines(key)
-    return math.max(0, Config.game.factory.rentableLines - #self:leases(key))
+    -- At the player's own outpost: the lines its kind has, all theirs
+    local lines = PlayerStations.isOwnedKey(key) and PlayerStations:lines(key)
+        or Config.game.factory.rentableLines
+    return math.max(0, lines - #self:leases(key))
 end
 
 --- What a station rents out.
@@ -87,7 +91,9 @@ end
 --- station's seed, so each station is worth visiting for what it will rent.
 ---@param station Entity
 ---@return ProductionDefinition[]
-function PlayerFactories:offered(station)
+---@param key string|nil the station key (an outpost offers its whole specialisation)
+function PlayerFactories:offered(station, key)
+    if PlayerStations.isOwnedKey(key) then return PlayerStations:recipes(key) end
     local cached = station.rentOffers
     if cached then return cached end
     local productionCmp = station:get(Economy.Production)
@@ -165,7 +171,9 @@ end
 --- The station's cut of one run.
 ---@param recipe ProductionDefinition
 ---@return integer
-function PlayerFactories:feeFor(recipe)
+---@param key string|nil the station key: the player's own outpost charges nothing
+function PlayerFactories:feeFor(recipe, key)
+    if PlayerStations.isOwnedKey(key) then return 0 end
     local cfg = Config.game.factory
     return math.max(cfg.rentMinFee, math.ceil(outputValue(recipe) * cfg.rentShare))
 end
@@ -248,7 +256,7 @@ function PlayerFactories:update(station, key, dt)
                     lease.progress = 0
                     -- The station takes its cut of the run; if the credits
                     -- are not there it keeps the goods and the lease ends
-                    local fee = self:feeFor(recipe)
+                    local fee = self:feeFor(recipe, key)
                     if PlayerWallet:remove(fee, "Factory fee: " .. recipe.displayName) then
                         for _, entry in ipairs(recipe.outputs) do
                             local added = hangar:add(entry.item.id, entry.count)
@@ -328,7 +336,7 @@ function PlayerFactories:status(key)
                 running = lease.running,
                 progress = recipe.duration > 0 and math.min(1, lease.progress / recipe.duration) or 0,
                 crewed = lease.crewed ~= false,
-                fee = self:feeFor(recipe),
+                fee = self:feeFor(recipe, key),
                 waiting = not lease.running and not hasInputs(hangar, recipe),
                 hangarFull = not lease.running and not hasRoomForOutputs(hangar, recipe),
             }

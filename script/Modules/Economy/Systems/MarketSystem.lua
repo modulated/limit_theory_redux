@@ -2,6 +2,7 @@ local Items = require("Shared.Registries.Items")
 local Economy = require("Modules.Economy.Components")
 local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
+local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
 
 --- The market: every station has an order book, and what a thing is worth
 --- there is what someone will pay for it.
@@ -119,23 +120,38 @@ local function settle(station, key, buy, sell, units, price)
     local hangar = MarketSystem:playerStore(key)
     local gross = price * units
     local walletChange = 0
+    -- At the player's own outpost the owner pays no tax, and the tax anyone
+    -- else pays is the owner's
+    local owned = PlayerStations.isOwnedKey(key)
 
     -- The seller hands over the goods
     if sell.owner == "station" then
         if stock then stock:remove(sell.itemId, units) end
+    elseif sell.owner == "npc" then
+        -- From the NPC's own hold; it pays the tax out of the proceeds
+        local tax = math.floor(gross * cfg.salesTax)
+        if owned and tax > 0 then
+            PlayerWallet:add(tax, "Outpost tax")
+            PlayerStations:recordIncome(key, "taxes", tax)
+            walletChange = walletChange + tax
+        end
     else
         -- A player's sell order holds its goods already (escrowUnits)
         sell.escrowUnits = math.max(0, (sell.escrowUnits or units) - units)
-        local tax = math.floor(gross * cfg.salesTax)
+        local tax = owned and 0 or math.floor(gross * cfg.salesTax)
         PlayerWallet:add(gross - tax, "Market sale")
         walletChange = walletChange + (gross - tax)
+        if owned then PlayerStations:recordIncome(key, "sales", gross) end
     end
 
     -- The buyer takes them
     if buy.owner == "station" then
         if stock then stock:add(buy.itemId, units) end
         StationTradeSystem:invalidate(station)
+    elseif buy.owner == "npc" then
+        -- Into the NPC's own hold: nothing here to do
     else
+        if owned then PlayerStations:recordIncome(key, "purchases", gross) end
         if hangar then
             local added = hangar:add(buy.itemId, units)
             if added < units and stock then
@@ -224,9 +240,18 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
         end
     end
 
-    -- Cross the book: trade against what is already there, at its price
+    -- Cross the book: trade against what is already there, at its price --
+    -- never against an order of the same owner (a player whose own bid tops
+    -- the book would otherwise sell into it, paying tax and fees to move
+    -- their own goods and credits round in a circle)
     while incoming.units > 0 do
-        local resting = book:best(otherSide, itemId)
+        local resting = nil
+        for _, candidate in ipairs(book:orders(otherSide, itemId)) do
+            if candidate.owner ~= owner then
+                resting = candidate
+                break
+            end
+        end
         if not resting then break end
         local crosses = price == nil
             or (side == "buy" and resting.price <= price)
@@ -276,7 +301,8 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
     if rest and incoming.units > 0 and price then
         if owner == "player" then
             local value = price * incoming.units
-            local fee = math.ceil(value * cfg.brokerFee)
+            -- No broker at the player's own outpost
+            local fee = PlayerStations.isOwnedKey(key) and 0 or math.ceil(value * cfg.brokerFee)
             local needed = side == "buy" and value + fee or fee
             if not PlayerWallet:remove(needed, side == "buy"
                     and "Market order and broker fee" or "Broker fee") then
@@ -335,6 +361,9 @@ function MarketSystem:sellAtMarket(station, key, itemId, units)
     local hangar = self:playerStore(key)
     local left = math.min(units - result.filled, hangar and hangar:count(itemId) or 0)
     if left <= 0 then return result end
+    -- Nobody buys scrap at the player's own outpost: the owner would be
+    -- paying themselves out of nothing
+    if PlayerStations.isOwnedKey(key) then return result end
 
     local cfg = Config.game.market
     local price = math.max(1, math.floor(StationTradeSystem:basePrice(station, itemId)
@@ -384,6 +413,93 @@ function MarketSystem:cancel(station, key, order)
     end
     order.escrowCredits, order.escrowUnits = 0, 0
     return true
+end
+
+------------------------------------------------------------------------------
+-- NPCs at the player's outposts
+------------------------------------------------------------------------------
+
+--- The best price the player bids for an item here, or nil.
+---@param station Entity
+---@param itemId integer
+---@return integer|nil
+function MarketSystem:bestPlayerBid(station, itemId)
+    local book = station and station:isValid() and station:get(Economy.OrderBook)
+    if not book then return nil end
+    for _, order in ipairs(book:orders("buy", itemId)) do
+        if order.owner == "player" then return order.price end
+    end
+    return nil
+end
+
+--- How many units of an item the player bids for here at `minPrice` or more.
+---@param station Entity
+---@param itemId integer
+---@param minPrice integer
+---@return integer
+function MarketSystem:playerDemand(station, itemId, minPrice)
+    local book = station and station:isValid() and station:get(Economy.OrderBook)
+    if not book then return 0 end
+    local units = 0
+    for _, order in ipairs(book:orders("buy", itemId)) do
+        if order.owner == "player" and order.price >= minPrice then units = units + order.units end
+    end
+    return units
+end
+
+--- The lowest price a miner sells an item for at an outpost.
+---@param itemId integer
+---@return integer
+function MarketSystem:minerFloor(itemId)
+    local def = Items:getDefinition(itemId)
+    local base = def and def.startEquilibriumPrice or Config.game.trade.defaultPrice
+    return math.max(1, math.floor(base * Config.game.outposts.minerMinPrice))
+end
+
+--- A miner sells its hold into the owner's bids, at their prices, down to
+--- `minerFloor`. Returns how many units it sold (the rest stays in its hold).
+---@param station Entity
+---@param key string
+---@param itemId integer
+---@param units integer
+---@return integer sold
+function MarketSystem:npcSell(station, key, itemId, units)
+    local result = self:submit(station, key, "sell", itemId, units, self:minerFloor(itemId), "npc", false)
+    return result.filled or 0
+end
+
+--- A trader buys from the owner's listings: the cheapest first, at up to
+--- `traderMaxMarkup` of each item's base price, spending up to `budget`.
+---@param station Entity
+---@param key string
+---@param budget number|nil default Config.game.outposts.traderBudget
+---@return integer spent
+---@return integer units
+function MarketSystem:npcBuy(station, key, budget)
+    local cfg = Config.game.outposts
+    local left = budget or cfg.traderBudget
+    local book = station and station:isValid() and station:get(Economy.OrderBook)
+    if not book then return 0, 0 end
+    local listings = {}
+    for _, order in ipairs(book:allOrders("sell")) do
+        if order.owner == "player" then listings[#listings + 1] = order end
+    end
+    table.sort(listings, function(a, b) return a.price < b.price end)
+    local spent, bought = 0, 0
+    for _, order in ipairs(listings) do
+        local def = Items:getDefinition(order.itemId)
+        local base = def and def.startEquilibriumPrice or Config.game.trade.defaultPrice
+        local ceiling = math.floor(base * cfg.traderMaxMarkup)
+        if order.price <= ceiling and order.units > 0 and left >= order.price then
+            local units = math.min(order.units, math.floor(left / order.price))
+            local result = self:submit(station, key, "buy", order.itemId, units, ceiling, "npc", false)
+            spent = spent + (result.credits or 0)
+            bought = bought + (result.filled or 0)
+            left = left - (result.credits or 0)
+        end
+        if left <= 0 then break end
+    end
+    return spent, bought
 end
 
 ------------------------------------------------------------------------------
@@ -537,8 +653,9 @@ function MarketSystem:update(stations, keys, dt, now)
                 end
             end
 
-            if not station.marketRefreshedAt
-                or now - station.marketRefreshedAt >= cfg.refreshInterval then
+            -- An outpost's market is the owner's orders: it posts none
+            if not PlayerStations.isOwnedKey(key) and (not station.marketRefreshedAt
+                or now - station.marketRefreshedAt >= cfg.refreshInterval) then
                 self:refreshStation(station, now)
             end
         end

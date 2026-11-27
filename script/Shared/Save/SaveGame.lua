@@ -8,6 +8,7 @@ local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
 local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
 local PlayerFleet = require("Modules.Constructs.Managers.PlayerFleet")
 local StockComponent = require("Modules.Economy.Components.StockComponent")
+local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
 
 --- What a saved game holds, and putting it back.
 ---
@@ -198,7 +199,6 @@ function SaveGame.capture(game)
         }
     end
 
-    local PlayerStations = package.loaded["Modules.Economy.Managers.PlayerStations"]
     return {
         schema = SaveGame.SCHEMA,
         game = {
@@ -222,7 +222,7 @@ function SaveGame.capture(game)
         orders = ordersOut(game),
         intel = copy(MarketIntel.stations, "intel"),
         stations = stationsOut(game),
-        structures = PlayerStations and PlayerStations.snapshot and PlayerStations:snapshot() or nil,
+        structures = PlayerStations:snapshot(),
     }
 end
 
@@ -308,10 +308,7 @@ function SaveGame.restoreManagers(game, state)
     -- built (LimitTheoryRedux:applySavedStationStock)
     game.savedStationStock = copy(state.stations) or {}
 
-    local PlayerStations = package.loaded["Modules.Economy.Managers.PlayerStations"]
-    if PlayerStations and PlayerStations.restore then
-        PlayerStations:restore(state.structures)
-    end
+    PlayerStations:restore(state.structures)
 end
 
 ------------------------------------------------------------------------------

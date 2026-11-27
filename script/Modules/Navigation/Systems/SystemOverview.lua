@@ -351,7 +351,7 @@ function SystemOverview:refresh(game)
     local places = game.npcs and game.npcs.places
     for _, dock in ipairs(places and places.docks or {}) do
         local pos, radius = placeOf(dock.entity)
-        add({ entity = dock.entity, name = dock.label, kind = "Station",
+        add({ entity = dock.entity, name = dock.label, kind = dock.outpost and "Outpost" or "Station",
             category = "station", radius = radius, dock = dock }, pos)
     end
 

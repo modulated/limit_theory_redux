@@ -39,8 +39,13 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    `Physics::shape_cast`/`shape_overlap` (`engine/lib/phx/src/physics/physics.rs`) to Lua, then
    steer around bodies' bounding spheres. Optional: smooth routes with a 3D Catmull-Rom or
    Bézier curve.
-5. **Save and load.** Nothing is saved. Start with the universe seed and player state
-   (`script/Types/GameState.lua:123` has a placeholder for world state).
+5. **Save and load** (done: `script/Shared/Save/`). Binary saves (tagged values, CRC-checked,
+   zlib-compressed, written atomically with a backup) in seven slots: Quicksave (F4, Ctrl+F4 to
+   load), Autosave (on docking and on deploying an outpost) and five of the player's own, from
+   the pause menu and the main menu's Load Game. A save keeps the galaxy seed, where the ship is,
+   the wallet, hold, fleet, standing, hangars and lines, orders (with their escrow), market
+   intel, station stock and the player's outposts. Left over: NPC ships and the rocks mined out
+   are generated again on load, not saved.
 6. **Economy.** Stations hold stock, price it by scarcity, run the production chains against it
    and trade with the player on the docked station screen; the player has a hold, a mining laser
    and credits; NPC miners deliver their ore. Legacy's economy is deleted. The item list, the
@@ -57,7 +62,14 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          rename, and a fleet list away from the station screen (you can only see the ships parked
          where you are standing).
    - [ ] Biomass has no source, so the hydrocarbon chain runs on imports.
-   - [ ] Saving the hold, the wallet, station stock and production progress.
+   - [x] Saving the hold, the wallet, station stock and production progress.
+   - [x] Player outposts (`PlayerStations`): a Refinery or Manufacturing Outpost Kit, or a Small
+         Space Station for a trading post, deployed from the overview's menu on a planet (a slot on
+         its stations' ring) or a belt. Each has storage (the hangar), a market of the owner's
+         orders with no fees, where NPCs not hostile to the player trade (miners sell into the
+         owner's bids, traders buy the listings) and pay the owner their sales tax, and the
+         lines of its specialisation, free. Still to do: its defence battery (guns that can be
+         shot down and repaired; the station itself cannot be destroyed).
    - [ ] Balance: tune with `luajit tools/economy-sim.lua --seeds 8 --prospector --trader`
          (it runs the economy headless). Income swings more than tenfold between systems
          depending on whether the local refineries want the local ore; mining and hauling pay

@@ -786,10 +786,49 @@ local defs = {
             { item = Items.Waste.Waste, count = 120 },
         },
     },
+    ProductionDefinition {
+        id = 48,
+        name = "Refinery Outpost Kit Drydock",
+        class = Class.Drydock,
+        duration = 7200.0,
+        inputs = {
+            { item = Items.Miscellaneous.EnergyCell, count = 500 },
+            { item = Items.RefinedMaterials.Glassiron, count = 400 },
+            { item = Items.RefinedMaterials.TransparentAluminum, count = 300 },
+            { item = Items.RefinedMaterials.Steel, count = 600 },
+            { item = Items.RefinedMaterials.Thorium, count = 80 },
+            { item = Items.Equipment.ShipSensor, count = 5 },
+            { item = Items.Equipment.ShipComputer, count = 10 },
+        },
+        outputs = {
+            { item = Items.Constructs.RefineryOutpostKit, count = 1 },
+            { item = Items.Waste.Waste, count = 1800 },
+        },
+    },
+    ProductionDefinition {
+        id = 49,
+        name = "Manufacturing Outpost Kit Drydock",
+        class = Class.Drydock,
+        duration = 9000.0,
+        inputs = {
+            { item = Items.Miscellaneous.EnergyCell, count = 300 },
+            { item = Items.RefinedMaterials.Glassiron, count = 600 },
+            { item = Items.RefinedMaterials.TransparentAluminum, count = 400 },
+            { item = Items.RefinedMaterials.Steel, count = 900 },
+            { item = Items.RefinedMaterials.Thorium, count = 100 },
+            { item = Items.Data.InfolyticChip, count = 20 },
+            { item = Items.Equipment.ShipSensor, count = 8 },
+            { item = Items.Equipment.ShipComputer, count = 15 },
+        },
+        outputs = {
+            { item = Items.Constructs.ManufacturingOutpostKit, count = 1 },
+            { item = Items.Waste.Waste, count = 2600 },
+        },
+    },
 }
 
 for _, def in ipairs(defs) do Productions:add(def) end
 
 return Productions
 
--- The next free production id: 48
+-- The next free production id: 50

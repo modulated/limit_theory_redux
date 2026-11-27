@@ -124,7 +124,12 @@ ItemGroup {
         ItemDefinition { id = 43, name = "Ship Hull, Medium", mass = 102500, energyDensity = 46, startEquilibriumPrice = 100000 },
         ItemDefinition { id = 44, name = "Ship Hull, Large", mass = 237250, energyDensity = 45, startEquilibriumPrice = 200000 },
         ItemDefinition { id = 45, name = "Ship Hull, Very Large", mass = 518000, energyDensity = 42, startEquilibriumPrice = 500000 },
-        ItemDefinition { id = 46, name = "Space Station, Small", mass = 1550000, energyDensity = 40, startEquilibriumPrice = 1000000 }
+        ItemDefinition { id = 46, name = "Space Station, Small", mass = 1550000, energyDensity = 40, startEquilibriumPrice = 1000000 },
+        -- Outpost kits: a station's core, prefabricated, that grows the rest
+        -- on site. Light enough to carry in a hold (the Space Station, Small
+        -- is deployed from a hangar in the system instead).
+        ItemDefinition { id = 69, name = "Refinery Outpost Kit", mass = 2000, energyDensity = 30, startEquilibriumPrice = 450000 },
+        ItemDefinition { id = 70, name = "Manufacturing Outpost Kit", mass = 2000, energyDensity = 30, startEquilibriumPrice = 650000 }
     }
 }
 
@@ -236,6 +241,8 @@ ItemGroup {
 ---@field ShipHullLarge ItemDefinition
 ---@field ShipHullVeryLarge ItemDefinition
 ---@field SpaceStationSmall ItemDefinition
+---@field RefineryOutpostKit ItemDefinition
+---@field ManufacturingOutpostKit ItemDefinition
 
 ---@class ItemsWaste
 ---@field Waste ItemDefinition
@@ -246,4 +253,4 @@ ItemGroup {
 ---@field EnergyCell ItemDefinition
 ---@field RadioactiveIsotopes ItemDefinition
 
--- The next free item id: 69
+-- The next free item id: 71

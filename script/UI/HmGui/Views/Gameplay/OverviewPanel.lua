@@ -201,6 +201,16 @@ local function actionsFor(entry)
         add(here and "Jump" or "Approach and jump", function() game:jumpVia(entry.gate) end)
     end
 
+    -- Planets and belts: an outpost from a kit the player has here, at the
+    -- nearest free slot (on the stations' ring, or along the belt)
+    if entry.kind == "Planet" or entry.kind == "Belt" then
+        for _, option in ipairs(game:deployableKinds()) do
+            add("Deploy " .. option.name, function()
+                game:deployOutpost(option.kind, entry.entity, entry.name)
+            end)
+        end
+    end
+
     add("Show on map", function() game:showOnMap(entry.entity, entry.name) end)
     return items
 end

@@ -2,6 +2,7 @@ local Action = require("Modules.NPC.Actions.Action")
 local Actions = require("Modules.NPC.Actions")
 local Factions = require("Modules.NPC.Factions")
 local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
+local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
 
 --- Selling the hold at the station it is docked at (instant; the Wait before
 --- it is the time it takes), the port of Legacy's sale to the station's
@@ -13,17 +14,25 @@ local SellCargo = Subclass("NpcSellCargo", Action, function(self) end)
 function SellCargo:getName() return "Selling" end
 function SellCargo:onUpdate(npc, ctx, dt)
     local units = npc.cargo.count or 0
+    local left = 0
     if units > 0 then
         local dock = npc.pilot.docked
         local station = dock and dock.entity
         local delivered = 0
         if station and station:isValid() and npc.cargo.itemId then
-            delivered = StationTradeSystem:deliver(station, npc.cargo.itemId, units)
+            if dock.outpost then
+                -- The player's outpost: into the owner's bids, no further;
+                -- what they don't take stays aboard for the next stop
+                delivered = MarketSystem:npcSell(station, dock.key, npc.cargo.itemId, units)
+                left = units - delivered
+            else
+                delivered = StationTradeSystem:deliver(station, npc.cargo.itemId, units)
+            end
         end
-        Log.Debug("NPC: %s sold %d %s (%d into the station's store)",
-            npc.label, units, npc.cargo.item or "ore", delivered)
+        Log.Debug("NPC: %s sold %d %s (%d delivered, %d kept)",
+            npc.label, units, npc.cargo.item or "ore", delivered, left)
     end
-    npc.cargo.count = 0
+    npc.cargo.count = left
     self:finish(npc)
 end
 
@@ -40,6 +49,22 @@ return function(npc, ctx)
     local job = Actions.Repeat(function(miner, system)
         -- Let go of the last rock; take the nearest free one with ore
         if miner.rock and miner.rock.claimed == miner then miner.rock.claimed = nil end
+        -- Ore still aboard (an outpost took only part of it): sell that
+        -- first, so two ores are never in one hold
+        local cargo = miner.cargo
+        if (cargo.count or 0) > 0 then
+            local dock = system:sellDock(miner, cargo.itemId, cargo.count)
+            if not dock then
+                cargo.count = 0
+            else
+                return {
+                    Actions.DockAt(dock),
+                    Actions.Wait(Config.game.mining.sellTime, "Selling ore"),
+                    SellCargo(),
+                    Actions.Undock(),
+                }
+            end
+        end
         local rock = system.mining:findRock(miner.body:getPos())
         if not rock then return nil end
         rock.claimed = miner
@@ -48,7 +73,7 @@ return function(npc, ctx)
             Actions.MoveTo(rock.position, rock.radius * 1.5 + 0.1, "Flying to the belt"),
             Actions.MineAt(rock, Config.game.mining.timePerUnit),
         }
-        local dock = system:nearestDock(miner)
+        local dock = system:sellDock(miner, rock.itemId, miner.cargo.capacity or 1)
         if dock then
             table.insert(list, Actions.DockAt(dock))
             table.insert(list, Actions.Wait(Config.game.mining.sellTime, "Selling ore"))

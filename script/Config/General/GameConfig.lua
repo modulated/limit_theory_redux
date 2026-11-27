@@ -496,6 +496,49 @@ Config.game = {
         detection      = 0.2,  -- NPCs see a cloaked ship this fraction as far
     },
 
+    -- The player's own stations (Modules/Economy/Managers/PlayerStations.lua).
+    -- Each kind is deployed from its kit; all have a hangar, a market whose
+    -- orders are the owner's (NPCs that are not hostile to the player trade
+    -- there), and the owner's own production lines in its specialisation.
+    outposts = {
+        kinds = {
+            refinery = {
+                name = "Refinery Outpost", kit = "RefineryOutpostKit",
+                classes = { "Refinery", "Powerplant" }, lines = 4,
+                description = "Refines ore and makes energy: four lines of its own.",
+            },
+            manufacturing = {
+                name = "Manufacturing Outpost", kit = "ManufacturingOutpostKit",
+                classes = { "Factory", "Drydock" }, lines = 4,
+                description = "Builds parts, modules, weapons and hulls: four lines of its own.",
+            },
+            trading = {
+                name = "Trading Post", kit = "SpaceStationSmall",
+                classes = {}, lines = 0,
+                description = "A market and storage, and nothing else to run.",
+            },
+        },
+        -- The order the kinds are offered in
+        order = { "refinery", "manufacturing", "trading" },
+        -- Where they may stand: slots on the ring generated stations sit on
+        -- around each planet, and along each asteroid belt
+        orbitSlots = 6,
+        beltSlots = 8,
+        -- How close the ship must be to a slot to deploy there, and how far a
+        -- slot must be from any other station or gate to be free (game units)
+        deployRange = 4.0,
+        minSpacing = 1.2,
+        -- The market: miners sell into the owner's bids for their ore at or
+        -- above this share of its base price (they go elsewhere for less);
+        -- traders buy from the owner's listings at up to this share of the
+        -- base price, spending up to `traderBudget` a visit
+        minerMinPrice = 0.6,
+        traderMaxMarkup = 1.3,
+        traderBudget = 20000,
+        -- An outpost's size, as a share of a generated station's
+        scale = 0.8,
+    },
+
     -- The overview (O): what is in the system, nearest first
     -- (Modules/Navigation/Systems/SystemOverview.lua,
     -- UI/HmGui/Views/Gameplay/OverviewPanel.lua).

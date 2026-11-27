@@ -174,9 +174,12 @@ that — so a hull with heavy mounts is worth flying to.
 | Ship Hull, Large | 237250 | 45 | 10676250 | 200000 |
 | Ship Hull, Very Large | 518000 | 42 | 21756000 | 500000 |
 | Space Station, Small | 1550000 | 40 | 62000000 | 1000000 |
+| Refinery Outpost Kit | 2000 | 30 | 60000 | 450000 |
+| Manufacturing Outpost Kit | 2000 | 30 | 60000 | 650000 |
 
 The first four hulls are flyable (`Shared/Definitions/HullDefs.lua`): buy one, and a station's
-shipyard will put you in it. Large, Very Large and the station itself are still goods only.
+shipyard will put you in it. Large and Very Large are still goods only. The two kits (Drydock
+recipes 48 and 49) and the Small Space Station deploy the player's own outposts (section 6).
 
 ### Waste
 
@@ -405,6 +408,32 @@ What it pays: `--crafter` in the sim rents the best line at a station, buys its 
 sells the output back, which is the worst case — about 130 credits an hour. The gain is in sourcing
 the inputs yourself (ore you mined, goods bought where they are cheap), where a refined good is
 worth roughly twice the ore it came from.
+
+### Outposts: stations of your own
+
+`Modules/Economy/Managers/PlayerStations.lua`, configured by `Config.game.outposts`. An outpost is
+deployed from a kit, picked from the overview's right-click menu on a planet or an asteroid belt
+("Deploy ..."): the autopilot flies to the nearest free slot and the kit is spent there. The kit
+comes out of the hold, or out of a hangar at a station in the same system (the Small Space
+Station, at 1,550,000 t, only ever travels that way).
+
+- **Where.** `orbitSlots` slots on the ring the generated stations sit on around each planet
+  (offset half a step from their angles), and `beltSlots` along each belt. A slot within
+  `minSpacing` of a station, an outpost or a gate is taken.
+- **What kind.** A **Refinery Outpost** runs any Refinery or Powerplant recipe, a **Manufacturing
+  Outpost** any Factory or Drydock recipe, four lines each, with no fee and no crew to share; a
+  **Trading Post** (the Small Space Station) has no lines.
+- **Storage** is the hangar, as at any station, filed under the outpost's key `p:<id>`.
+- **The market** is the owner's orders and nothing else: the outpost posts none of its own and
+  buys no scrap. The owner pays no broker fee and no sales tax there. NPCs whose faction is not
+  hostile to the player dock and trade: a miner sells its hold into the owner's bids, at their
+  price, down to `minerMinPrice` of the ore's base price (it picks the outpost only if the bids
+  cover its whole hold, and takes anything left to the next station); a trader buys the
+  cheapest listings up to `traderMaxMarkup` of base, spending up to `traderBudget` a visit. The
+  sales tax an NPC pays on a sale there is the owner's; the Factory tab shows what it has earned.
+
+Outposts are saved with the game, and built again from their records whenever the player comes
+back to the system.
 
 ## 7. Tuning it without running the game
 

@@ -56,6 +56,7 @@ local SystemMap3D = require('Modules.CelestialObjects.Systems.SystemMap3D')
 local MemoryReporter = require('Modules.Profiling.MemoryReporter')
 local ConstructManager = require('Modules.Constructs.Managers.ConstructManager')
 local StationGenerator = require('Modules.Constructs.Managers.Generators.StationGenerator')
+local PlayerStations = require('Modules.Economy.Managers.PlayerStations')
 local GalaxyGenerator = require('Modules.Navigation.Managers.GalaxyGenerator')
 local JumpGateGenerator = require('Modules.Navigation.Managers.JumpGateGenerator')
 local JumpGateSystem = require('Modules.Navigation.Systems.JumpGateSystem')
@@ -1337,6 +1338,13 @@ function LimitTheoryRedux:processArrivalAction()
             self:notify(Factions.name(refused.faction) .. " refuse you docking.", { 1.0, 0.4, 0.3 })
             return
         end
+    elseif action.kind == "deploy" then
+        if self:shipDistanceTo(action.anchor.position) <= Config.game.outposts.deployRange then
+            self.arrivalAction = nil
+            AutoPilotSystem:disengage(self.playerShip)
+            self:finishDeploy(action.kind_, action.anchor)
+            return
+        end
     elseif action.kind == "jump" then
         local gate = self:gateInRange()
         if gate and SystemOverview.same(gate.entity, action.entity) then
@@ -1347,9 +1355,146 @@ function LimitTheoryRedux:processArrivalAction()
     end
     if not AutoPilotSystem:isActive(self.playerShip) then
         self.arrivalAction = nil
-        self:notify(action.kind == "dock" and "Stopped short of the station: not docking."
-            or "Stopped short of the gate: not jumping.", { 1.0, 0.7, 0.3 })
+        local stopped = {
+            dock = "Stopped short of the station: not docking.",
+            jump = "Stopped short of the gate: not jumping.",
+            deploy = "Stopped short of the slot: not deploying.",
+        }
+        self:notify(stopped[action.kind] or "Autopilot stopped.", { 1.0, 0.7, 0.3 })
     end
+end
+
+------------------------------------------------------------------------------
+-- Deploying an outpost (PlayerStations): a kit, a free slot on a planet's
+-- station ring or along a belt, and the ship there
+------------------------------------------------------------------------------
+
+--- How far the player's ship is from a position (math.huge without a ship).
+---@param p table { x, y, z }
+---@return number
+function LimitTheoryRedux:shipDistanceTo(p)
+    local rbCmp = self.playerShip and self.playerShip:get(PhysicsComponents.RigidBody)
+    local body = rbCmp and rbCmp:getRigidBody()
+    if not body then return math.huge end
+    local pos = body:getPos()
+    local dx, dy, dz = pos.x - p.x, pos.y - p.y, pos.z - p.z
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+end
+
+--- Where a kind's kit is to be had in this system: the hold first, then
+--- the player's hangars at the stations here.
+---@param kind string
+---@return table|nil source { kind ("hold"|"hangar"), stock (StockComponent), key, label }
+function LimitTheoryRedux:kitSource(kind)
+    local def = PlayerStations.kitOf(kind)
+    if not def then return nil end
+    if PlayerCargo:count(def.id) > 0 then
+        return { kind = "hold", stock = PlayerCargo:get(), label = "your hold" }
+    end
+    local places = self.npcs and self.npcs.places
+    for _, dock in ipairs(places and places.docks or {}) do
+        local record = dock.key and PlayerFactories.stations[dock.key]
+        if record and record.hangar:count(def.id) > 0 then
+            return { kind = "hangar", stock = record.hangar, key = dock.key,
+                     label = "your hangar at " .. dock.label }
+        end
+    end
+    return nil
+end
+
+--- The outpost kinds the player could deploy here and now, in
+--- Config.game.outposts.order: { kind, name, source }.
+---@return table[]
+function LimitTheoryRedux:deployableKinds()
+    local list = {}
+    if not self:isTravelGame() then return list end
+    for _, kind in ipairs(Config.game.outposts.order) do
+        local cfg = PlayerStations.kindOf(kind)
+        local source = cfg and self:kitSource(kind)
+        if source then list[#list + 1] = { kind = kind, name = cfg.name, source = source } end
+    end
+    return list
+end
+
+--- Deploy an outpost of `kind` at the nearest free slot of a planet or a
+--- belt: now, if the ship is at it; otherwise fly there and deploy on
+--- arrival (processArrivalAction).
+---@param kind string
+---@param parent Entity a planet or an asteroid belt
+---@param parentName string|nil
+function LimitTheoryRedux:deployOutpost(kind, parent, parentName)
+    local cfg = PlayerStations.kindOf(kind)
+    if not cfg or not parent or not parent:isValid() or not self.playerShip then return end
+    if self.docked then
+        self:notify("Undock first.", { 1.0, 0.7, 0.3 })
+        return
+    end
+    if not self:kitSource(kind) then
+        self:notify(string.format("No %s here: carry one in your hold, or keep one in a hangar in this system.",
+            PlayerStations.kitOf(kind).name), { 1.0, 0.7, 0.3 })
+        return
+    end
+    local rbCmp = self.playerShip:get(PhysicsComponents.RigidBody)
+    local from = rbCmp:getRigidBody():getPos()
+    local anchor = PlayerStations:nearestFreeAnchor(self, parent, from)
+    if not anchor then
+        self:notify(string.format("No free slot at %s.", parentName or "that"), { 1.0, 0.7, 0.3 })
+        return
+    end
+    if self:shipDistanceTo(anchor.position) <= Config.game.outposts.deployRange then
+        self:finishDeploy(kind, anchor)
+        return
+    end
+    self.arrivalAction = nil
+    local p = anchor.position
+    AutoPilotSystem:engagePosition(self.playerShip, Position(p.x, p.y, p.z),
+        Config.game.outposts.deployRange * 0.5)
+    self.arrivalAction = { kind = "deploy", kind_ = kind, anchor = anchor, entity = parent }
+    self:notify(string.format("Autopilot: deploying a %s at %s", cfg.name, parentName or "the slot"),
+        AUTOPILOT_MESSAGE_COLOR)
+end
+
+--- The ship is at the slot: spend the kit, record the outpost and build it.
+---@param kind string
+---@param anchor table
+function LimitTheoryRedux:finishDeploy(kind, anchor)
+    local source = self:kitSource(kind)
+    local def = PlayerStations.kitOf(kind)
+    if not source or not def then
+        self:notify("The kit is gone: not deploying.", { 1.0, 0.7, 0.3 })
+        return
+    end
+    -- Someone may have taken the slot meanwhile (another outpost)
+    for _, other in ipairs(PlayerStations:anchors(self)) do
+        if other.id == anchor.id and not other.free then
+            self:notify("That slot is taken now: not deploying.", { 1.0, 0.7, 0.3 })
+            return
+        end
+    end
+    if source.stock:remove(def.id, 1) < 1 then return end
+    local system = self.galaxy and self.galaxy.systems[self.currentSystemId]
+    local record = PlayerStations:deploy(kind, self.currentSystemId or 1, anchor, system and system.name)
+    if not record then
+        source.stock:add(def.id, 1)
+        return
+    end
+    local station = self:buildPlayerStation(record)
+    local entry = self.playerStationEntities[#self.playerStationEntities]
+    local places = self.npcs and self.npcs.places
+    if places then
+        local dock = self:openPlayerStation(entry, places.docks)
+        if dock then table.insert(places.stations, dock.position) end
+    end
+    SystemOverview:invalidate()
+    if self.mapState then
+        self.mapState._entityListBuilt = false
+        self.mapState._dotCache = nil
+    end
+    self:notify(string.format("%s deployed (the kit from %s). Dock to set up its lines and market.",
+        record.name, source.label), { 0.3, 1.0, 0.45 })
+    Log.Info("Outpost: %s (%s) at %s in system %d", record.name, kind, anchor.id, record.systemId)
+    self:autosave()
+    return station
 end
 
 ------------------------------------------------------------------------------
@@ -1849,6 +1994,11 @@ function LimitTheoryRedux:populateSystem()
             end
         end
     end
+    -- The player's outposts are docks too, filed under their own keys
+    for _, entry in ipairs(self.playerStationEntities or {}) do
+        local dock = self:openPlayerStation(entry, places.docks)
+        if dock then table.insert(places.stations, dock.position) end
+    end
     places.belts = self.beltEntities or {}
     self.npcs:setPlaces(places)
     self.npcs:setPlayer(self.playerShip)
@@ -1875,6 +2025,7 @@ function LimitTheoryRedux:resetGalaxy()
     PlayerWallet:reset()
     PlayerCargo:reset()
     PlayerFactories:reset()
+    PlayerStations:reset()
     MarketIntel:reset()
     self:connectMarket()
     -- A new galaxy's rocks are all unread
@@ -2096,6 +2247,15 @@ function LimitTheoryRedux:destroyScene(keepShip)
         Registry:destroyEntity(station, Enums.Registry.EntityDestroyMode.DestroyChildren)
     end
     self.stations = {}
+    for _, entry in ipairs(self.playerStationEntities or {}) do
+        MarketSystem:park(entry.entity, PlayerStations.keyOf(entry.record.id))
+        local rbCmp = entry.entity:get(PhysicsComponents.RigidBody)
+        if rbCmp and rbCmp:getRigidBody() then
+            self.world:removeRigidBody(rbCmp:getRigidBody())
+        end
+        Registry:destroyEntity(entry.entity, Enums.Registry.EntityDestroyMode.DestroyChildren)
+    end
+    self.playerStationEntities = {}
 
     -- The gates are children of the star system: the universe takes their
     -- entities with it below, but their bodies have to leave the world first.
@@ -2457,6 +2617,75 @@ function LimitTheoryRedux:spawnStations()
         table.insert(self.stations, station)
         table.insert(self.labeledEntities, { entity = station, label = "Station " .. i })
     end
+    self:spawnPlayerStations()
+end
+
+--- The player's outposts in this system (PlayerStations), built from their
+--- records where they were deployed. They are kept apart from
+--- `self.stations`, whose keys are their places in the generated list.
+function LimitTheoryRedux:spawnPlayerStations()
+    self.playerStationEntities = self.playerStationEntities or {}
+    for _, record in ipairs(PlayerStations:inSystem(self.currentSystemId or 1)) do
+        self:buildPlayerStation(record)
+    end
+end
+
+--- Build one outpost's entity: a station of its own seed, a book for its
+--- market and a store (empty: an outpost's goods are the owner's, in its
+--- hangar). No crew and no production of its own: its lines are the owner's.
+---@param record PlayerStation
+---@return Entity station
+function LimitTheoryRedux:buildPlayerStation(record)
+    local p = record.position
+    local station = StationGenerator:createStation(1000003 * record.id + 17, {
+        position = Position(p.x, p.y, p.z),
+        scale = self.cfg.stationScale * (Config.game.outposts.scale or 0.8),
+        isKinematic = true,
+    })
+    local rbCmp = station:get(PhysicsComponents.RigidBody)
+    if rbCmp and rbCmp:getRigidBody() then
+        self.world:addRigidBody(rbCmp:getRigidBody())
+    end
+    station:add(EconomyComponents.Stock())
+    station:add(EconomyComponents.OrderBook())
+    table.insert(self.playerStationEntities, { entity = station, record = record })
+    local r, g, b = Factions.color(Factions.Player)
+    table.insert(self.labeledEntities, { entity = station, label = record.name, color = { r, g, b } })
+    return station
+end
+
+--- The dock record of an outpost, as `npcs.places.docks` keeps them.
+---@param entry table { entity, record }
+---@return table|nil dock
+function LimitTheoryRedux:playerStationDock(entry)
+    local rbCmp = entry.entity:get(PhysicsComponents.RigidBody)
+    local body = rbCmp and rbCmp:getRigidBody()
+    if not body then return nil end
+    return {
+        entity = entry.entity,
+        label = entry.record.name,
+        key = PlayerStations.keyOf(entry.record.id),
+        position = body:getPos(),
+        radius = body:getBoundingRadius(),
+        faction = Factions.Player,
+        outpost = entry.record,
+    }
+end
+
+--- Open the doors of an outpost that has just been built: its dock, the
+--- owner's orders back in its book, what its lines made meanwhile.
+---@param entry table { entity, record }
+---@param docks table[] the list to add the dock to
+---@return table|nil dock
+function LimitTheoryRedux:openPlayerStation(entry, docks)
+    local dock = self:playerStationDock(entry)
+    if not dock then return nil end
+    table.insert(docks, dock)
+    MarketSystem:unpark(entry.entity, dock.key)
+    for _, event in ipairs(PlayerFactories:catchUp(entry.entity, dock.key, self.simTime or 0)) do
+        self:notify(event.text, { 0.6, 0.9, 1.0 })
+    end
+    return dock
 end
 
 --- The ores of this system's belts and rings, by item id: what its stations
