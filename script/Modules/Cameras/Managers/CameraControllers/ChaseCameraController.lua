@@ -3,6 +3,7 @@ local PhysicsComponents = require("Modules.Physics.Components")
 
 local UIMouse = require("Input.UIMouse")
 local FreeLook = require("Modules.Cameras.FreeLook")
+local ConstructComponents = require("Modules.Constructs.Components")
 --- NaN is the only value that is not equal to itself; infinities compare
 --- out of range.
 ---@param v number
@@ -46,6 +47,11 @@ local ChaseCameraController = Subclass("ChaseCameraController", CameraController
     self.posT   = Position(0, 0, 0)
     self.rotT   = Quat.Identity()
     self.posSmooth = Position(0, 0, 0)
+    -- The camera's place relative to the ship, smoothed (not its place in
+    -- the world: see onPreRender)
+    self.offsetSmooth = { x = 0, y = 0, z = 0 }
+    -- How far back the travel drive has drawn the camera (0..1, smoothed)
+    self.warpPull = 0
     self.rotSmooth = Quat.Identity()
     self.initialized = false
 end)
@@ -98,7 +104,14 @@ function ChaseCameraController:onPreRender(dt)
     -- of their own size. A floor of 1 GU would treat every small ship as
     -- a 1 GU object and push the camera hundreds of ship-lengths away.
     local shipRadius = math.max(rb:getBoundingRadius(), 1e-4)
-    local scale = 0.25 * self.radius * shipRadius
+    -- In travel, the camera draws back a little as the drive winds up (a
+    -- stretch, with the ship held in the middle of the warp), and comes
+    -- back in as it winds down
+    local drive = self.target:get(ConstructComponents.TravelDrive)
+    local mult = drive and drive:getCurrentMult() or 1
+    local pullT = mult > 1.5 and math.min(1, math.log(mult) / math.log(40000)) or 0
+    self.warpPull = self.warpPull + (pullT - self.warpPull) * (1.0 - math.exp(-2.0 * dt))
+    local scale = 0.25 * self.radius * shipRadius * (1 + 0.35 * self.warpPull)
     -- Free look (right button held) swings the camera round the ship
     local prx, pry, prz = FreeLook.apply(self.posRel.x, self.posRel.y, self.posRel.z)
     local pr = { x = prx, y = pry, z = prz }
@@ -132,20 +145,27 @@ function ChaseCameraController:onPreRender(dt)
     end
     self.rotT = Quat.FromLook(lookDir, shipUp)
 
-    -- Lerp smoothing (matches legacy: 1 - exp(-10 * dt))
+    -- Smoothing (1 - exp(-10 * dt)) of where the camera sits *relative to
+    -- the ship*, not of where it is in the world. Smoothing the world
+    -- position trails a tenth of a second of travel behind: unnoticed at
+    -- flight speed, tens of thousands of kilometres in travel mode, where
+    -- the ship shot off into the distance and the camera was left behind.
+    -- Relative to the ship, the camera is held to it at any speed and still
+    -- swings round smoothly when the ship turns.
+    local offX, offY, offZ = self.posT.x - shipPos.x, self.posT.y - shipPos.y, self.posT.z - shipPos.z
+    local off = self.offsetSmooth
     if not self.initialized then
-        self.posSmooth = self.posT
+        off.x, off.y, off.z = offX, offY, offZ
         self.rotSmooth = self.rotT
         self.initialized = true
     else
         local lerpF = 1.0 - math.exp(-10.0 * dt)
-        self.posSmooth = Position(
-            self.posSmooth.x + (self.posT.x - self.posSmooth.x) * lerpF,
-            self.posSmooth.y + (self.posT.y - self.posSmooth.y) * lerpF,
-            self.posSmooth.z + (self.posT.z - self.posSmooth.z) * lerpF
-        )
+        off.x = off.x + (offX - off.x) * lerpF
+        off.y = off.y + (offY - off.y) * lerpF
+        off.z = off.z + (offZ - off.z) * lerpF
         self.rotSmooth = self.rotSmooth:slerp(self.rotT, lerpF)
     end
+    self.posSmooth = Position(shipPos.x + off.x, shipPos.y + off.y, shipPos.z + off.z)
 
     -- A number that is not a number poisons everything downstream: slerp
     -- keeps it, the view matrix inherits it, and the frame is drawn from
