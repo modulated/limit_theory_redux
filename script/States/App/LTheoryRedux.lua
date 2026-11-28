@@ -5027,7 +5027,16 @@ function LimitTheoryRedux:onRender(data)
     -- The HUD text (In_Game view) hides with the HUD toggle and in the 3D map.
     UIViewInGame:setHudShown(not self.hudHidden and self.mapMode ~= 2)
 
-    if self.mapMode == 2 then
+    if self.docked and self.mapMode == 0 then
+        -- Docked: the station screen is the whole picture. Nothing of the
+        -- world is drawn (the scene, its flares, the names over ships and
+        -- planets, the navigation lines), so none of it shows through or
+        -- pokes out over the screen; the world goes on underneath.
+        self:immediateUI(function()
+            Gui:draw()
+            LoadingScreen.draw()
+        end)
+    elseif self.mapMode == 2 then
         SystemMap3D:collectEntities(self.map3DState, self.universe, self.playerShip, self:mapNpcs())
         SystemMap3D:render(self.map3DState, data)
 
