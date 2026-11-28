@@ -4641,6 +4641,12 @@ function LimitTheoryRedux:respawnPlayerShip(position, facing)
         self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody():setRot(Quat.FromLookUp(facing, up))
     end
     if self.cloak then self.cloak.active = false end
+    -- The controls, the camera, the NPCs and the HUD follow the new ship:
+    -- left on the old (destroyed) one, nothing the player pressed moved it
+    self.player:setShip(self.playerShip)
+    if self.npcs then self.npcs:setPlayer(self.playerShip) end
+    UIViewInGame:setPlayer(self.player)
+    self:updatePlayerVisibility()
 end
 
 --- The frame over an open map: which map, its controls, how to leave.

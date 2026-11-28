@@ -1737,7 +1737,8 @@ function WeaponSystem:update(state, dt)
         turret.cooldown = math.max(0, turret.cooldown - dt)
 
         local sourcePosition = body:getPos()
-        local sourceVelocity = body:getVelocity()
+        local sourceVelocity = state.sourceVelocity and state:sourceVelocity(mount)
+            or body:getVelocity()
         local effect = weapon.effect
         assert(effect, "ship weapon has no effect definition: " .. tostring(turret.weaponId))
         local targetPoint = targetPosition

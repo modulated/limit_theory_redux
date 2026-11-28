@@ -417,6 +417,17 @@ function WeaponBattery:spawnBeam(mount, solution, weapon, shotSerial)
     })
 end
 
+---How fast a mount is moving: the ship's velocity (the turret bodies are
+---not simulated, so their own reads zero).
+---@param mount table
+---@return Vec3f
+function WeaponBattery:sourceVelocity(mount)
+    if self.shipBody then
+        return self.shipBody:getVelocity()
+    end
+    return mount.body:getVelocity()
+end
+
 ---WeaponSystem callback: a projectile weapon fired.
 ---@param mount table
 ---@param solution table
@@ -424,7 +435,11 @@ end
 ---@param shotSerial integer
 function WeaponBattery:spawnProjectile(mount, solution, weapon, shotSerial)
     local sourcePosition = mount.body:getPos()
-    local sourceVelocity = mount.body:getVelocity()
+    -- The turret bodies are kept out of the physics world (moved with the
+    -- ship by syncTurretTransforms), so theirs reads zero: a shot leaves
+    -- with the ship's own velocity, or a ship going faster than its shots
+    -- overtakes them
+    local sourceVelocity = self:sourceVelocity(mount)
     local dx = solution.position.x - sourcePosition.x
     local dy = solution.position.y - sourcePosition.y
     local dz = solution.position.z - sourcePosition.z
@@ -463,6 +478,9 @@ function WeaponBattery:spawnProjectile(mount, solution, weapon, shotSerial)
         targetEntity = targetEntity,
         bodyMesh = nil,
     })
+    -- Its own ship is not something it can hit: the shot starts inside the
+    -- ship's contact sphere, and would strike it the moment it was fired
+    entity:get(ConstructComponents.Projectile).sourceShip = self.ship
     table.insert(self.projectiles, {
         entity = entity,
         body = entity:get(PhysicsComponents.RigidBody):getRigidBody(),

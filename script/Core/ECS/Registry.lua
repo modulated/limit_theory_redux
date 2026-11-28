@@ -14,6 +14,22 @@ local Entity            = Class("Entity", function(self, id)
     self.id = id
 end)
 
+-- One handle per entity: `Entity(id)` gives back the handle already made for
+-- that id while anything still holds it. Handles used to be made fresh each
+-- time the registry was walked, so `==` between two handles of one ship was
+-- false and a table keyed by a handle (NPC records, the combat log) never
+-- found the entity a projectile hit. Keyed like the registry's own tables
+-- (by the id value it hands out); weak, so a handle nothing holds goes.
+local handles = setmetatable({}, { __mode = "v" })
+local newHandle = Entity.new
+function Entity.new(id)
+    local handle = handles[id]
+    if handle then return handle end
+    handle = newHandle(id)
+    handles[id] = handle
+    return handle
+end
+
 ---@class ComponentStorage
 ---@field sparse table<EntityId, Component>
 ---@field dense  Component[]
