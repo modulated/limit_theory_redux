@@ -41,6 +41,15 @@ in vec3 objPos;
 
    Sparkle: individual ice particles glint, tiny specks that twinkle, close up.
 
+   Warmth and glow (after a particle-ring Shadertoy, WfXyzB, that draws the
+   ring as glowing particles: their light adds up under a square root and
+   is a warm gold, so it reads as luminous from afar rather than as a grey
+   disc): the palette runs amber dust to gold to warm ice; the dust scatters
+   sunlight every way, a glow that grows with the square root of the optical
+   depth, so thin ringlets still shine; and close up the ring breaks into
+   grain, particles of different brightness, fading out where a pixel spans
+   many of them.
+
    Depth: a flat band is a line edge-on, and vanishes from inside the ring.
    The mesh can be a stack of `layers` annuli spread over +-2.5 sigma about
    the plane (sigma is `ringHeight`), the matter's gaussian spread. Each layer
@@ -170,20 +179,21 @@ void main() {
     tau = max(tau, 0.0);
 
     // --- Colour ---
-    // Each ring has its own palette, from dusty grey-brown to icy white
+    // Each ring has its own palette, warm throughout: amber dust, gold,
+    // warm-white ice
     float icy = ringRandom(3, 0);
-    vec3 dusty = vec3(0.50, 0.44, 0.38);
-    vec3 tanColor = vec3(0.88, 0.77, 0.62);
-    vec3 ice = vec3(0.90, 0.93, 0.98);
-    vec3 baseColor = mix(dusty, mix(tanColor, ice, 0.35 + 0.3 * ringRandom(3, 1)), icy);
+    vec3 dusty = vec3(0.80, 0.52, 0.30);
+    vec3 gold = vec3(1.10, 0.80, 0.50);          // the reference's colour
+    vec3 ice = vec3(1.00, 0.94, 0.84);
+    vec3 baseColor = mix(mix(dusty, gold, 0.45 + 0.4 * ringRandom(3, 1)), ice, icy * 0.6);
     vec3 color = baseColor;
-    // C ring greyer and darker, A ring a touch cooler
-    color = mix(color * vec3(0.78, 0.78, 0.82), color, smoothstep(cEnd - 0.04, cEnd + 0.04, rNorm));
-    color = mix(color, color * vec3(0.94, 0.98, 1.06), smoothstep(aStart, aStart + 0.06, rNorm));
-    // Ringlet to ringlet: reddish dusty bands, bluish icy ones
+    // C ring a deeper, duskier amber; A ring a touch paler
+    color = mix(color * vec3(0.86, 0.74, 0.66), color, smoothstep(cEnd - 0.04, cEnd + 0.04, rNorm));
+    color = mix(color, color * vec3(0.98, 1.0, 1.04), smoothstep(aStart, aStart + 0.06, rNorm));
+    // Ringlet to ringlet: rusty dusty bands, pale icy ones
     float hue = fSmoothNoise(rNorm * 160.0 + ringOffset(14), 2, 2.0);
-    color *= mix(vec3(1.08, 0.96, 0.86), vec3(0.92, 0.98, 1.08), hue);
-    color *= 0.85 + 0.3 * fSmoothNoise(rNorm * 600.0 + ringOffset(15), 1, 2.0);
+    color *= mix(vec3(1.14, 0.90, 0.70), vec3(0.96, 1.0, 1.06), hue);
+    color *= 0.80 + 0.4 * fSmoothNoise(rNorm * 600.0 + ringOffset(15), 1, 2.0);
 
     // --- Light ---
     vec3 N = normalize(normal);
@@ -216,16 +226,39 @@ void main() {
     float light;
     if (nl * nv >= 0.0) {
         // The lit face: brighter the more squarely the star hits it
-        light = 0.30 + 0.85 * abs(nl);
+        light = 0.45 + 1.10 * abs(nl);
     } else {
         // The dark face: what passes through, so thin parts glow and dense
         // parts go dark
-        light = (0.12 + 0.55 * abs(nl)) * exp(-tau * 0.9);
+        light = (0.20 + 0.70 * abs(nl)) * exp(-tau * 0.7);
     }
     // Against the star the dust lights up
     float forward = pow(max(dot(-V, L), 0.0), 10.0);
-    light += forward * 0.9 * (1.0 - exp(-tau * 0.6));
+    light += forward * 1.2 * (1.0 - exp(-tau * 0.6));
+
+    // Grain: a ring is particles. Close up, cells of it are brighter and
+    // dimmer; where a pixel spans several cells the grain averages away
+    // rather than shimmer.
+    float grainCells = 2600.0;
+    float footprint = fwidth(rNorm) * grainCells;
+    float grainShow = 1.0 - smoothstep(0.35, 1.2, footprint);
+    if (grainShow > 0.0) {
+        int gr = int(floor(rNorm * grainCells));
+        float around = 6.2831853 * r / max(1e-6, rMax - rMin) * grainCells;
+        int ga = int(floor((angle / 6.2831853 + 0.5) * around * 0.25));
+        float grain = cellRandom(gr, ga, 7);
+        light *= mix(1.0, 0.55 + 0.9 * grain * grain, grainShow);
+    }
     color *= light;
+
+    // Glow: the dust scatters sunlight every way, the sum of many faint
+    // particles under a square root (the reference's tone curve), so thin
+    // ringlets shine too, warm gold, a little brighter toward the sun
+    float glow = sqrt(max(1.0 - exp(-tau), 0.0));
+    color += gold * glow * (0.16 + 0.22 * max(nl * sign(nv), 0.0) + 0.5 * forward);
+
+    // A touch more saturated: thin warm colours under strong light wash out
+    color = max(mix(vec3(lum(color)), color, 1.2), vec3(0.0));
 
     // --- Sparkle: ice glinting, close up ---
     // The ring's width in the world (rMin and rMax are in its own space;
