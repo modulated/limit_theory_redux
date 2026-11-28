@@ -22,7 +22,7 @@
       luajit tools/economy-sim.lua --days 7 --stations 3 --miners 6
       luajit tools/economy-sim.lua --set trade.spread=0.2 --set production.timeScale=5
       luajit tools/economy-sim.lua --trader --csv /tmp/economy.csv
-      luajit tools/economy-sim.lua --watch "Iron Ore,Iron,Steel,Energy Cell"
+      luajit tools/economy-sim.lua --watch "Siderite,Iron,Steel,Energy Cell"
 
   Options:
       --days N           days to simulate (default 2)

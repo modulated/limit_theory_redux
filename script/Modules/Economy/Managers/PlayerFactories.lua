@@ -376,7 +376,7 @@ function PlayerFactories:status(key)
 end
 
 --- What is missing from the hangar for one run of a recipe, in words
---- ("Iron Ore x4, Energy Cell x2"), or nil when everything is there.
+--- ("Siderite x4, Energy Cell x2"), or nil when everything is there.
 ---@param key string
 ---@param recipe ProductionDefinition
 ---@return string|nil

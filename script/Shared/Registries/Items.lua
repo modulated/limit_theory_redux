@@ -1,5 +1,5 @@
 --- The item registry: every `ItemDefinition` of every `ItemGroup`, reachable
---- by key (`Items.RawMaterials.IronOre`) or by id (`Items:getDefinition(6)`).
+--- by key (`Items.RawMaterials.Siderite`) or by id (`Items:getDefinition(6)`).
 ---
 --- Ids are **written in `res/data/items.toml`, not assigned here**.
 --- They are the only part of an item that is allowed to end up in saved games,
@@ -40,7 +40,7 @@ function Items:new(name, itemGroup)
             "item id " .. def.id .. " is used twice ('" .. tostring(def.name)
             .. "' and '" .. tostring(self[def.id] and self[def.id].name) .. "')")
         -- The key and `name` are the plain letters of the name
-        -- (Items.RawMaterials.IronOre); `displayName` keeps the spaces and
+        -- (Items.RawMaterials.Siderite); `displayName` keeps the spaces and
         -- the punctuation, and is what the UI and the logs show.
         def.name = keyOf(def.name)
         def.group = itemGroup.name

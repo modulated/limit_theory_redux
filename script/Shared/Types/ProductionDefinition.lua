@@ -41,7 +41,7 @@ function ProductionDefinition.new(args)
     return self
 end
 
---- The recipe in one line, e.g. "Iron Refinery: Energy Cell x5, Iron Ore x7 -> Iron x1, Waste x4".
+--- The recipe in one line, e.g. "Iron Refinery: Energy Cell x5, Siderite x7 -> Iron x1, Waste x4".
 ---@return string
 function ProductionDefinition:describe()
     local function list(entries)

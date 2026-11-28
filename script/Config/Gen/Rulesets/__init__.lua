@@ -1,4 +1,4 @@
--- Rulesets reference Items registry entries (e.g. Items.RawMaterials.SilicateOre),
+-- Rulesets reference Items registry entries (e.g. Items.RawMaterials.Olivine),
 -- so ItemDefs must be loaded first to populate the registry.
 require("Shared.Definitions.ItemDefs")
 

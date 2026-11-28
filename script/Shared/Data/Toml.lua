@@ -11,7 +11,7 @@
 ---   * integers (decimal, with `_`, signed, and 0x/0o/0b), floats
 ---     (fractions, exponents, inf, nan), booleans
 ---   * arrays (over several lines, trailing comma, comments inside) and
----     inline tables (`{ item = "Iron Ore", count = 4 }`)
+---     inline tables (`{ item = "Siderite", count = 4 }`)
 ---
 --- Not supported (refused with an error, never misread): dates and times.
 ---

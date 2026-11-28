@@ -16,7 +16,7 @@
 #                   too (the loader says where).
 #   group           the item's category. Groups appear in the order their
 #                   first item does. Code reaches items by group
-#                   (Items.RawMaterials.IronOre), so a group is not renamed
+#                   (Items.RawMaterials.Siderite), so a group is not renamed
 #                   lightly either.
 #   mass            tonnes per unit: what it costs in a hold or a hangar
 #   energy_density  energy per tonne (energy = mass x energy_density)
@@ -72,7 +72,7 @@ price = 430
 
 [[item]]
 id = 5
-name = "Silicate Ore"
+name = "Olivine"
 group = "Raw Materials"
 mass = 4
 energy_density = 1.3
@@ -80,7 +80,7 @@ price = 20
 
 [[item]]
 id = 6
-name = "Iron Ore"
+name = "Siderite"
 group = "Raw Materials"
 mass = 6
 energy_density = 1.68
@@ -88,7 +88,7 @@ price = 30
 
 [[item]]
 id = 7
-name = "Copper Ore"
+name = "Chalcopyrite"
 group = "Raw Materials"
 mass = 7
 energy_density = 1.74
@@ -96,7 +96,7 @@ price = 35
 
 [[item]]
 id = 8
-name = "Aluminum Ore"
+name = "Bauxite"
 group = "Raw Materials"
 mass = 4
 energy_density = 1.6
@@ -104,7 +104,7 @@ price = 25
 
 [[item]]
 id = 9
-name = "Beryllium Ore"
+name = "Beryl"
 group = "Raw Materials"
 mass = 4
 energy_density = 1.45
@@ -112,7 +112,7 @@ price = 40
 
 [[item]]
 id = 10
-name = "Thorium Ore"
+name = "Monazite"
 group = "Raw Materials"
 mass = 7
 energy_density = 7.5
@@ -121,7 +121,7 @@ price = 100
 # Carbonaceous chondrite, the carbon ore the refineries need
 [[item]]
 id = 52
-name = "Carboniferous Ore"
+name = "Chondrite"
 group = "Raw Materials"
 mass = 6
 energy_density = 1.4
@@ -131,7 +131,7 @@ price = 28
 # in the small ones. What the drones are made of.
 [[item]]
 id = 71
-name = "Iridium Ore"
+name = "Iridosmine"
 group = "Raw Materials"
 mass = 8
 energy_density = 1.9

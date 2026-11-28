@@ -66,7 +66,7 @@ local Ruleset = {
                 type = "Asteroid",
                 position = Position(10000, -5000, 0),
                 components = {
-                    ItemComponent = Items.RawMaterials.SilicateOre,
+                    ItemComponent = Items.RawMaterials.Olivine,
                     QuantityComponent = 50000
                 }
             },
@@ -74,7 +74,7 @@ local Ruleset = {
                 type = "Asteroid",
                 position = Position(-8000, 3000, 0),
                 components = {
-                    ItemComponent = Items.RawMaterials.IronOre,
+                    ItemComponent = Items.RawMaterials.Siderite,
                     QuantityComponent = 50000
                 }
             },

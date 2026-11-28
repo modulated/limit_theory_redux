@@ -1,6 +1,6 @@
 ---One item of the game's economy. `name` is the key the registry files it
----under: the plain letters of the name (`IronOre`, `ShipEngineThruster`).
----`displayName` is the name as it was written ("Iron Ore", "Ship Engine,
+---under: the plain letters of the name (`Siderite`, `ShipEngineThruster`).
+---`displayName` is the name as it was written ("Siderite", "Ship Engine,
 ---Thruster") and is what the UI and the logs show. `id` is
 ---written by hand in `res/data/items.toml` and must never change:
 ---see the note in `Shared/Registries/Items.lua`.

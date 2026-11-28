@@ -88,7 +88,7 @@ class = "Refinery"
 duration = 12
 inputs = [
     { item = "Energy Cell", count = 1 },
-    { item = "Silicate Ore", count = 2 },
+    { item = "Olivine", count = 2 },
 ]
 outputs = [
     { item = "Silicon", count = 1 },
@@ -102,7 +102,7 @@ class = "Refinery"
 duration = 13
 inputs = [
     { item = "Energy Cell", count = 1 },
-    { item = "Carboniferous Ore", count = 1 },
+    { item = "Chondrite", count = 1 },
 ]
 outputs = [
     { item = "Carbon", count = 1 },
@@ -116,7 +116,7 @@ class = "Refinery"
 duration = 22
 inputs = [
     { item = "Energy Cell", count = 1 },
-    { item = "Beryllium Ore", count = 1 },
+    { item = "Beryl", count = 1 },
 ]
 outputs = [
     { item = "Beryllium", count = 1 },
@@ -130,7 +130,7 @@ class = "Refinery"
 duration = 15
 inputs = [
     { item = "Energy Cell", count = 1 },
-    { item = "Aluminum Ore", count = 1 },
+    { item = "Bauxite", count = 1 },
 ]
 outputs = [
     { item = "Aluminum", count = 1 },
@@ -144,7 +144,7 @@ class = "Refinery"
 duration = 14
 inputs = [
     { item = "Energy Cell", count = 1 },
-    { item = "Iron Ore", count = 1 },
+    { item = "Siderite", count = 1 },
 ]
 outputs = [
     { item = "Iron", count = 1 },
@@ -158,7 +158,7 @@ class = "Refinery"
 duration = 16
 inputs = [
     { item = "Energy Cell", count = 2 },
-    { item = "Copper Ore", count = 3 },
+    { item = "Chalcopyrite", count = 3 },
 ]
 outputs = [
     { item = "Copper", count = 2 },
@@ -173,7 +173,7 @@ class = "Refinery"
 duration = 20
 inputs = [
     { item = "Energy Cell", count = 2 },
-    { item = "Thorium Ore", count = 2 },
+    { item = "Monazite", count = 2 },
 ]
 outputs = [
     { item = "Thorium", count = 1 },
@@ -828,7 +828,7 @@ name = "Iridium Refinery"
 class = "Refinery"
 duration = 60
 inputs = [
-    { item = "Iridium Ore", count = 10 },
+    { item = "Iridosmine", count = 10 },
     { item = "Energy Cell", count = 20 },
 ]
 outputs = [

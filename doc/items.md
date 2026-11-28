@@ -50,7 +50,7 @@ are geometry, not balance.
 |------|------|
 | Item type (`mass`, `energy`, `startEquilibriumPrice`) | `script/Shared/Types/ItemDefinition.lua` |
 | Item group type | `script/Shared/Types/ItemGroup.lua` |
-| Item registry (`Items.RawMaterials.IronOre`, `Items:getDefinition(id)`) | `script/Shared/Registries/Items.lua` |
+| Item registry (`Items.RawMaterials.Siderite`, `Items:getDefinition(id)`) | `script/Shared/Registries/Items.lua` |
 | **The item list** | `res/data/items.toml`, loaded by `script/Shared/Definitions/ItemDefs.lua` |
 | Asteroid/ring composition (which ore a rock holds) | `res/data/ores.toml`, named by `script/Config/Gen/Rulesets/*.lua` (`composition`) |
 | Asteroid entity carrying an item + quantity | `script/Modules/CelestialObjects/Entities/AsteroidEntity.lua` |
@@ -75,7 +75,7 @@ are geometry, not balance.
 ```toml
 [[item]]
 id = 6
-name = "Iron Ore"
+name = "Siderite"
 group = "Raw Materials"
 mass = 6
 energy_density = 1.68
@@ -89,10 +89,10 @@ price = 30
   asserts that every item has an id and that no two share one, so a mistake fails at load instead of
   quietly turning someone's cargo into something else. Ids 1–51 are the numbers the old
   registration-order scheme had given out, so nothing shifted when they were written down.
-- **Two names.** `name` is the lookup key with the spaces taken out (`Items.RawMaterials.IronOre`,
-  `def.name == "IronOre"`); `displayName` is the name as written (`"Iron Ore"`) and is what the UI
+- **Two names.** `name` is the lookup key with the spaces taken out (`Items.RawMaterials.Siderite`,
+  `def.name == "Siderite"`); `displayName` is the name as written (`"Siderite"`) and is what the UI
   and the logs show. Rewording an item is therefore free — only the id matters.
-- `Items:getByName(name)` finds an item by either spelling (`"Iron Ore"` or `"IronOre"`), which is
+- `Items:getByName(name)` finds an item by either spelling (`"Siderite"` or `"Siderite"`), which is
   how config and save data should name one.
 - `startEquilibriumPrice` is the market's starting equilibrium price. Items without one
   (only `Credit`) are not priced.
@@ -119,13 +119,13 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 
 | Item | Mass | E/mass | Energy | Price |
 |------|------|--------|--------|-------|
-| Silicate Ore | 4 | 1.3 | 5 | 20 |
-| Iron Ore | 6 | 1.68 | 10 | 30 |
-| Copper Ore | 7 | 1.74 | 12 | 35 |
-| Aluminum Ore | 4 | 1.6 | 6 | 25 |
-| Beryllium Ore | 4 | 1.45 | 6 | 40 |
-| Thorium Ore | 7 | 7.5 | 52 | 100 |
-| Carboniferous Ore | 6 | 1.4 | 8 | 28 |
+| Olivine | 4 | 1.3 | 5 | 20 |
+| Siderite | 6 | 1.68 | 10 | 30 |
+| Chalcopyrite | 7 | 1.74 | 12 | 35 |
+| Bauxite | 4 | 1.6 | 6 | 25 |
+| Beryl | 4 | 1.45 | 6 | 40 |
+| Monazite | 7 | 7.5 | 52 | 100 |
+| Chondrite | 6 | 1.4 | 8 | 28 |
 
 ### Refined Materials
 
@@ -241,8 +241,8 @@ context as `beltType`/`ringType`, which is what the composition's `ByType` rule 
 
 | Field type | Composition (weights sum to 1) |
 |------------|--------------------------------|
-| Rocky ring | Silicate Ore 0.45, Iron Ore 0.28, Carboniferous Ore 0.12, Aluminum Ore 0.1, Beryllium Ore 0.05 |
-| Icy ring | Water Ice 0.55, Silicate Ore 0.2, Hydrogen 0.1, Carboniferous Ore 0.05, Helium 0.05, Nitrogen 0.03, Oxygen 0.02 |
+| Rocky ring | Olivine 0.45, Siderite 0.28, Chondrite 0.12, Bauxite 0.1, Beryl 0.05 |
+| Icy ring | Water Ice 0.55, Olivine 0.2, Hydrogen 0.1, Chondrite 0.05, Helium 0.05, Nitrogen 0.03, Oxygen 0.02 |
 
 Its belts: rocky Silicate 0.5 / Iron 0.4 / Carboniferous 0.1; icy Water Ice 0.65 / Hydrogen 0.15 /
 Helium 0.1 / Carboniferous 0.05 / Silicate 0.05. `SinglePlanetWithBelt` and `PlanetShowcase` use
@@ -258,7 +258,7 @@ decides it, so every part of the game agrees:
 - `AsteroidFieldSystem` gives every rock it spawns near the player `Item` and `Quantity`
   components from it, refreshed as the miners work, so **the rock itself can be asked what it
   holds** — `AsteroidOre.ofEntity(entity)` returns the item and the units, and
-  `AsteroidOre.describeEntity(entity)` says it in words ("Iron Ore x1240", "Iron Ore, spent").
+  `AsteroidOre.describeEntity(entity)` says it in words ("Siderite x1240", "Siderite, spent").
   This is the hook a prospecting scanner reads;
 - a planet's ring is materialized as a child belt entity, so the composition lookup walks up to
   the parent that holds it.
@@ -270,13 +270,13 @@ logged at debug level when that happens):
 
 | Ore | Weight | Share |
 |-----|--------|-------|
-| Silicate Ore | 5 | 28.1% |
-| Iron Ore | 4 | 22.5% |
-| Aluminum Ore | 3 | 16.9% |
-| Carboniferous Ore | 2.5 | 14.0% |
-| Copper Ore | 2 | 11.2% |
-| Beryllium Ore | 1 | 5.6% |
-| Thorium Ore | 0.3 | 1.7% |
+| Olivine | 5 | 28.1% |
+| Siderite | 4 | 22.5% |
+| Bauxite | 3 | 16.9% |
+| Chondrite | 2.5 | 14.0% |
+| Chalcopyrite | 2 | 11.2% |
+| Beryl | 1 | 5.6% |
+| Monazite | 0.3 | 1.7% |
 
 Other `Config.game.mining` knobs: `rocksPerBelt = 24`, `unitsPerScale = 0.004` (a rock's size sets
 its unit count), `regrowPerSecond = 0.02`, `timePerUnit = 3.0` s to mine one unit, `sellTime = 8.0`
@@ -371,13 +371,13 @@ Classes: **Powerplant** (Legacy's P0), **Refinery** (P1), **Factory** (P2), **Dr
 | Powerplant | Fusion Reactor | Liquid Water x572 | Energy Cell x1000, Radioactive Waste x1 | 40 |
 | Powerplant | Waste Recycler | Waste x14 | Energy Cell x5 | 4 |
 | Refinery | Water Melter | Energy Cell x3, Water Ice x15 | Liquid Water x20 | 6 |
-| Refinery | Silicon Refinery | Energy Cell x1, Silicate Ore x2 | Silicon x1, Waste x6 | 12 |
-| Refinery | Carbon Refinery | Energy Cell x1, Carboniferous Ore x1 | Carbon x1, Waste x3 | 13 |
-| Refinery | Beryllium Refinery | Energy Cell x1, Beryllium Ore x1 | Beryllium x1, Waste x7 | 22 |
-| Refinery | Aluminum Refinery | Energy Cell x1, Aluminum Ore x1 | Aluminum x1, Waste x5 | 15 |
-| Refinery | Iron Refinery | Energy Cell x1, Iron Ore x1 | Iron x1, Waste x4 | 14 |
-| Refinery | Copper Refinery | Energy Cell x2, Copper Ore x3 | Copper x2, Anode Sludge x1, Waste x7 | 16 |
-| Refinery | Thorium Refinery | Energy Cell x2, Thorium Ore x2 | Thorium x1, Radioactive Waste x2, Waste x5 | 20 |
+| Refinery | Silicon Refinery | Energy Cell x1, Olivine x2 | Silicon x1, Waste x6 | 12 |
+| Refinery | Carbon Refinery | Energy Cell x1, Chondrite x1 | Carbon x1, Waste x3 | 13 |
+| Refinery | Beryllium Refinery | Energy Cell x1, Beryl x1 | Beryllium x1, Waste x7 | 22 |
+| Refinery | Aluminum Refinery | Energy Cell x1, Bauxite x1 | Aluminum x1, Waste x5 | 15 |
+| Refinery | Iron Refinery | Energy Cell x1, Siderite x1 | Iron x1, Waste x4 | 14 |
+| Refinery | Copper Refinery | Energy Cell x2, Chalcopyrite x3 | Copper x2, Anode Sludge x1, Waste x7 | 16 |
+| Refinery | Thorium Refinery | Energy Cell x2, Monazite x2 | Thorium x1, Radioactive Waste x2, Waste x5 | 20 |
 | Refinery | Hydrocarbon Refinery | Energy Cell x1, Biomass x1 | Hydrocarbons x1, Waste x15 | 14 |
 | Factory | Water Electrolyser | Energy Cell x1, Liquid Water x1 | Hydrogen x2, Oxygen x1 | 5 |
 | Factory | Steel Foundry | Energy Cell x1, Iron x1, Carbon x1 | Steel x1, Waste x4 | 13 |
@@ -403,7 +403,7 @@ credits out) was not ported: pirates earn by raiding.
 ### Feedstock items
 
 The chain needs five items between the ores and the built goods that the registry did not have at
-first: **Silicon**, **Carbon**, **Carboniferous Ore** (carbonaceous chondrite), **Beryllium** and
+first: **Silicon**, **Carbon**, **Chondrite** (carbonaceous chondrite), **Beryllium** and
 **Hydrocarbons**; **Lithium** and **Boron** came along with them as Legacy fillers. All seven are in
 the tables above now (ids 52–58), with Legacy's masses and energy densities. Legacy's "Petroleum"
 is this registry's **Hydrocarbons**: it is biomass cracked into fuel and plastics feedstock, and the
@@ -432,7 +432,7 @@ generated again; everything is keyed by `system id:station index`, which is stab
   run is worth (at least `factory.rentMinFee`). If the credits are not there when a run finishes,
   the station keeps the goods and the lease lapses.
 - **Inputs and outputs** are the hangar's: a line eats from it and fills it back up, so it stalls
-  with "needs Iron Ore x4" or "hangar full" rather than quietly spending money.
+  with "needs Siderite x4" or "hangar full" rather than quietly spending money.
 - **Crew is shared** with the station, its own lines first, so a rented line can read "no crew".
 - **While you are away** a lease keeps working: the time is credited when you come back to the
   system, up to `factory.offlineCatchUpMax` (an hour) of it.
@@ -501,7 +501,7 @@ the bounty on outlaws they kill. They are flown only while you are in their syst
 with the game, hull and shields as last seen.
 
 - **Combat drones** are built, not hired: launch one from the outpost's hangar, recall it back
-  into the hangar. No upkeep; destroyed is gone. The chain is deliberately hard: **Iridium Ore**
+  into the hangar. No upkeep; destroyed is gone. The chain is deliberately hard: **Iridosmine**
   (a trace in the standard systems' rocky belts and rings, none in the small ones) is refined
   into **Iridium**, which with infolytic chips, radioactive isotopes and a ship computer makes a
   **Drone Control Core**; a drydock puts the core, more iridium, steel, a pulse turret and a

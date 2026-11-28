@@ -72,14 +72,14 @@ end
 ---@field InfolyticChip ItemDefinition
 
 ---@class ItemsRawMaterials
----@field IridiumOre ItemDefinition
----@field SilicateOre ItemDefinition
----@field IronOre ItemDefinition
----@field CopperOre ItemDefinition
----@field AluminumOre ItemDefinition
----@field BerylliumOre ItemDefinition
----@field ThoriumOre ItemDefinition
----@field CarboniferousOre ItemDefinition
+---@field Iridosmine ItemDefinition
+---@field Olivine ItemDefinition
+---@field Siderite ItemDefinition
+---@field Chalcopyrite ItemDefinition
+---@field Bauxite ItemDefinition
+---@field Beryl ItemDefinition
+---@field Monazite ItemDefinition
+---@field Chondrite ItemDefinition
 
 ---@class ItemsRefinedMaterials
 ---@field Iridium ItemDefinition

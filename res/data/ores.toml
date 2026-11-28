@@ -17,44 +17,44 @@
 
 [fallback]
 ores = [
-    { item = "Silicate Ore", weight = 5 },
-    { item = "Iron Ore", weight = 4 },
-    { item = "Aluminum Ore", weight = 3 },
-    { item = "Copper Ore", weight = 2 },
+    { item = "Olivine", weight = 5 },
+    { item = "Siderite", weight = 4 },
+    { item = "Bauxite", weight = 3 },
+    { item = "Chalcopyrite", weight = 2 },
     # Carbonaceous chondrite: the commonest rock out there, and the carbon
     # feedstock the refineries want
-    { item = "Carboniferous Ore", weight = 2.5 },
-    { item = "Beryllium Ore", weight = 1 },
-    { item = "Thorium Ore", weight = 0.3 },
+    { item = "Chondrite", weight = 2.5 },
+    { item = "Beryl", weight = 1 },
+    { item = "Monazite", weight = 0.3 },
 ]
 
 # The small systems (one planet and its ring): the basic ores only
 [composition.basic_rocky]
 ores = [
-    { item = "Silicate Ore", weight = 0.45 },
-    { item = "Iron Ore", weight = 0.35 },
-    { item = "Carboniferous Ore", weight = 0.1 },
-    { item = "Aluminum Ore", weight = 0.1 },
+    { item = "Olivine", weight = 0.45 },
+    { item = "Siderite", weight = 0.35 },
+    { item = "Chondrite", weight = 0.1 },
+    { item = "Bauxite", weight = 0.1 },
 ]
 
 # Standard systems: a planet's rocky ring
 [composition.standard_ring_rocky]
 ores = [
-    { item = "Silicate Ore", weight = 0.45 },
-    { item = "Iron Ore", weight = 0.28 },
-    { item = "Carboniferous Ore", weight = 0.12 },
-    { item = "Aluminum Ore", weight = 0.1 },
-    { item = "Beryllium Ore", weight = 0.05 },
-    { item = "Iridium Ore", weight = 0.02 },
+    { item = "Olivine", weight = 0.45 },
+    { item = "Siderite", weight = 0.28 },
+    { item = "Chondrite", weight = 0.12 },
+    { item = "Bauxite", weight = 0.1 },
+    { item = "Beryl", weight = 0.05 },
+    { item = "Iridosmine", weight = 0.02 },
 ]
 
 # Standard systems: a planet's icy ring
 [composition.standard_ring_icy]
 ores = [
     { item = "Water Ice", weight = 0.55 },
-    { item = "Silicate Ore", weight = 0.2 },
+    { item = "Olivine", weight = 0.2 },
     { item = "Hydrogen", weight = 0.1 },
-    { item = "Carboniferous Ore", weight = 0.05 },
+    { item = "Chondrite", weight = 0.05 },
     { item = "Helium", weight = 0.05 },
     { item = "Nitrogen", weight = 0.03 },
     { item = "Oxygen", weight = 0.02 },
@@ -63,10 +63,10 @@ ores = [
 # Standard systems: a rocky asteroid belt around the star
 [composition.standard_belt_rocky]
 ores = [
-    { item = "Silicate Ore", weight = 0.5 },
-    { item = "Iron Ore", weight = 0.4 },
-    { item = "Carboniferous Ore", weight = 0.1 },
-    { item = "Iridium Ore", weight = 0.03 },
+    { item = "Olivine", weight = 0.5 },
+    { item = "Siderite", weight = 0.4 },
+    { item = "Chondrite", weight = 0.1 },
+    { item = "Iridosmine", weight = 0.03 },
 ]
 
 # Standard systems: an icy belt, out past the frost line
@@ -75,6 +75,6 @@ ores = [
     { item = "Water Ice", weight = 0.65 },
     { item = "Hydrogen", weight = 0.15 },
     { item = "Helium", weight = 0.1 },
-    { item = "Carboniferous Ore", weight = 0.05 },
-    { item = "Silicate Ore", weight = 0.05 },
+    { item = "Chondrite", weight = 0.05 },
+    { item = "Olivine", weight = 0.05 },
 ]

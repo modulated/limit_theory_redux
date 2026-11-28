@@ -81,8 +81,8 @@ drops = [
 [role.miner]
 drops = [
     { item = "Hull Scrap", chance = 0.9, min = 6, max = 14 },
-    { item = "Iron Ore", chance = 0.6, min = 10, max = 40 },
-    { item = "Silicate Ore", chance = 0.5, min = 10, max = 40 },
+    { item = "Siderite", chance = 0.6, min = 10, max = 40 },
+    { item = "Olivine", chance = 0.5, min = 10, max = 40 },
     { item = "Mining Laser", chance = 0.08 },
 ]
 

@@ -26,7 +26,7 @@ end)
 ---@class MiningRock
 ---@field position table {x, y, z}
 ---@field radius number
----@field item string the ore's display name ("Iron Ore")
+---@field item string the ore's display name ("Siderite")
 ---@field itemId integer the ore's item id
 ---@field field Entity the belt or ring the rock belongs to
 ---@field yield number units left

@@ -166,8 +166,8 @@ function AsteroidOre.ofEntity(entity)
     return ore, quantityCmp and math.floor(quantityCmp:getQuantity()) or 0
 end
 
---- A rock's contents in words, e.g. "Iron Ore x1240" ("nothing" when it holds
---- no ore, "Iron Ore, spent" when its yield is gone).
+--- A rock's contents in words, e.g. "Siderite x1240" ("nothing" when it holds
+--- no ore, "Siderite, spent" when its yield is gone).
 ---@param entity Entity an asteroid entity
 ---@return string
 function AsteroidOre.describeEntity(entity)
