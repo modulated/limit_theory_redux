@@ -94,6 +94,17 @@ function ChaseCameraController:onPreRender(dt)
 
     local shipPos = rb:getPos()
     local shipRot = rb:getRot()
+    -- A ship whose physics went bad (not a number anywhere in its transform)
+    -- is not followed: the camera holds where it was, and says once what
+    -- was wrong, which is the lead to where it went bad
+    if not isFinitePosition(shipPos) or not isFiniteQuat(shipRot) then
+        if not self.reportedBadShip then
+            self.reportedBadShip = true
+            Log.Warn("ChaseCamera: the ship's %s is not finite (pos %s, rot %s); holding the camera",
+                isFinitePosition(shipPos) and "rotation" or "position", tostring(shipPos), tostring(shipRot))
+        end
+        return
+    end
     local shipFwd = shipRot:getForward()
     local shipRt  = shipRot:getRight()
     local shipUp  = shipRot:getUp()
@@ -109,8 +120,11 @@ function ChaseCameraController:onPreRender(dt)
     -- back in as it winds down
     local drive = self.target:get(ConstructComponents.TravelDrive)
     local mult = drive and drive:getCurrentMult() or 1
+    if not isFiniteNumber(mult) then mult = 1 end
     local pullT = mult > 1.5 and math.min(1, math.log(mult) / math.log(40000)) or 0
     self.warpPull = self.warpPull + (pullT - self.warpPull) * (1.0 - math.exp(-2.0 * dt))
+    if not isFiniteNumber(self.warpPull) then self.warpPull = 0 end
+    if not isFiniteNumber(self.radius) then self.radius = self.radiusT end
     local scale = 0.25 * self.radius * shipRadius * (1 + 0.35 * self.warpPull)
     -- Free look (right button held) swings the camera round the ship
     local prx, pry, prz = FreeLook.apply(self.posRel.x, self.posRel.y, self.posRel.z)
@@ -138,7 +152,8 @@ function ChaseCameraController:onPreRender(dt)
         shipPos.z - self.posT.z
     )
     local len = lookDir:length()
-    if len < 1e-6 then
+    -- (written so a NaN length takes this branch too)
+    if not (len > 1e-6) then
         lookDir = shipFwd
     else
         lookDir = lookDir:normalize()
