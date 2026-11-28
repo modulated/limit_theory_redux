@@ -1391,12 +1391,123 @@ function LimitTheoryRedux:commissionHull(hull)
     return true
 end
 
+------------------------------------------------------------------------------
+-- The debug menu (~, UI/HmGui/Views/Gameplay/DebugMenu.lua): for testing
+------------------------------------------------------------------------------
+
+function LimitTheoryRedux:toggleDebugMenu()
+    self.debugMenuOpen = not self.debugMenuOpen
+end
+
+---@param n number
+function LimitTheoryRedux:debugGiveCredits(n)
+    PlayerWallet:add(n, "Debug")
+    self:notify(string.format("Debug: +%s", PlayerWallet.format(n)), { 1.0, 0.6, 0.25 })
+end
+
+--- Units of an item into the hold (the hangar when docked), room or not.
+---@param def ItemDefinition
+---@param n integer
+function LimitTheoryRedux:debugGiveItem(def, n)
+    local store = self.docked and self.docked.key and PlayerFactories:hangar(self.docked.key) or PlayerCargo:get()
+    store:restore(def.id, n)
+    self:notify(string.format("Debug: +%d %s (%s)", n, def.displayName, self.docked and "hangar" or "hold"),
+        { 1.0, 0.6, 0.25 })
+end
+
+--- A new, empty ship of a hull, flown where the ship is now (docked or not).
+---@param hull HullDefinition
+function LimitTheoryRedux:debugFlyHull(hull)
+    self.pendingShipChange = { debugHull = hull }
+end
+
+--- The best weapon that fits in every mount of the ship (tools stay), then
+--- the ship rebuilt so every mount is in its battery.
+function LimitTheoryRedux:debugArmShip()
+    local ship = PlayerFleet:active()
+    if not ship or not self.playerShip then return end
+    PlayerFleet:record(self.playerShip)
+    local order = { sm = 1, m = 2, l = 3, xl = 4 }
+    local weapons = {}
+    for _, def in ipairs(Fittings:getAll()) do
+        if def:isWeapon() and not def:isTool() then weapons[#weapons + 1] = def end
+    end
+    local armed = 0
+    for _, mount in ipairs(ShipFittingSystem:mounts(self.playerShip)) do
+        local current = ship.weapons[mount.mountId] and Fittings:get(ship.weapons[mount.mountId])
+        if not (current and current:isTool()) then
+            local best = nil
+            for _, def in ipairs(weapons) do
+                if ShipFittingSystem:weaponFits(def, mount.sizeClass) and (not best
+                        or (order[def.sizeClass] or 0) > (order[best.sizeClass] or 0)) then
+                    best = def
+                end
+            end
+            if best then
+                ship.weapons[mount.mountId] = best.id
+                armed = armed + 1
+            end
+        end
+    end
+    self.pendingShipChange = { debugRebuild = true }
+    self:notify(string.format("Debug: %d mount(s) armed", armed), { 1.0, 0.6, 0.25 })
+end
+
+function LimitTheoryRedux:debugRepair()
+    if not self.playerShip then return end
+    local health = self.playerShip:get(CoreComponentsAll.Health)
+    if health then health:setCurrentHealth(health:getMaxHealth()) end
+    local defense = self.playerShip:get(ConstructComponents.Defense)
+    if defense then defense:setCurrentShield(defense:getMaxShield()) end
+end
+
+--- An NPC of a role beside the ship.
+---@param role string
+function LimitTheoryRedux:debugSpawn(role)
+    local here = self:shipPosition()
+    if not (here and self.npcs) then return end
+    self.npcs:spawnWithEscorts(role, self.npcs:near(here, 3))
+    self:notify("Debug: spawned a " .. role, { 1.0, 0.6, 0.25 })
+end
+
+--- Straight to a system: no gate, no drive, no fuel.
+---@param systemId integer
+function LimitTheoryRedux:debugJump(systemId)
+    if systemId == self.currentSystemId or not self.galaxy then return end
+    if self.docked then
+        self:notify("Debug: undock first.", { 1.0, 0.6, 0.25 })
+        return
+    end
+    self.debugMenuOpen = false
+    self:startJump({ destination = self.galaxy.systems[systemId] }, true)
+end
+
 --- Carry out a queued change of ship (`flyShip`, `commissionHull`), between
 --- frames.
 function LimitTheoryRedux:processShipChange()
     local pending = self.pendingShipChange
     if not pending then return end
     self.pendingShipChange = nil
+    -- The debug menu's: a new ship of a hull, or the same one rebuilt, where
+    -- it is, docked or not
+    if pending.debugHull or pending.debugRebuild then
+        local rb = self.playerShip and self.playerShip:get(PhysicsComponents.RigidBody)
+        rb = rb and rb:getRigidBody()
+        if not rb then return end
+        local p, facing = rb:getPos(), rb:getRot():getForward()
+        if pending.debugHull then
+            PlayerFleet:record(self.playerShip)
+            local ship = PlayerFleet:commission(pending.debugHull, nil)
+            if ship then PlayerFleet:setActive(ship, nil) end
+        end
+        local dock = self.docked
+        self:respawnPlayerShip(Position(p.x, p.y, p.z), facing)
+        if dock then self:dockPlayer(dock) end
+        if pending.debugHull then
+            self:notify("Debug: now flying a " .. pending.debugHull.displayName, { 1.0, 0.6, 0.25 })
+        end
+        return
+    end
     local dock = self.docked
     if not dock then
         self:notify("Ships are changed at a station.", { 1.0, 0.7, 0.3 })
@@ -1535,6 +1646,10 @@ end
 --- was anything; with nothing open, Escape brings up the game menu instead.
 ---@return boolean
 function LimitTheoryRedux:dismissOpenUI()
+    if self.debugMenuOpen then
+        self.debugMenuOpen = false
+        return true
+    end
     if self:confirmationShowing() then
         self:answerConfirmation(false)
         return true
@@ -1575,6 +1690,7 @@ function LimitTheoryRedux:updateOverview(dt)
     -- The cursor is the UI's while the overview or a question is on screen
     local overview = self:overviewShowing()
     local showing = overview or self:confirmationShowing() or self:windowsShowing()
+        or (self.debugMenuOpen and not self.docked)
     if showing ~= (self.overviewHoldsCursor == true) then
         self.overviewHoldsCursor = showing
         if self.player then self.player:setMouseSteering(not showing) end
@@ -4922,6 +5038,8 @@ function LimitTheoryRedux:onInput(data)
     if self.pauseMenuOpen then return end
     -- Typing in a field (an order's units): the keys are the field's
     if Gui:hasActiveInput() then return end
+    -- ~: the debug menu
+    if Input:isPressed(Button.KeyboardBackquote) then self:toggleDebugMenu() end
 
     GeneralActions.CycleMapMode:update(dt)
     GeneralActions.AutoPilotToggle:update(dt)
@@ -5139,6 +5257,8 @@ function LimitTheoryRedux:onStateSim(data)
     -- The player's shields recharge (DefenseComponent:update had no caller)
     local playerDefense = self.playerShip:get(ConstructComponents.Defense)
     if playerDefense and not self.docked then playerDefense:update(dt) end
+    -- Debug: nothing hurts the ship
+    if self.debugGod then self:debugRepair() end
     Profiler.End()
     -- NPC ships fly (kinematic) before the physics step, like scenario things
     Profiler.Begin('Sim.NPCs')

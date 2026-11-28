@@ -1654,4 +1654,8 @@ Station:addContent({
     end
 })
 
+-- The debug menu (~) over the station screen too
+local DebugMenu = require("UI.HmGui.Views.Gameplay.DebugMenu")
+Station:addContent({ state = {}, render = function() DebugMenu.render() end })
+
 return Station

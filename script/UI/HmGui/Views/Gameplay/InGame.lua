@@ -378,6 +378,10 @@ InGame:addContent({ state = {}, render = function() ActionBarPanel.render() end 
 local WindowsPanel = require("UI.HmGui.Views.Gameplay.WindowsPanel")
 InGame:addContent({ state = {}, render = function() WindowsPanel.render() end })
 
+-- The debug menu (~), top right
+local DebugMenu = require("UI.HmGui.Views.Gameplay.DebugMenu")
+InGame:addContent({ state = {}, render = function() DebugMenu.render() end })
+
 -- The targets, top centre (X clears one; right click for its menu)
 local TargetsPanel = require("UI.HmGui.Views.Gameplay.TargetsPanel")
 InGame:addContent({ state = {}, render = function() TargetsPanel.render() end })
