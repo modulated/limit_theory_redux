@@ -290,7 +290,16 @@ end
 ---@return T|nil
 function Registry:add(entity, component)
     local entityId = entity.id
-    local archetype = component:getArchetype()
+    -- A component class given where an instance belongs (`add(Empty)` for
+    -- `add(Empty())`): made into one, as was meant
+    if rawtype(component) == "table" and rawget(component, "__type") == component then
+        component = component()
+    end
+    local archetype = classOf(component)
+    if not archetype then
+        error(string.format("Registry:add: %s is not a component (an instance of a component class)",
+            typeName(component)), 2)
+    end
 
     local entityComponentIndex = self.entities[entityId]
     if not entityComponentIndex then return nil end

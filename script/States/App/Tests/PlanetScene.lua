@@ -64,7 +64,7 @@ function PlanetScene:onInit()
     local skyboxFn = function(entity, blendMode)
         local placeholder = entity:get(CoreComponents.Empty)
         if not placeholder then
-            placeholder = entity:add(CoreComponents.Empty)
+            placeholder = entity:add(CoreComponents.Empty())
         end
 
         if not placeholder.envMap then
