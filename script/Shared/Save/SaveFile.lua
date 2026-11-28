@@ -296,36 +296,58 @@ function SaveFile.write(path, meta, state)
     return true
 end
 
+--- Where a save may be, best first: the file; else (a write was cut off
+--- between moving the old save aside and putting the new one in place) the
+--- new one, written and checked before the swap; else the old one, the
+--- backup. A damaged file falls back the same way.
+---@param path string
+---@return { path: string, fromBackup: boolean }[]
+local function candidates(path)
+    return {
+        { path = path, fromBackup = false },
+        { path = path .. ".tmp", fromBackup = false, onlyIfMissing = true },
+        { path = path .. ".bak", fromBackup = true },
+    }
+end
+
+--- The first candidate that reads with `unpack`.
+---@param path string
+---@param unpack function
+---@return any first, any second, boolean|nil fromBackup
+local function readBest(path, unpack)
+    local missing = not SaveFile.exists(path)
+    local firstProblem = nil
+    for _, c in ipairs(candidates(path)) do
+        if not c.onlyIfMissing or missing then
+            local bytes = readAll(c.path)
+            if bytes then
+                local a, b = unpack(bytes)
+                if a then return a, b, c.fromBackup end
+                firstProblem = firstProblem or b
+            end
+        end
+    end
+    return nil, firstProblem or "no file"
+end
+
 --- Read a save's summary (for a list of saves).
 ---@param path string
 ---@return table|nil meta
 ---@return string|nil problem
 function SaveFile.readMeta(path)
-    local bytes = readAll(path)
-    if not bytes then return nil, "no file" end
-    return SaveFile.unpackMeta(bytes)
+    local meta, problem = readBest(path, SaveFile.unpackMeta)
+    return meta, meta and nil or problem
 end
 
 --- Read a whole save. A damaged file is reported, never half-loaded; when the
---- file is damaged and a backup is there, the backup is read instead and the
---- third result says so.
+--- file is damaged or missing and another (`candidates`) is good, that is
+--- read instead and the third result says whether it was the backup.
 ---@param path string
 ---@return table|nil meta
 ---@return table|string state, or the problem
 ---@return boolean|nil fromBackup
 function SaveFile.read(path)
-    local bytes = readAll(path)
-    if bytes then
-        local meta, state = SaveFile.unpack(bytes)
-        if meta then return meta, state, false end
-        local backupBytes = readAll(path .. ".bak")
-        if backupBytes then
-            local backupMeta, backupState = SaveFile.unpack(backupBytes)
-            if backupMeta then return backupMeta, backupState, true end
-        end
-        return nil, state
-    end
-    return nil, "no file"
+    return readBest(path, SaveFile.unpack)
 end
 
 return SaveFile
