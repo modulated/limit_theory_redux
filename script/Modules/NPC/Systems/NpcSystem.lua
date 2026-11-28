@@ -69,9 +69,9 @@ function NpcSystem:setPlayer(entity)
     self.player = entity and { entity = entity, faction = Factions.Player } or nil
 end
 
-local function isEntity(target)
-    return type(target) == "table" and target.isValid ~= nil
-end
+--- A ship (an entity), as opposed to a place {x, y, z}: Entity.is, never a
+--- test of type() or of the methods it has (see Core/Structures/Class.lua).
+local isEntity = require("Core.ECS.Entity").is
 
 --- Where a target is: a position {x, y, z} as it is, a ship's body
 --- position; nil for a ship that is gone.
@@ -195,6 +195,30 @@ function NpcSystem:nearestDock(npc)
     local best, bestDist = nil, math.huge
     for _, dock in ipairs(self.places.docks or {}) do
         if self:canDock(npc, dock) then
+            local d = self:distance(npc, dock.position)
+            if d < bestDist then best, bestDist = dock, d end
+        end
+    end
+    return best
+end
+
+--- The nearest station a miner may sell a hold of `itemId` at: any
+--- generated station (it takes all of it into its store), or one of the
+--- player's outposts if the owner bids for at least `units` of it at the
+--- miners' floor price or better (an outpost buys only what is bid for).
+---@param npc table
+---@param itemId integer|nil
+---@param units integer
+function NpcSystem:sellDock(npc, itemId, units)
+    local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
+    local best, bestDist = nil, math.huge
+    for _, dock in ipairs(self.places.docks or {}) do
+        local ok = self:canDock(npc, dock)
+        if ok and dock.outpost then
+            ok = itemId ~= nil and MarketSystem:playerDemand(dock.entity, itemId,
+                MarketSystem:minerFloor(itemId)) >= math.max(1, units)
+        end
+        if ok then
             local d = self:distance(npc, dock.position)
             if d < bestDist then best, bestDist = dock, d end
         end
@@ -413,8 +437,14 @@ end
 
 --- Remove an NPC ship now (its battery goes with it on the next weapons step).
 ---@param record table
-function NpcSystem:remove(record)
+---@param why string|nil for the log (testing: debug.traceNpcLoss)
+function NpcSystem:remove(record, why)
     record.removed = true
+    if Config.game.debug and Config.game.debug.traceNpcLoss then
+        Log.Info("NPC removed: %s (%s) -- %s", tostring(record.label), tostring(record.role), why or "?")
+    end
+    -- What NpcSystem destroys itself is not a loss to trace
+    record.removing = true
     self.byEntity[record.entity] = nil
     for i, r in ipairs(self.records) do
         if r == record then table.remove(self.records, i) break end
@@ -447,16 +477,50 @@ function NpcSystem:mapEntries()
     local list = {}
     for _, record in ipairs(self.records) do
         if not record.dead and not record.pilot.docked then
-            list[#list + 1] = { entity = record.entity, label = record.label, color = record.labelEntry.color }
+            list[#list + 1] = { entity = record.entity, label = record.label, color = record.labelEntry.color,
+                faction = record.faction, role = record.role, record = record,
+                sizeClass = record.pilot.stats.sizeClass or "medium" }
         end
     end
     return list
 end
 
+--- How loud a ship is to sensors, 0..1: its hull's size, and what it is
+--- doing. Firing and mining are loud, running hard a little louder; a
+--- pirate lying in wait among the rocks of a field is hard to hear.
+--- (LimitTheoryRedux:mapNpcs turns it into how far off the signature shows,
+--- how far off the ship is identified, and how closely it is placed.)
+---@param record table
+---@return number loudness, boolean hiding
+function NpcSystem:loudness(record)
+    local stats = record.pilot.stats
+    local loud = ({ small = 0.3, medium = 0.5, large = 0.7 })[stats.sizeClass or "medium"] or 0.5
+    local activity = record.pilot:getActivity() or ""
+    local battery = record.battery
+    if battery and ((battery.projectiles and #battery.projectiles > 0) or (battery.beams and #battery.beams > 0)) then
+        loud = loud + 0.35
+    end
+    if activity:find("^Mining") then loud = loud + 0.2 end
+    local v = record.pilot.velocity
+    if v and stats.maxSpeed and math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) > stats.maxSpeed * 0.7 then
+        loud = loud + 0.1
+    end
+    local hiding = false
+    if record.lurkSpot and record.body and (activity == "Lurking" or activity == "Marauding") then
+        local p, l = record.body:getPos(), record.lurkSpot
+        local dx, dy, dz = p.x - l.x, p.y - l.y, p.z - l.z
+        if dx * dx + dy * dy + dz * dz < 9 then
+            hiding = true
+            loud = loud - 0.35
+        end
+    end
+    return math.max(0.05, math.min(1, loud)), hiding
+end
+
 --- Remove every NPC (the scene is going).
 function NpcSystem:clear()
     for i = #self.records, 1, -1 do
-        self:remove(self.records[i])
+        self:remove(self.records[i], "the scene was cleared")
     end
     self.records = {}
     self.player = nil
@@ -507,7 +571,7 @@ function NpcSystem:spawnWithEscorts(role, spot)
 end
 
 -- The roles in the order a system is filled and topped up
-local ROLES = { "security", "trader", "miner", "pirate", "pirateMerchant" }
+local ROLES = { "security", "trader", "miner", "pirate", "pirateScout", "pirateMerchant" }
 
 --- Fill the system with the NPCs its hostility level calls for.
 ---@param level table Config.game.hostility.levels[n]
@@ -538,7 +602,7 @@ end
 function NpcSystem:replenishOne()
     local level = self.level
     if not level or #self.places.gates == 0 then return end
-    for _, role in ipairs({ "pirate", "pirateMerchant", "trader", "miner", "security" }) do
+    for _, role in ipairs({ "pirate", "pirateScout", "pirateMerchant", "trader", "miner", "security" }) do
         if self:count(role) < (level.npcs[role] or 0) then
             local gate = self.places.gates[self.rng:getInt(1, #self.places.gates)]
             self:spawnWithEscorts(role, self:near(gate.position, gate.radius * 3))
@@ -614,8 +678,23 @@ function NpcSystem:update(dt)
             if defense and not record.dead then defense:update(dt) end
 
             if not self:isAlive(record.entity) then
+                if Config.game.debug and Config.game.debug.traceNpcLoss then
+                    -- Every part of isAlive's verdict, and the verdict again
+                    local e = record.entity
+                    local valid = isEntity(e) and e:isValid()
+                    local health = valid and e:get(CoreComponents.Health)
+                    Log.Info("NPC lost: %s (%s): type %s, is an entity %s, valid %s, health %s (%s of %s, "
+                        .. "isDestroyed %s), isAlive again %s",
+                        tostring(record.label), tostring(record.role), typeName(e),
+                        tostring(isEntity(e)), tostring(valid),
+                        tostring(health), tostring(health and health:getCurrentHealth()),
+                        tostring(health and health:getMaxHealth()),
+                        tostring(health and health:isDestroyed()), tostring(self:isAlive(e)))
+                end
                 -- Destroyed: the weapon system explodes it; the wreck goes later
                 record.dead = Config.game.npc.wreckTime
+                -- What it leaves behind (LimitTheoryRedux: a cargo canister)
+                if self.game and self.game.onNpcDestroyed then self.game:onNpcDestroyed(record) end
                 record.pilot:clearActions(record)
                 record.pilot:clearGoal()
                 if record.battery then record.battery:setAIActive(false) end
@@ -650,13 +729,13 @@ function NpcSystem:update(dt)
         local record = self.records[i]
         if record.dead then
             record.dead = record.dead - dt
-            if record.dead <= 0 then self:remove(record) end
+            if record.dead <= 0 then self:remove(record, "wreck cleared") end
         elseif record.pilot.leaving then
             -- Its guards jump out with it
             for _, guard in ipairs(record.guards or {}) do
                 if not guard.dead and not guard.removed then guard.pilot.leaving = true end
             end
-            self:remove(record)
+            self:remove(record, "left through a gate")
         end
     end
 

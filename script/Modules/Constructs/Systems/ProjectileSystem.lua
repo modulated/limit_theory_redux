@@ -269,7 +269,8 @@ function ProjectileSystem:update(state, dt)
         -- registry (multi-contact): the closest segment-sphere intersection
         -- along this step wins. Guided projectiles keep their proximity
         -- bonus against their own target; unguided shots hit whatever they
-        -- actually touch. The projectile's own source entity is excluded.
+        -- actually touch. The turret that fired it and the ship carrying
+        -- that turret are excluded.
         local Registry = require("Core.ECS.Registry")
         local CoreComponents = require("Modules.Core.Components")
         local ConstructComponents = require("Modules.Constructs.Components")
@@ -277,7 +278,10 @@ function ProjectileSystem:update(state, dt)
         for entity, targetable in
             Registry:iterEntities(ConstructComponents.Targetable)
         do
-            if entity ~= component.source
+            -- By id: each Entity is a fresh handle, so `==` on the handles
+            -- would never match
+            if not (component.source and entity.id == component.source.id)
+                and not (component.sourceShip and entity.id == component.sourceShip.id)
                 and targetable:isEnabled()
             then
                 local health = entity:get(CoreComponents.Health)
@@ -286,7 +290,8 @@ function ProjectileSystem:update(state, dt)
                     local contactRadius = rbComponent and rbComponent:getRadius() or 0
                     local guidance = component.guidance
                     if guidance and guidance.proximityRadius
-                        and component.targetEntity == entity
+                        and component.targetEntity
+                        and component.targetEntity.id == entity.id
                     then
                         contactRadius = math.max(
                             contactRadius, guidance.proximityRadius)
@@ -343,7 +348,8 @@ function ProjectileSystem:update(state, dt)
                 end
                 -- Who hit what, and whether this was the killing blow (CombatLog)
                 if wasAlive and state.reportDamage then
-                    state:reportDamage(bestHitEntity, totalDamage, remaining, impactHealth:isDestroyed())
+                    state:reportDamage(bestHitEntity, totalDamage, remaining, impactHealth:isDestroyed(),
+                        projectile.mountId)
                 end
                 -- Impact effect: shield shimmer vs hull strike,
                 -- data-driven from the projectile visual.impact def.
@@ -398,7 +404,8 @@ function ProjectileSystem:applyImpact(state, projectile, hit, deferTargetDestroy
     end
     if wasAlive and state.reportDamage then
         local damage = projectile.component:getDamage()
-        state:reportDamage(component.targetEntity, damage, damage, health:isDestroyed())
+        state:reportDamage(component.targetEntity, damage, damage, health:isDestroyed(),
+            projectile.mountId)
     end
 
     state.lastImpact = {

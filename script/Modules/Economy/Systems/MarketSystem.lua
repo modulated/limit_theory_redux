@@ -2,6 +2,7 @@ local Items = require("Shared.Registries.Items")
 local Economy = require("Modules.Economy.Components")
 local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
+local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
 
 --- The market: every station has an order book, and what a thing is worth
 --- there is what someone will pay for it.
@@ -40,6 +41,100 @@ MarketSystem.player = nil
 ---@param accessors table { hangar = fun(key: string): StockComponent, cargo = fun(): StockComponent }
 function MarketSystem:setPlayerAccess(accessors)
     self.player = accessors
+end
+
+------------------------------------------------------------------------------
+-- An order's life
+--
+--   (new) --rest--> open --fill (part)--> open
+--     |               |---fill (all)----> filled      (final)
+--     |               |---cancel--------> cancelled   (final)
+--     |               |---lapse---------> expired     (final)
+--     |               '---park----------> parked --unpark--> open
+--     '--fill (all) --> filled; a market order's remainder --> cancelled
+--
+-- Every change of state goes through `transition`, which refuses any other
+-- move (and logs it), and for the player's orders checks the escrow: while
+-- an order is open or parked, a sell holds exactly its remaining units and a
+-- buy exactly its remaining units at its price in credits. So the player's
+-- goods and credits are never lost or made: they are in the hangar, the
+-- wallet, held by an order, or traded.
+------------------------------------------------------------------------------
+
+---@enum OrderState
+MarketSystem.OrderState = {
+    New = "new",
+    Open = "open",
+    Parked = "parked",
+    Filled = "filled",
+    Cancelled = "cancelled",
+    Expired = "expired",
+}
+local S = MarketSystem.OrderState
+
+local TRANSITIONS = {
+    [S.New] = { [S.Open] = true, [S.Filled] = true, [S.Cancelled] = true },
+    [S.Open] = { [S.Filled] = true, [S.Cancelled] = true, [S.Expired] = true, [S.Parked] = true },
+    [S.Parked] = { [S.Open] = true },
+}
+
+--- Whether a player's order holds what it should for what is left of it.
+---@param order MarketOrder
+---@return boolean ok, string|nil problem
+function MarketSystem.escrowHolds(order)
+    if order.owner ~= "player" then return true end
+    local state = order.state
+    if state ~= S.Open and state ~= S.Parked then
+        if (order.escrowUnits or 0) ~= 0 or (order.escrowCredits or 0) ~= 0 then
+            return false, string.format("a %s order still holds %d units, %d credits",
+                tostring(state), order.escrowUnits or 0, order.escrowCredits or 0)
+        end
+        return true
+    end
+    if order.side == "sell" and (order.escrowUnits or 0) ~= order.units then
+        return false, string.format("a sell order of %d units holds %d", order.units, order.escrowUnits or 0)
+    end
+    if order.side == "buy" and (order.escrowCredits or 0) ~= order.price * order.units then
+        return false, string.format("a buy order of %d at %d holds %d credits",
+            order.units, order.price, order.escrowCredits or 0)
+    end
+    return true
+end
+
+--- Move an order to another state, if that is a move it can make.
+---@param order MarketOrder
+---@param to string an OrderState
+---@return boolean moved
+function MarketSystem.transition(order, to)
+    -- An order from a save made before orders had states: it was open
+    local from = order.state or (order.expiresAt and S.Open or S.New)
+    if not (TRANSITIONS[from] and TRANSITIONS[from][to]) then
+        Log.Error("Market: an order of item %s cannot go from %s to %s",
+            tostring(order.itemId), tostring(from), tostring(to))
+        return false
+    end
+    order.state = to
+    local ok, problem = MarketSystem.escrowHolds(order)
+    if not ok then Log.Error("Market: %s (item %s)", problem, tostring(order.itemId)) end
+    return true
+end
+
+--- Give a player's order's goods and credits back, as it ends.
+---@param key string|nil
+---@param order MarketOrder
+local function release(key, order)
+    if order.side == "buy" and (order.escrowCredits or 0) > 0 then
+        PlayerWallet:add(order.escrowCredits, "Order closed: credits back")
+    elseif order.side == "sell" and (order.escrowUnits or 0) > 0 then
+        -- Back in full: they came out of this hangar (room or not)
+        local hangar = MarketSystem:playerStore(key)
+        if hangar then
+            hangar:restore(order.itemId, order.escrowUnits)
+        elseif MarketSystem.player and MarketSystem.player.cargo then
+            MarketSystem.player.cargo():restore(order.itemId, order.escrowUnits)
+        end
+    end
+    order.escrowCredits, order.escrowUnits = 0, 0
 end
 
 ---@param station Entity
@@ -119,28 +214,44 @@ local function settle(station, key, buy, sell, units, price)
     local hangar = MarketSystem:playerStore(key)
     local gross = price * units
     local walletChange = 0
+    -- At the player's own outpost the owner pays no tax, and the tax anyone
+    -- else pays is the owner's
+    local owned = PlayerStations.isOwnedKey(key)
 
     -- The seller hands over the goods
     if sell.owner == "station" then
         if stock then stock:remove(sell.itemId, units) end
+    elseif sell.owner == "npc" then
+        -- From the NPC's own hold; it pays the tax out of the proceeds
+        local tax = math.floor(gross * cfg.salesTax)
+        if owned and tax > 0 then
+            PlayerWallet:add(tax, "Outpost tax")
+            PlayerStations:recordIncome(key, "taxes", tax)
+            walletChange = walletChange + tax
+        end
     else
         -- A player's sell order holds its goods already (escrowUnits)
         sell.escrowUnits = math.max(0, (sell.escrowUnits or units) - units)
-        local tax = math.floor(gross * cfg.salesTax)
+        local tax = owned and 0 or math.floor(gross * cfg.salesTax)
         PlayerWallet:add(gross - tax, "Market sale")
         walletChange = walletChange + (gross - tax)
+        if owned then PlayerStations:recordIncome(key, "sales", gross) end
     end
 
     -- The buyer takes them
     if buy.owner == "station" then
         if stock then stock:add(buy.itemId, units) end
         StationTradeSystem:invalidate(station)
+    elseif buy.owner == "npc" then
+        -- Into the NPC's own hold: nothing here to do
     else
+        if owned then PlayerStations:recordIncome(key, "purchases", gross) end
         if hangar then
+            -- A fill is never more than the hangar has room for (`submit`)
             local added = hangar:add(buy.itemId, units)
-            if added < units and stock then
-                -- Nowhere to put the rest: the station keeps it
-                stock:add(buy.itemId, units - added)
+            if added < units then
+                Log.Error("Market: a fill of %d did not fit the hangar (%d did)", units, added)
+                hangar:restore(buy.itemId, units - added)
             end
         end
         -- Paid out of the credits the order escrowed
@@ -200,7 +311,7 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
 
     local incoming = {
         side = side, itemId = itemId, price = price, units = units, owner = owner,
-        placedAt = self.now or 0,
+        placedAt = self.now or 0, state = S.New,
     }
     local otherSide = side == "buy" and "sell" or "buy"
     local hangar = self:playerStore(key)
@@ -224,9 +335,26 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
         end
     end
 
-    -- Cross the book: trade against what is already there, at its price
+    -- Cross the book: trade against what is already there, at its price --
+    -- never against an order of the same owner (a player whose own bid tops
+    -- the book would otherwise sell into it, paying tax and fees to move
+    -- their own goods and credits round in a circle)
+    -- A player can only buy what their hangar has room for: this purchase,
+    -- or a buy order of theirs that this sale fills
+    local function roomFor()
+        if not hangar then return math.huge end
+        return hangar:getRoomFor(itemId)
+    end
     while incoming.units > 0 do
-        local resting = book:best(otherSide, itemId)
+        local resting = nil
+        for _, candidate in ipairs(book:orders(otherSide, itemId)) do
+            -- A player's resting bid with no room in their hangar waits
+            local blocked = candidate.owner == "player" and candidate.side == "buy" and roomFor() <= 0
+            if candidate.owner ~= owner and not blocked then
+                resting = candidate
+                break
+            end
+        end
         if not resting then break end
         local crosses = price == nil
             or (side == "buy" and resting.price <= price)
@@ -244,6 +372,14 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
             end
         end
         local fill = math.min(incoming.units, available)
+        -- Into the player's hangar: no more than it holds
+        if (side == "buy" and owner == "player") or (resting.owner == "player" and resting.side == "buy") then
+            fill = math.min(fill, roomFor())
+            if fill <= 0 then
+                if owner == "player" then result.reason = "no room in the hangar" end
+                break
+            end
+        end
 
         -- The player pays for each fill as it happens, at the resting price,
         -- which is never worse than the limit they named
@@ -267,7 +403,13 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
         result.credits = result.credits + resting.price * fill
         incoming.units = incoming.units - fill
         resting.units = resting.units - fill
-        if resting.units <= 0 then book:remove(resting) end
+        if resting.units <= 0 then
+            book:remove(resting)
+            MarketSystem.transition(resting, S.Filled)
+        elseif resting.owner == "player" then
+            local ok, problem = MarketSystem.escrowHolds(resting)
+            if not ok then Log.Error("Market: %s (item %s)", problem, tostring(itemId)) end
+        end
         ::continue::
     end
 
@@ -276,15 +418,15 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
     if rest and incoming.units > 0 and price then
         if owner == "player" then
             local value = price * incoming.units
-            local fee = math.ceil(value * cfg.brokerFee)
+            -- No broker at the player's own outpost
+            local fee = PlayerStations.isOwnedKey(key) and 0 or math.ceil(value * cfg.brokerFee)
             local needed = side == "buy" and value + fee or fee
             if not PlayerWallet:remove(needed, side == "buy"
                     and "Market order and broker fee" or "Broker fee") then
                 -- Cannot back the rest of it: give back what it was holding
-                if incoming.escrowUnits and incoming.escrowUnits > 0 and hangar then
-                    hangar:add(itemId, incoming.escrowUnits)
-                    incoming.escrowUnits = 0
-                end
+                incoming.escrowCredits = 0 -- what it paid for its fills is spent
+                release(key, incoming)
+                MarketSystem.transition(incoming, incoming.units > 0 and S.Cancelled or S.Filled)
                 result.reason = result.filled > 0
                     and "filled what it could; no credits for the rest"
                     or "not enough credits for the order and the fee"
@@ -296,11 +438,14 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
         incoming.escrowCredits = incoming.escrowCredits or 0
         incoming.expiresAt = (self.now or 0) + cfg.orderLifetime
         book:insert(incoming)
+        MarketSystem.transition(incoming, S.Open)
         result.resting = incoming
-    elseif incoming.escrowUnits and incoming.escrowUnits > 0 and hangar then
-        -- A market sell with nobody left to buy: the rest goes back
-        hangar:add(itemId, incoming.escrowUnits)
-        incoming.escrowUnits = 0
+    else
+        -- Done: all of it traded, or (a market order) nobody left to trade
+        -- with, whose remainder goes back
+        if side == "buy" then incoming.escrowCredits = 0 end -- spent on its fills
+        if owner == "player" then release(key, incoming) end
+        MarketSystem.transition(incoming, incoming.units > 0 and S.Cancelled or S.Filled)
     end
 
     if result.filled > 0 then
@@ -335,6 +480,9 @@ function MarketSystem:sellAtMarket(station, key, itemId, units)
     local hangar = self:playerStore(key)
     local left = math.min(units - result.filled, hangar and hangar:count(itemId) or 0)
     if left <= 0 then return result end
+    -- Nobody buys scrap at the player's own outpost: the owner would be
+    -- paying themselves out of nothing
+    if PlayerStations.isOwnedKey(key) then return result end
 
     local cfg = Config.game.market
     local price = math.max(1, math.floor(StationTradeSystem:basePrice(station, itemId)
@@ -371,19 +519,165 @@ end
 ---@param station Entity
 ---@param key string
 ---@param order MarketOrder
+---@param lapsed boolean|nil it ran out of time (expired), not cancelled
 ---@return boolean cancelled
-function MarketSystem:cancel(station, key, order)
+function MarketSystem:cancel(station, key, order, lapsed)
     local book = self:book(station)
     if not book:remove(order) then return false end
-    if order.owner ~= "player" then return true end
-    if order.side == "buy" and (order.escrowCredits or 0) > 0 then
-        PlayerWallet:add(order.escrowCredits, "Cancelled order")
-    elseif order.side == "sell" and (order.escrowUnits or 0) > 0 then
-        local hangar = self:playerStore(key)
-        if hangar then hangar:add(order.itemId, order.escrowUnits) end
-    end
-    order.escrowCredits, order.escrowUnits = 0, 0
+    if order.owner == "player" then release(key, order) end
+    MarketSystem.transition(order, lapsed and S.Expired or S.Cancelled)
     return true
+end
+
+------------------------------------------------------------------------------
+-- NPCs at the player's outposts
+------------------------------------------------------------------------------
+
+--- The best price the player bids for an item here, or nil.
+---@param station Entity
+---@param itemId integer
+---@return integer|nil
+function MarketSystem:bestPlayerBid(station, itemId)
+    local book = station and station:isValid() and station:get(Economy.OrderBook)
+    if not book then return nil end
+    for _, order in ipairs(book:orders("buy", itemId)) do
+        if order.owner == "player" then return order.price end
+    end
+    return nil
+end
+
+--- How many units of an item the player bids for here at `minPrice` or more.
+---@param station Entity
+---@param itemId integer
+---@param minPrice integer
+---@return integer
+function MarketSystem:playerDemand(station, itemId, minPrice)
+    local book = station and station:isValid() and station:get(Economy.OrderBook)
+    if not book then return 0 end
+    local units = 0
+    for _, order in ipairs(book:orders("buy", itemId)) do
+        if order.owner == "player" and order.price >= minPrice then units = units + order.units end
+    end
+    return units
+end
+
+--- The lowest price a miner sells an item for at an outpost.
+---@param itemId integer
+---@return integer
+function MarketSystem:minerFloor(itemId)
+    local def = Items:getDefinition(itemId)
+    local base = def and def.startEquilibriumPrice or Config.game.trade.defaultPrice
+    return math.max(1, math.floor(base * Config.game.outposts.minerMinPrice))
+end
+
+--- A miner sells its hold into the owner's bids, at their prices, down to
+--- `minerFloor`. Returns how many units it sold (the rest stays in its hold).
+---@param station Entity
+---@param key string
+---@param itemId integer
+---@param units integer
+---@return integer sold
+function MarketSystem:npcSell(station, key, itemId, units)
+    local result = self:submit(station, key, "sell", itemId, units, self:minerFloor(itemId), "npc", false)
+    return result.filled or 0
+end
+
+--- A trader buys from the owner's listings: the cheapest first, at up to
+--- `traderMaxMarkup` of each item's base price, spending up to `budget`.
+---@param station Entity
+---@param key string
+---@param budget number|nil default Config.game.outposts.traderBudget
+---@return integer spent
+---@return integer units
+function MarketSystem:npcBuy(station, key, budget)
+    local cfg = Config.game.outposts
+    local left = budget or cfg.traderBudget
+    local book = station and station:isValid() and station:get(Economy.OrderBook)
+    if not book then return 0, 0 end
+    local listings = {}
+    for _, order in ipairs(book:allOrders("sell")) do
+        if order.owner == "player" then listings[#listings + 1] = order end
+    end
+    table.sort(listings, function(a, b) return a.price < b.price end)
+    local spent, bought = 0, 0
+    for _, order in ipairs(listings) do
+        local def = Items:getDefinition(order.itemId)
+        local base = def and def.startEquilibriumPrice or Config.game.trade.defaultPrice
+        local ceiling = math.floor(base * cfg.traderMaxMarkup)
+        if order.price <= ceiling and order.units > 0 and left >= order.price then
+            local units = math.min(order.units, math.floor(left / order.price))
+            local result = self:submit(station, key, "buy", order.itemId, units, ceiling, "npc", false)
+            spent = spent + (result.credits or 0)
+            bought = bought + (result.filled or 0)
+            left = left - (result.credits or 0)
+        end
+        if left <= 0 then break end
+    end
+    return spent, bought
+end
+
+------------------------------------------------------------------------------
+-- The player's orders while their station is not simulated
+------------------------------------------------------------------------------
+
+--- The player's resting orders at stations that are not in the scene (the
+--- system the player left), by station key, with their escrow intact.
+---
+--- A station's book is a component of the station entity, and the stations
+--- are destroyed with their system on a jump and built again from its seed
+--- on the way back. Without this, every order the player left in a system --
+--- and the credits or goods it held in escrow -- went with it. They wait
+--- here instead, untouched (nothing trades at a station nobody simulates),
+--- and go back in the book when the station does. A saved game keeps them
+--- from here too.
+---@type table<string, MarketOrder[]>
+MarketSystem.parked = {}
+
+--- A new game: nothing waiting anywhere.
+function MarketSystem:resetParked()
+    self.parked = {}
+end
+
+--- Take the player's orders out of a station that is leaving the scene.
+---@param station Entity
+---@param key string the station key (the hangar's)
+---@return integer parked how many
+function MarketSystem:park(station, key)
+    local book = station and station:isValid() and station:get(Economy.OrderBook)
+    if not book or not key then return 0 end
+    local orders = book:removeOwner("player")
+    if #orders == 0 then return 0 end
+    local list = self.parked[key] or {}
+    for _, order in ipairs(orders) do
+        -- In a book with no state of its own (a save from before orders had
+        -- states): it was open
+        order.state = order.state or S.Open
+        MarketSystem.transition(order, S.Parked)
+        list[#list + 1] = order
+    end
+    self.parked[key] = list
+    return #orders
+end
+
+--- Put the player's waiting orders back in a station that has come back.
+--- They take fresh ids in the new book (ids are per book); everything else,
+--- the escrow and the expiry included, is as it was left.
+---@param station Entity
+---@param key string
+---@return integer restored how many
+function MarketSystem:unpark(station, key)
+    local list = key and self.parked[key]
+    if not list then return 0 end
+    self.parked[key] = nil
+    local book = self:book(station)
+    for _, order in ipairs(list) do
+        order.id = nil
+        -- A save from before orders had states: it was waiting
+        order.state = order.state or S.Parked
+        book:insert(order)
+        MarketSystem.transition(order, S.Open)
+    end
+    return #list
 end
 
 --- The player's orders here.
@@ -477,13 +771,14 @@ function MarketSystem:update(stations, keys, dt, now)
             for _, side in ipairs({ "buy", "sell" }) do
                 for _, order in ipairs(book:allOrders(side)) do
                     if order.expiresAt and now >= order.expiresAt then
-                        self:cancel(station, key, order)
+                        self:cancel(station, key, order, true)
                     end
                 end
             end
 
-            if not station.marketRefreshedAt
-                or now - station.marketRefreshedAt >= cfg.refreshInterval then
+            -- An outpost's market is the owner's orders: it posts none
+            if not PlayerStations.isOwnedKey(key) and (not station.marketRefreshedAt
+                or now - station.marketRefreshedAt >= cfg.refreshInterval) then
                 self:refreshStation(station, now)
             end
         end

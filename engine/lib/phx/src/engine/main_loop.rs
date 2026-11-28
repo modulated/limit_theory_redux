@@ -208,6 +208,16 @@ impl ApplicationHandler for MainLoop {
             }
             WindowEvent::Focused(focused) => {
                 engine.window.focused = focused;
+                // The mouse is not the game's while the window is away; when
+                // it comes back, the cursor can be anywhere, and that is a
+                // jump, not the mouse having been moved there
+                engine.input.mouse_state_mut().set_focused(focused);
+                // The OS lets go of a grabbed cursor when the window loses
+                // focus (on Windows the clip goes): take it again, or the
+                // cursor wanders onto other windows and monitors in flight
+                if focused && engine.window.cursor.grab_mode != CursorGrabMode::None {
+                    attempt_grab(engine.winit_window.window(), engine.window.cursor.grab_mode);
+                }
             }
             WindowEvent::DroppedFile(file) => {
                 engine

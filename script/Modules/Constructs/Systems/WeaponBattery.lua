@@ -122,6 +122,21 @@ local WeaponBattery = Class("WeaponBattery", function(self, construction, option
     self.lightEffects = {}
     self.lastShotOrder = {}
     self.targetCandidates = {}
+    ---@type Entity|nil the contact the mounts should all take when they can
+    --- (the player's locked target); passed to WeaponSystem:chooseBestTarget
+    self.focusTargetEntity = nil
+    ---@type Entity|nil a contact to engage whatever its team (the player's
+    --- Attack on a ship that is not hostile); WeaponCombatSystem adds it to
+    --- the candidates
+    self.attackEntity = nil
+    ---@type Entity[] more contacts to engage whatever their team (the
+    --- player's other attacked targets); added to the candidates like
+    --- `attackEntity`
+    self.attackEntities = {}
+    ---@type table<string, Entity> per mount, the contact it should take when
+    --- it can (the player's targets spread over the mounts); else the
+    --- battery's `focusTargetEntity`
+    self.mountFocus = {}
 
     -- Per-mount combat role, for spreading the mounts over the contacts
     self.weaponRoleByMount = {}
@@ -152,8 +167,19 @@ end)
 ---@param damage number before shields
 ---@param hullDamage number after shields
 ---@param killed boolean this hit destroyed the target
-function WeaponBattery:reportDamage(target, damage, hullDamage, killed)
-    CombatLog:report(self.ship, self.team, target, damage, hullDamage, killed)
+function WeaponBattery:reportDamage(target, damage, hullDamage, killed, mountId)
+    CombatLog:report(self.ship, self.team, target, damage, hullDamage, killed,
+        mountId, mountId and self:weaponName(mountId) or nil)
+end
+
+---The name of the weapon in a mount, for the battle text.
+---@param mountId string
+---@return string|nil
+function WeaponBattery:weaponName(mountId)
+    local mount = self.turretsById and self.turretsById[mountId]
+    if not mount then return nil end
+    local ok, weapon = pcall(WeaponSystem.resolveWeapon, WeaponSystem, mount.component)
+    return ok and weapon and weapon.name or nil
 end
 
 ---False once the ship is gone (its construct was destroyed).
@@ -309,7 +335,7 @@ function WeaponBattery:assignTargets()
                 origin,
                 range,
                 self.weaponRoleByMount[mountId],
-                self.focusTargetEntity)
+                self.mountFocus[mountId] or self.focusTargetEntity)
                 -- Nothing in range: track the nearest so the turret stays ready
                 or WeaponSystem:selectNearestTarget(origin, candidates, math.huge)
             if chosen then
@@ -402,6 +428,17 @@ function WeaponBattery:spawnBeam(mount, solution, weapon, shotSerial)
     })
 end
 
+---How fast a mount is moving: the ship's velocity (the turret bodies are
+---not simulated, so their own reads zero).
+---@param mount table
+---@return Vec3f
+function WeaponBattery:sourceVelocity(mount)
+    if self.shipBody then
+        return self.shipBody:getVelocity()
+    end
+    return mount.body:getVelocity()
+end
+
 ---WeaponSystem callback: a projectile weapon fired.
 ---@param mount table
 ---@param solution table
@@ -409,7 +446,11 @@ end
 ---@param shotSerial integer
 function WeaponBattery:spawnProjectile(mount, solution, weapon, shotSerial)
     local sourcePosition = mount.body:getPos()
-    local sourceVelocity = mount.body:getVelocity()
+    -- The turret bodies are kept out of the physics world (moved with the
+    -- ship by syncTurretTransforms), so theirs reads zero: a shot leaves
+    -- with the ship's own velocity, or a ship going faster than its shots
+    -- overtakes them
+    local sourceVelocity = self:sourceVelocity(mount)
     local dx = solution.position.x - sourcePosition.x
     local dy = solution.position.y - sourcePosition.y
     local dz = solution.position.z - sourcePosition.z
@@ -448,6 +489,9 @@ function WeaponBattery:spawnProjectile(mount, solution, weapon, shotSerial)
         targetEntity = targetEntity,
         bodyMesh = nil,
     })
+    -- Its own ship is not something it can hit: the shot starts inside the
+    -- ship's contact sphere, and would strike it the moment it was fired
+    entity:get(ConstructComponents.Projectile).sourceShip = self.ship
     table.insert(self.projectiles, {
         entity = entity,
         body = entity:get(PhysicsComponents.RigidBody):getRigidBody(),

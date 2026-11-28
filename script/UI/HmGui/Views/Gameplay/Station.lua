@@ -9,9 +9,16 @@ local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local PlayerCargo = require("Modules.Economy.Managers.PlayerCargo")
 local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
 local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
-local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
+local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
+local PlayerForces = require("Modules.Economy.Managers.PlayerForces")
+local BountyBoard = require("Modules.Economy.Managers.BountyBoard")
 local EconomyComponents = require("Modules.Economy.Components")
 local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
+local ShipFittingSystem = require("Modules.Constructs.Systems.ShipFittingSystem")
+local AbilitySystem = require("Modules.Constructs.Systems.AbilitySystem")
+local Fittings = require("Shared.Registries.Fittings")
+local PlayerFleet = require("Modules.Constructs.Managers.PlayerFleet")
+local Hulls = require("Shared.Registries.Hulls")
 
 -- The screen the player sees while docked: what the station has and what it
 -- pays, what the hold is carrying, what its factory floor is making, and the
@@ -21,8 +28,9 @@ local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
 -- Four tabs: the Market (the station's order book: trade at the market or
 -- place an order of your own), the Factory (the station's own lines and the
 -- lines the player rents), the Hangar (what the player keeps here, and moving
--- it to and from the ship) and Nearby (what was last seen of the markets
--- within reach, which is where the spreads worth flying for show up).
+-- it to and from the ship), Nearby (what was last seen of the markets within
+-- reach, which is where the spreads worth flying for show up) and Refit (the
+-- ship's mounts and module slots, fitted out of this station's hangar).
 --
 -- NOTE: the prices and the stock are the station's own
 -- (Modules/Economy/Systems/MarketSystem.lua: a station posts orders, and a
@@ -36,22 +44,32 @@ local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
 --- hangar and the ship.
 Station.tab = "market"
 
-local WHITE = Color(1.00, 1.00, 1.00, 1.00)
-local GREY = Color(0.75, 0.77, 0.80, 1.00)
-local DIM = Color(0.51, 0.54, 0.59, 1.00)
-local ACCENT = Color(0.10, 0.60, 1.00, 1.00)
-local RULE = Color(0.10, 0.60, 1.00, 0.35)
-local GOLD = Color(1.00, 0.85, 0.35, 1.00)
-local GREEN = Color(0.45, 0.90, 0.55, 1.00)
-local BUTTON_BG = Color(0.06, 0.09, 0.13, 1.00)
-local BUTTON_HI = Color(0.10, 0.30, 0.50, 1.00)
+-- The look is StationFrame's: slate panels, amber for what you act on,
+-- cyan for values
+local StationFrame = require("UI.HmGui.Views.Gameplay.StationFrame")
+local StationTabs = require("UI.HmGui.Views.Gameplay.StationTabs")
+-- A tab sending the player to another (the fitting screen's BUY PARTS)
+StationTabs.goTo = function(id) Station.tab = id end
+local C = StationFrame.C
+local WHITE = C.TEXT
+local GREY = C.SUB
+local DIM = C.DIM
+local ACCENT = C.AMBER
+local RULE = C.RULE
+local GOLD = C.AMBER
+local GREEN = C.GREEN
+local BUTTON_BG = C.BG
+local BUTTON_HI = C.SELECT
 
---- Column widths at 1920 px, scaled down on smaller windows.
+--- Column widths at the design size (1500 x 950), scaled to the window.
 local COL_ITEM, COL_NUM, COL_BUTTON = 260, 90, 54
 
+--- The screen grows with the window (it used to stop at 1920 px wide's
+--- size, and sat small in the middle of anything bigger): as big as fits
+--- both ways, between 0.7 and 1.5.
 ---@return number
 local function scale()
-    return math.max(0.7, math.min(1.0, Window:width() / 1920))
+    return math.max(0.7, math.min(1.5, Window:width() / 1500, Window:height() / 950))
 end
 
 ---@return Entity|nil station the station the player is docked at
@@ -96,9 +114,9 @@ local function smallButton(label, s, enabled, callback)
         title = label,
         width = math.floor(COL_BUTTON * s),
         height = math.floor(20 * s),
-        font = { name = "Unageo-Medium", size = math.floor(12 * s) },
+        font = { name = "TitilliumWebSemiBold", size = math.floor(12 * s) },
         color = {
-            text = enabled and WHITE or DIM,
+            text = enabled and GREY or DIM,
             background = BUTTON_BG,
             highlight = enabled and BUTTON_HI or BUTTON_BG,
         },
@@ -118,9 +136,9 @@ local function wideButton(label, s, width, enabled, active, callback)
         title = label,
         width = math.floor(width * s),
         height = math.floor(28 * s),
-        font = { name = "Unageo-Medium", size = math.floor(14 * s) },
+        font = { name = "TitilliumWebSemiBold", size = math.floor(14 * s) },
         color = {
-            text = enabled and WHITE or DIM,
+            text = not enabled and DIM or (active and ACCENT or GREY),
             background = active and BUTTON_HI or BUTTON_BG,
             highlight = enabled and BUTTON_HI or BUTTON_BG,
         },
@@ -128,546 +146,307 @@ local function wideButton(label, s, width, enabled, active, callback)
     }
 end
 
---- Which item the order panel is working on, and what it is set to.
-Station.order = { itemId = nil, side = "buy", price = nil, units = 10 }
+------------------------------------------------------------------------------
+-- The factory: industry, as EVE lays it out. Blueprints on the left (what
+-- can be run here, what can be made now first, each with how many runs the
+-- hangar holds the materials for); the chosen one on the right, its
+-- materials against what is in the hangar, what it makes, and a job of so
+-- many runs to start; the jobs running underneath. What the station's own
+-- lines are busy with is not the player's business, and is not shown.
+------------------------------------------------------------------------------
 
---- Point the order panel at an item, starting from the market's own price.
----@param station Entity
----@param itemId integer
----@param side string
-local function selectOrder(station, itemId, side)
-    local quote = MarketSystem:quote(station, itemId)
-    local start = side == "buy" and (quote.bid or quote.ask or quote.last)
-        or (quote.ask or quote.bid or quote.last)
-    Station.order = {
-        itemId = itemId,
-        side = side,
-        price = math.max(1, math.floor(start or 10)),
-        units = Station.order.units or 10,
-    }
-end
+local RED = C.RED
 
---- Buy at the market: take the best asks there are.
----@param station Entity
----@param itemId integer
----@param units integer
-local function buyAtMarket(station, itemId, units)
-    local key = stationKey()
-    local def = Items:getDefinition(itemId)
-    local result = MarketSystem:buyAtMarket(station, key, itemId, units)
-    if result.filled > 0 then
-        LimitTheoryRedux:notify(string.format("Bought %d %s for %s (%.0f a unit)",
-            result.filled, def.displayName, PlayerWallet.format(result.credits),
-            result.average or 0), { 0.6, 0.9, 1.0 })
-    else
-        LimitTheoryRedux:notify("Nothing on offer: " .. (result.reason or "no sellers"),
-            { 1.0, 0.4, 0.3 })
+--- The blueprint chosen, the runs asked for, and whether the list shows
+--- only what can be made now.
+Station.industry = { recipeId = nil, runs = 1, onlyMakeable = false }
+
+--- The outpost's own block over the factory: what it is, its takings, and
+--- its defences.
+---@param key string
+---@param s number
+---@return table[] rows
+local function outpostHeader(key, s)
+    local rows = {}
+    local size = math.floor(14 * s)
+    local outpost = PlayerStations:byKey(key)
+    if not outpost then return rows end
+    local kindCfg = PlayerStations.kindOf(outpost.kind)
+    local income = outpost.income
+    rows[#rows + 1] = text(string.format("YOUR %s   ·   market: %s sold, %s bought, %s in taxes",
+            string.upper(kindCfg.name), PlayerWallet.format(income.sales or 0),
+            PlayerWallet.format(income.purchases or 0), PlayerWallet.format(income.taxes or 0)),
+        "TitilliumWebSemiBold", math.floor(13 * s), ACCENT)
+    local quote = LimitTheoryRedux:outpostDefenseQuote(key)
+    if quote then
+        local state = quote.destroyed and "Defences destroyed"
+            or string.format("Defences: hull %d/%d  ·  shields %d/%d",
+                math.floor(quote.hull), math.floor(quote.maxHull),
+                math.floor(quote.shield), math.floor(quote.maxShield))
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(30 * s),
+            cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
+            contents = {
+                text(state, "TitilliumWeb", size, quote.destroyed and GOLD or DIM),
+                text(quote.cost > 0 and PlayerWallet.format(quote.cost) or "",
+                    "TitilliumWeb", size, DIM, AlignHorizontal.Right),
+                wideButton(quote.destroyed and "Rebuild" or "Repair", s, 110,
+                    quote.cost > 0 and PlayerWallet:has(quote.cost), false, function()
+                        LimitTheoryRedux:repairOutpostDefense(key)
+                    end),
+            }
+        }
     end
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    return rows
 end
 
---- Sell at the market: hit the best bids there are.
----@param station Entity
----@param itemId integer
----@param units integer
-local function sellAtMarket(station, itemId, units)
-    local key = stationKey()
-    local def = Items:getDefinition(itemId)
-    local result = MarketSystem:sellAtMarket(station, key, itemId, units)
-    local sold = result.filled + (result.scrapped or 0)
-    if sold > 0 then
-        local note = ""
-        if (result.scrapped or 0) > 0 then
-            note = string.format(" (%d of it as scrap: nobody was bidding)", result.scrapped)
-        end
-        LimitTheoryRedux:notify(string.format("Sold %d %s for %s, %.0f a unit%s",
-            sold, def.displayName, PlayerWallet.format(result.credits),
-            result.average or 0, note), { 0.6, 0.9, 1.0 })
-    else
-        LimitTheoryRedux:notify("Could not sell: " .. (result.reason or "nothing to sell"),
-            { 1.0, 0.4, 0.3 })
-    end
-end
-
---- One row of the book: what it last traded for, the best bid and ask with
---- how much is behind them, what the hangar holds, and the way in.
----@param station Entity
----@param row table from MarketSystem:listing
----@param s number scale
+--- The blueprint list: one row each, the makeable ones first.
+---@param key string
+---@param recipes ProductionDefinition[]
+---@param s number
 ---@return UILayoutGrid
-local function marketRow(station, row, s)
-    local key = stationKey()
-    local hangar = key and PlayerFactories:hangar(key)
-    local held = hangar and hangar:count(row.item.id) or 0
-    local size = math.floor(15 * s)
-    local selected = Station.order.itemId == row.item.id
-
-    return Grid {
-        fixedHeight = math.floor(24 * s),
-        cells = {
-            Grid.Fixed(COL_ITEM * s), Grid.Fixed(COL_NUM * s), Grid.Fixed(COL_NUM * s),
-            Grid.Fixed(COL_NUM * s), Grid.Fixed(COL_NUM * s),
-            Grid.Fixed((COL_BUTTON + 14) * s), Grid.Fixed((COL_BUTTON + 14) * s),
-            Grid.Fixed((COL_BUTTON + 14) * s),
-        },
-        contents = {
-            text(row.item.displayName, "Unageo-Regular", size, selected and WHITE or GREY),
-            text(row.last and tostring(row.last) or "-", "Unageo-Regular", size,
-                row.last and WHITE or DIM, AlignHorizontal.Right),
-            text(row.bid and string.format("%d (%d)", row.bid, row.bidUnits) or "-",
-                "Unageo-Regular", size, row.bid and GREEN or DIM, AlignHorizontal.Right),
-            text(row.ask and string.format("%d (%d)", row.ask, row.askUnits) or "-",
-                "Unageo-Regular", size, row.ask and GOLD or DIM, AlignHorizontal.Right),
-            text(held > 0 and tostring(held) or "-", "Unageo-Regular", size,
-                held > 0 and WHITE or DIM, AlignHorizontal.Right),
-            smallButton("Buy 10", s, row.ask ~= nil, function()
-                buyAtMarket(station, row.item.id, 10)
-            end),
-            smallButton("Sell all", s, row.bid ~= nil and held >= 1, function()
-                sellAtMarket(station, row.item.id, held)
-            end),
-            smallButton("Order", s, true, function()
-                selectOrder(station, row.item.id, held > 0 and "sell" or "buy")
-            end),
-        }
-    }
-end
-
---- The order panel: name a price, name a quantity, place it. Credits are
---- held for a buy order and the goods for a sell order until it fills, is
---- cancelled or lapses.
----@param station Entity
----@param s number
----@return UILayoutGrid|nil
-local function orderPanel(station, s)
-    local order = Station.order
-    if not order.itemId then return nil end
-    local def = Items:getDefinition(order.itemId)
-    if not def then return nil end
-    local key = stationKey()
-    local hangar = key and PlayerFactories:hangar(key)
-    local held = hangar and hangar:count(order.itemId) or 0
-    local quote = MarketSystem:quote(station, order.itemId)
-    local cfg = Config.game.market
-    local size = math.floor(14 * s)
-
-    local value = order.price * order.units
-    local fee = math.ceil(value * cfg.brokerFee)
-    local needed = order.side == "buy" and value + fee or fee
-    local can = order.side == "buy" and PlayerWallet:has(needed) or (held >= order.units
-        and PlayerWallet:has(fee))
-
-    local function step(label, delta, field, minimum)
-        return smallButton(label, s, true, function()
-            local next = field == "price"
-                and math.floor(order.price * (1 + delta) + (delta > 0 and 0.5 or -0.5))
-                or order.units + delta
-            if field == "price" and next == order.price then
-                next = order.price + (delta > 0 and 1 or -1)
-            end
-            order[field] = math.max(minimum, next)
-        end)
-    end
-
-    return Grid {
-        layoutType = GuiLayoutType.Vertical,
-        spacing = math.floor(4 * s),
-        cells = Grid.Fit(),
-        contents = {
-            UIComponent.Divider { color = RULE },
-            Grid {
-                fixedHeight = math.floor(26 * s),
-                cells = { Grid.Fixed(300 * s), Grid.Fixed(150 * s), Grid.Fixed(150 * s),
-                          Grid.Fixed(220 * s) },
-                contents = {
-                    text(string.format("ORDER: %s", def.displayName), "Unageo-Medium",
-                        math.floor(13 * s), ACCENT),
-                    wideButton("Buy order", s, 130, true, order.side == "buy",
-                        function() order.side = "buy" end),
-                    wideButton("Sell order", s, 130, true, order.side == "sell",
-                        function() order.side = "sell" end),
-                    text(string.format("market: bid %s / ask %s",
-                        quote.bid and tostring(quote.bid) or "-",
-                        quote.ask and tostring(quote.ask) or "-"),
-                        "Unageo-Regular", size, DIM, AlignHorizontal.Right),
-                }
-            },
-            Grid {
-                fixedHeight = math.floor(26 * s),
-                cells = { Grid.Fixed(120 * s), Grid.Fixed(90 * s), Grid.Fixed(70 * s),
-                          Grid.Fixed(70 * s), Grid.Fixed(70 * s), Grid.Fixed(70 * s),
-                          Grid.Fixed(130 * s), Grid.Fixed(90 * s), Grid.Fixed(70 * s),
-                          Grid.Fixed(70 * s), Grid.Fixed(70 * s), Grid.Fixed(70 * s) },
-                contents = {
-                    text("price", "Unageo-Regular", size, DIM),
-                    text(tostring(order.price), "Unageo-Medium", size, WHITE, AlignHorizontal.Right),
-                    step("-10%", -0.1, "price", 1),
-                    step("-1%", -0.01, "price", 1),
-                    step("+1%", 0.01, "price", 1),
-                    step("+10%", 0.1, "price", 1),
-                    text("        units", "Unageo-Regular", size, DIM),
-                    text(tostring(order.units), "Unageo-Medium", size, WHITE, AlignHorizontal.Right),
-                    step("-100", -100, "units", 1),
-                    step("-10", -10, "units", 1),
-                    step("+10", 10, "units", 1),
-                    step("+100", 100, "units", 1),
-                }
-            },
-            Grid {
-                fixedHeight = math.floor(28 * s),
-                cells = { Grid.Fixed(620 * s), Grid.Fixed(150 * s), Grid.Fixed(130 * s) },
-                contents = {
-                    text(order.side == "buy"
-                        and string.format("%s held for the order, %s broker's fee%s",
-                            PlayerWallet.format(value), PlayerWallet.format(fee),
-                            quote.ask and order.price >= quote.ask and "  ·  fills at once" or "")
-                        or string.format("%d of %d in the hangar, %s broker's fee, %d%% tax on the sale",
-                            held, order.units, PlayerWallet.format(fee),
-                            math.floor(cfg.salesTax * 100)),
-                        "Unageo-Regular", size, can and GREY or GOLD),
-                    wideButton("Place", s, can, false, function()
-                        local result = MarketSystem:placeOrder(station, key, order.side,
-                            order.itemId, order.units, order.price)
-                        if result.filled > 0 and result.resting then
-                            LimitTheoryRedux:notify(string.format(
-                                "%d filled at once, %d standing at %d",
-                                result.filled, result.resting.units, order.price), { 0.6, 0.9, 1.0 })
-                        elseif result.filled > 0 then
-                            LimitTheoryRedux:notify(string.format("Filled %d at an average of %.0f",
-                                result.filled, result.average or 0), { 0.6, 0.9, 1.0 })
-                        elseif result.resting then
-                            LimitTheoryRedux:notify(string.format("%s order standing: %d at %d",
-                                order.side == "buy" and "Buy" or "Sell", result.resting.units,
-                                order.price), { 0.6, 0.9, 1.0 })
-                        else
-                            LimitTheoryRedux:notify("Order refused: " .. (result.reason or "no"),
-                                { 1.0, 0.4, 0.3 })
-                        end
-                    end),
-                    wideButton("Close", s, true, false, function()
-                        Station.order = { itemId = nil, side = "buy", units = order.units }
-                    end),
-                }
-            },
-        }
-    }
-end
-
---- The player's standing orders here, with the way out of them.
----@param station Entity
----@param s number
----@return UILayoutGrid|nil
-local function myOrders(station, s)
-    local orders = MarketSystem:playerOrders(station)
-    if #orders == 0 then return nil end
-    local key = stationKey()
-    local size = math.floor(14 * s)
+local function blueprintList(key, recipes, s)
+    local sel = Station.industry
+    local size = math.floor(13 * s)
     local rows = {
-        text("YOUR ORDERS", "Unageo-Medium", math.floor(13 * s), DIM),
+        Grid {
+            fixedHeight = math.floor(30 * s),
+            cells = { Grid.Fixed(250 * s), Grid.Fixed(200 * s) },
+            contents = {
+                text("BLUEPRINTS", "TitilliumWebSemiBold", math.floor(13 * s), DIM),
+                wideButton(sel.onlyMakeable and "Showing: can make" or "Showing: all", s, 190, true,
+                    sel.onlyMakeable, function() sel.onlyMakeable = not sel.onlyMakeable end),
+            }
+        },
         UIComponent.Divider { color = RULE },
     }
-    for _, order in ipairs(orders) do
-        local def = Items:getDefinition(order.itemId)
-        local quote = MarketSystem:quote(station, order.itemId)
-        local best = order.side == "buy" and quote.bid or quote.ask
-        local leading = best == order.price
+    local list = {}
+    for _, recipe in ipairs(recipes) do
+        local runs = PlayerFactories:runsPossible(key, recipe)
+        if runs > 0 or not sel.onlyMakeable then list[#list + 1] = { recipe = recipe, runs = runs } end
+    end
+    table.sort(list, function(a, b)
+        if (a.runs > 0) ~= (b.runs > 0) then return a.runs > 0 end
+        return a.recipe.displayName < b.recipe.displayName
+    end)
+    if #list == 0 then
+        rows[#rows + 1] = text(sel.onlyMakeable and "Nothing here can be made from your hangar yet."
+            or "This station runs nothing for you.", "TitilliumWeb", size, DIM)
+    end
+    for _, row in ipairs(list) do
+        local recipe = row.recipe
+        local chosen = sel.recipeId == recipe.id
         rows[#rows + 1] = Grid {
-            fixedHeight = math.floor(24 * s),
-            cells = { Grid.Fixed(120 * s), Grid.Fixed(COL_ITEM * s), Grid.Fixed(120 * s),
-                      Grid.Fixed(100 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
+            fixedHeight = math.floor(30 * s),
+            cells = { Grid.Fixed(330 * s), Grid.Fixed(120 * s) },
             contents = {
-                text(order.side == "buy" and "BUY" or "SELL", "Unageo-Medium", size,
-                    order.side == "buy" and GREEN or GOLD),
-                text(def and def.displayName or "?", "Unageo-Regular", size, GREY),
-                text(string.format("%d at %d", order.units, order.price), "Unageo-Regular",
-                    size, WHITE, AlignHorizontal.Right),
-                text(leading and "best" or "outbid", "Unageo-Regular", size,
-                    leading and ACCENT or DIM, AlignHorizontal.Right),
-                text(order.side == "buy"
-                    and string.format("  %s held", PlayerWallet.format(order.escrowCredits or 0))
-                    or string.format("  %d units held", order.escrowUnits or 0),
-                    "Unageo-Regular", size, DIM),
-                wideButton("Cancel", s, true, false, function()
-                    MarketSystem:cancel(station, key, order)
-                    LimitTheoryRedux:notify("Order cancelled; the broker keeps the fee.",
-                        { 0.6, 0.9, 1.0 })
+                wideButton(recipe.displayName, s, 320, true, chosen, function()
+                    sel.recipeId = recipe.id
+                    sel.runs = math.max(1, math.min(sel.runs or 1, math.max(1, row.runs)))
+                end),
+                text(row.runs > 0 and string.format("can make %d", row.runs) or "missing materials",
+                    "TitilliumWeb", size, row.runs > 0 and GREEN or DIM, AlignHorizontal.Right),
+            }
+        }
+    end
+    return Grid { layoutType = GuiLayoutType.Vertical, spacing = math.floor(2 * s), cells = Grid.Fit(), contents = rows }
+end
+
+--- The chosen blueprint: materials against the hangar, what it makes, and
+--- the job to start.
+---@param key string
+---@param recipe ProductionDefinition|nil
+---@param outpost boolean
+---@param s number
+---@return UILayoutGrid
+local function blueprintDetail(key, recipe, outpost, s)
+    local sel = Station.industry
+    local size = math.floor(14 * s)
+    local rows = {}
+    if not recipe then
+        rows[#rows + 1] = text("Choose a blueprint on the left.", "TitilliumWeb", size, DIM)
+        return Grid { layoutType = GuiLayoutType.Vertical, cells = Grid.Fit(), contents = rows }
+    end
+    local hangar = PlayerFactories:hangar(key)
+    local possible = PlayerFactories:runsPossible(key, recipe)
+    local runs = math.max(1, sel.runs or 1)
+    local fee = PlayerFactories:feeFor(recipe, key)
+    local minutes = recipe.duration / Config.game.production.timeScale / 60
+
+    rows[#rows + 1] = text(recipe.displayName, "TitilliumWebSemiBold", math.floor(17 * s), WHITE)
+    rows[#rows + 1] = text(string.format("%s  ·  %.1f min a run%s", recipe.class, minutes,
+            outpost and "" or string.format("  ·  station fee %s a run", PlayerWallet.format(fee))),
+        "TitilliumWeb", math.floor(13 * s), DIM)
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+
+    -- Materials, for the runs asked for
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(22 * s),
+        cells = { Grid.Fixed(250 * s), Grid.Fixed(100 * s), Grid.Fixed(100 * s) },
+        contents = {
+            text(string.format("MATERIALS  x%d", runs), "TitilliumWebSemiBold", math.floor(12 * s), DIM),
+            text("needed", "TitilliumWebSemiBold", math.floor(12 * s), DIM, AlignHorizontal.Right),
+            text("in hangar", "TitilliumWebSemiBold", math.floor(12 * s), DIM, AlignHorizontal.Right),
+        }
+    }
+    for _, entry in ipairs(recipe.inputs) do
+        local need = entry.count * runs
+        local have = hangar:count(entry.item.id)
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(22 * s),
+            cells = { Grid.Fixed(250 * s), Grid.Fixed(100 * s), Grid.Fixed(100 * s) },
+            contents = {
+                text(entry.item.displayName, "TitilliumWeb", size, GREY),
+                text(tostring(need), "TitilliumWeb", size, GREY, AlignHorizontal.Right),
+                text(tostring(have), "TitilliumWeb", size, have >= need and GREEN or RED, AlignHorizontal.Right),
+            }
+        }
+    end
+
+    -- Products
+    rows[#rows + 1] = text(string.format("PRODUCES  x%d", runs), "TitilliumWebSemiBold", math.floor(12 * s), DIM)
+    for _, entry in ipairs(recipe.outputs) do
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(22 * s),
+            cells = { Grid.Fixed(250 * s), Grid.Fixed(100 * s) },
+            contents = {
+                text(entry.item.displayName, "TitilliumWeb", size, WHITE),
+                text(tostring(entry.count * runs), "TitilliumWeb", size, WHITE, AlignHorizontal.Right),
+            }
+        }
+    end
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+
+    -- The job: so many runs, on a free line
+    local free = PlayerFactories:freeLines(key)
+    local function setRuns(n) sel.runs = math.max(1, math.min(999, n)) end
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(32 * s),
+        cells = { Grid.Fixed(70 * s), Grid.Fixed(60 * s), Grid.Fixed(60 * s), Grid.Fixed(60 * s),
+                  Grid.Fixed(60 * s), Grid.Fixed(130 * s) },
+        contents = {
+            text("RUNS", "TitilliumWebSemiBold", math.floor(12 * s), DIM),
+            smallButton("-10", s, runs > 1, function() setRuns(runs - 10) end),
+            smallButton("-1", s, runs > 1, function() setRuns(runs - 1) end),
+            text(tostring(runs), "TitilliumWebSemiBold", size, WHITE, AlignHorizontal.Center),
+            smallButton("+1", s, true, function() setRuns(runs + 1) end),
+            smallButton(string.format("max %d", possible), s, possible > 0, function() setRuns(possible) end),
+        }
+    }
+    local canStart = free > 0 and possible >= runs
+    local why = free <= 0 and (outpost and "every line is busy" or "no line free to rent")
+        or (possible < runs and (possible == 0 and "missing materials" or string.format("materials for %d run(s)", possible)))
+        or nil
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(36 * s),
+        cells = { Grid.Fixed(200 * s), Grid.Fixed(300 * s) },
+        contents = {
+            wideButton(string.format("Start job (%d run%s)", runs, runs == 1 and "" or "s"), s, 190, canStart, true,
+                function()
+                    local ok, reason = PlayerFactories:lease(key, recipe.id, runs)
+                    LimitTheoryRedux:notify(ok
+                        and string.format("Job started: %s x%d", recipe.displayName, runs)
+                        or ("Cannot start: " .. (reason or "no")), ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
+                end),
+            text(why or (outpost and "" or string.format("total fee %s", PlayerWallet.format(fee * runs))),
+                "TitilliumWeb", math.floor(13 * s), why and RED or DIM),
+        }
+    }
+    return Grid { layoutType = GuiLayoutType.Vertical, spacing = math.floor(3 * s), cells = Grid.Fit(), contents = rows }
+end
+
+--- The jobs running here.
+---@param key string
+---@param outpost boolean
+---@param s number
+---@return table[] rows
+local function jobRows(key, outpost, s)
+    local size = math.floor(13 * s)
+    local total = outpost and PlayerStations:lines(key) or Config.game.factory.rentableLines
+    local leases = PlayerFactories:status(key)
+    local rows = {
+        text(string.format("JOBS   %d of %d line(s) in use%s", #leases, total,
+                outpost and "" or string.format("  ·  the station takes %d%% of each run as its fee",
+                    math.floor(Config.game.factory.rentShare * 100))),
+            "TitilliumWebSemiBold", math.floor(13 * s), DIM),
+        UIComponent.Divider { color = RULE },
+    }
+    if #leases == 0 then
+        rows[#rows + 1] = text("No jobs running. Choose a blueprint and start one.", "TitilliumWeb", size, DIM)
+    end
+    for _, lease in ipairs(leases) do
+        local state
+        if lease.running then
+            state = string.format("%d%%", math.floor(lease.progress * 100))
+        elseif not lease.crewed then
+            state = "no crew"
+        elseif lease.hangarFull then
+            state = "hangar full"
+        else
+            state = "waiting: " .. (PlayerFactories:missingFor(key, lease.recipe) or "inputs")
+        end
+        local index = lease.index
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(28 * s),
+            cells = { Grid.Fixed(330 * s), Grid.Fixed(140 * s), Grid.Fixed(340 * s), Grid.Fixed(120 * s) },
+            contents = {
+                text(lease.recipe.displayName, "TitilliumWeb", size, WHITE),
+                text(lease.runs and string.format("%d run(s) left", lease.runs) or "repeating",
+                    "TitilliumWeb", size, GREY),
+                text(state, "TitilliumWeb", size,
+                    lease.running and ACCENT or (not lease.crewed and GOLD or DIM)),
+                wideButton("Stop", s, 110, true, false, function()
+                    PlayerFactories:release(key, index)
+                    LimitTheoryRedux:notify("Job stopped.", { 0.6, 0.9, 1.0 })
                 end),
             }
         }
     end
-    return Grid {
-        layoutType = GuiLayoutType.Vertical,
-        spacing = math.floor(2 * s),
-        cells = Grid.Fit(),
-        contents = rows
-    }
+    return rows
 end
 
---- The market: the book here, the order panel, your orders, and what is known
---- of the markets within reach.
----@param station Entity
----@param s number
----@return UILayoutGrid
-local function market(station, s)
-    local headerSize = math.floor(13 * s)
-    local header = Grid {
-        fixedHeight = math.floor(20 * s),
-        cells = {
-            Grid.Fixed(COL_ITEM * s), Grid.Fixed(COL_NUM * s), Grid.Fixed(COL_NUM * s),
-            Grid.Fixed(COL_NUM * s), Grid.Fixed(COL_NUM * s),
-        },
-        contents = {
-            text("GOODS", "Unageo-Medium", headerSize, DIM),
-            text("LAST", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-            text("BID (QTY)", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-            text("ASK (QTY)", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-            text("IN HANGAR", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-        }
-    }
-
-    local rows = { header, UIComponent.Divider { color = RULE } }
-    local listing = MarketSystem:listing(station)
-    for _, row in ipairs(listing) do
-        rows[#rows + 1] = marketRow(station, row, s)
-    end
-    if #listing == 0 then
-        rows[#rows + 1] = text("No orders standing here.", "Unageo-Regular", math.floor(15 * s), DIM)
-    end
-    local panel = orderPanel(station, s)
-    if panel then rows[#rows + 1] = panel end
-    local mine = myOrders(station, s)
-    if mine then rows[#rows + 1] = mine end
-
-    return Grid {
-        layoutType = GuiLayoutType.Vertical,
-        spacing = math.floor(2 * s),
-        cells = Grid.Fit(),
-        contents = rows
-    }
-end
-
---- What the station is making, one line per production line.
----@param station Entity
----@param s number
----@return UILayoutGrid|nil
-local function production(station, s)
-    local status = ProductionSystem:status(station)
-    if #status == 0 then return nil end
-    local size = math.floor(14 * s)
-    -- The hands: the station's standing crew plus the workers docked here,
-    -- and what its lines are using of them
-    local workforce = station:get(EconomyComponents.Workforce)
-    local crewLine = workforce
-        and string.format("PRODUCTION          crew %s on shift", workforce:describe())
-        or "PRODUCTION"
-    local rows = {
-        text(crewLine, "Unageo-Medium", math.floor(13 * s), DIM),
-        UIComponent.Divider { color = RULE },
-    }
-    for _, line in ipairs(status) do
-        local state = line.running
-            and string.format("%d%%", math.floor(line.progress * 100))
-            or (not line.crewed and "no crew"
-                or (line.full and "store full" or "waiting for stock"))
-        rows[#rows + 1] = Grid {
-            fixedHeight = math.floor(22 * s),
-            cells = { Grid.Fixed(640 * s), Grid.Fixed(160 * s) },
-            contents = {
-                text(line.recipe:describe(), "Unageo-Regular", size, GREY),
-                text(state, "Unageo-Regular", size,
-                    line.running and ACCENT or (not line.crewed and GOLD or DIM), AlignHorizontal.Right),
-            }
-        }
-    end
-    return Grid {
-        layoutType = GuiLayoutType.Vertical,
-        spacing = math.floor(2 * s),
-        cells = Grid.Fit(),
-        contents = rows
-    }
-end
-
---- The player's own floor here: the lines rented, and what the station will
---- rent out. A rented line eats from the hangar and fills it back up, and the
---- station takes its cut of each run.
+--- The factory tab.
 ---@param station Entity
 ---@param s number
 ---@return UILayoutGrid
 local function factory(station, s)
     local key = stationKey()
-    local size = math.floor(14 * s)
-    local rows = {}
-
-    -- The station's own lines first: what the floor is busy with
-    local own = production(station, s)
-    if own then rows[#rows + 1] = own end
-
-    rows[#rows + 1] = text(string.format("YOUR LINES          %d of %d rented",
-            key and #PlayerFactories:leases(key) or 0, Config.game.factory.rentableLines),
-        "Unageo-Medium", math.floor(13 * s), DIM)
-    rows[#rows + 1] = UIComponent.Divider { color = RULE }
-
     if not key then
-        rows[#rows + 1] = text("This station does not rent lines.", "Unageo-Regular", size, DIM)
-    else
-        for _, lease in ipairs(PlayerFactories:status(key)) do
-            local state
-            if lease.running then
-                state = string.format("%d%%", math.floor(lease.progress * 100))
-            elseif not lease.crewed then
-                state = "no crew"
-            elseif lease.hangarFull then
-                state = "hangar full"
-            else
-                state = "needs " .. (PlayerFactories:missingFor(key, lease.recipe) or "inputs")
-            end
-            local index = lease.index
-            rows[#rows + 1] = Grid {
-                fixedHeight = math.floor(26 * s),
-                cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
-                contents = {
-                    text(lease.recipe:describe(), "Unageo-Regular", size, GREY),
-                    text(string.format("%s  ·  fee %d", state, lease.fee), "Unageo-Regular", size,
-                        lease.running and ACCENT or (not lease.crewed and GOLD or DIM),
-                        AlignHorizontal.Right),
-                    wideButton("Give back", s, 110, true, false, function()
-                        PlayerFactories:release(key, index)
-                        LimitTheoryRedux:notify("The line is the station's again.", { 0.6, 0.9, 1.0 })
-                    end),
-                }
-            }
+        return Grid { cells = Grid.Fit(), contents = {
+            text("This station runs no jobs for you.", "TitilliumWeb", math.floor(14 * s), DIM) } }
+    end
+    local outpost = PlayerStations:byKey(key) ~= nil
+    local recipes = PlayerFactories:offered(station, key)
+    local sel = Station.industry
+    -- A choice from another station, or none: the first that can be made
+    local chosen = nil
+    for _, recipe in ipairs(recipes) do
+        if recipe.id == sel.recipeId then chosen = recipe end
+    end
+    if not chosen then
+        for _, recipe in ipairs(recipes) do
+            if PlayerFactories:runsPossible(key, recipe) > 0 then chosen = recipe break end
         end
-
-        local free = PlayerFactories:freeLines(key)
-        rows[#rows + 1] = text(free > 0
-                and string.format("TO RENT             %d line(s) free, the station takes %d%% of each run",
-                    free, math.floor(Config.game.factory.rentShare * 100))
-                or "TO RENT             no lines free",
-            "Unageo-Medium", math.floor(13 * s), DIM)
-        rows[#rows + 1] = UIComponent.Divider { color = RULE }
-        for _, recipe in ipairs(PlayerFactories:offered(station)) do
-            local fee = PlayerFactories:feeFor(recipe)
-            rows[#rows + 1] = Grid {
-                fixedHeight = math.floor(26 * s),
-                cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
-                contents = {
-                    text(recipe:describe(), "Unageo-Regular", size, GREY),
-                    text(string.format("%.0fs a run  ·  fee %d", recipe.duration, fee),
-                        "Unageo-Regular", size, DIM, AlignHorizontal.Right),
-                    wideButton("Rent", s, 110, free > 0, false, function()
-                        local ok, reason = PlayerFactories:lease(key, recipe.id)
-                        LimitTheoryRedux:notify(ok
-                            and ("Rented a line for the " .. recipe.displayName)
-                            or ("Cannot rent: " .. (reason or "no")),
-                            ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
-                    end),
-                }
-            }
-        end
+        chosen = chosen or recipes[1]
+        sel.recipeId = chosen and chosen.id or nil
+        sel.runs = 1
     end
 
-    return Grid {
-        layoutType = GuiLayoutType.Vertical,
-        spacing = math.floor(2 * s),
-        cells = Grid.Fit(),
-        contents = rows
-    }
-end
-
---- The hangar: what the player keeps at this station, and moving it to and
---- from the ship.
----@param station Entity
----@param s number
----@return UILayoutGrid
-local function hangar(station, s)
-    local key = stationKey()
-    local size = math.floor(15 * s)
-    local rows = {}
-    if not key then
-        return Grid { cells = Grid.Fit(), contents = { text("No hangar here.", "Unageo-Regular", size, DIM) } }
-    end
-    local store = PlayerFactories:hangar(key)
-    local hold = PlayerCargo:get()
-
-    rows[#rows + 1] = text(string.format("HANGAR              %d / %d t used, the hold has %d t free",
-            math.floor(store:getUsedMass()), math.floor(store:getCapacity() or 0),
-            math.floor(hold:getFreeMass())),
-        "Unageo-Medium", math.floor(13 * s), DIM)
-    rows[#rows + 1] = UIComponent.Divider { color = RULE }
-
-    local columns = {
-        Grid.Fixed(COL_ITEM * s), Grid.Fixed(COL_NUM * s), Grid.Fixed(COL_NUM * s),
-        Grid.Fixed((COL_BUTTON + 30) * s), Grid.Fixed((COL_BUTTON + 30) * s),
-        Grid.Fixed((COL_BUTTON + 30) * s),
-    }
+    local rows = outpostHeader(key, s)
     rows[#rows + 1] = Grid {
-        fixedHeight = math.floor(20 * s),
-        cells = columns,
+        cells = { Grid.Fixed(470 * s), Grid.Fixed(20 * s), Grid.Fixed(510 * s) },
         contents = {
-            text("GOODS", "Unageo-Medium", math.floor(13 * s), DIM),
-            text("HANGAR", "Unageo-Medium", math.floor(13 * s), DIM, AlignHorizontal.Right),
-            text("HOLD", "Unageo-Medium", math.floor(13 * s), DIM, AlignHorizontal.Right),
-            text("", "Unageo-Medium", math.floor(13 * s), DIM),
-            text("", "Unageo-Medium", math.floor(13 * s), DIM),
-            text("", "Unageo-Medium", math.floor(13 * s), DIM),
+            blueprintList(key, recipes, s),
+            text("", "TitilliumWeb", 10, DIM),
+            blueprintDetail(key, chosen, outpost, s),
         }
     }
-
-    -- Everything either side holds, so goods can be moved both ways
-    local seen, items = {}, {}
-    for _, row in ipairs(store:list()) do
-        seen[row.item.id] = true
-        items[#items + 1] = row.item
-    end
-    for _, row in ipairs(hold:list()) do
-        if not seen[row.item.id] then
-            seen[row.item.id] = true
-            items[#items + 1] = row.item
-        end
-    end
-    table.sort(items, function(a, b) return a.id < b.id end)
-
-    if #items == 0 then
-        rows[#rows + 1] = text("Nothing here and nothing in the hold.", "Unageo-Regular", size, DIM)
-    end
-    for _, item in ipairs(items) do
-        local inHangar = store:count(item.id)
-        local inHold = hold:count(item.id)
-        local function move(from, to, units, what)
-            local taken = from:remove(item.id, units)
-            local put = to:add(item.id, taken)
-            if put < taken then from:add(item.id, taken - put) end
-            if put > 0 then
-                LimitTheoryRedux:notify(string.format("Moved %d %s %s", put, item.displayName, what),
-                    { 0.6, 0.9, 1.0 })
-            else
-                LimitTheoryRedux:notify("No room for that.", { 1.0, 0.4, 0.3 })
-            end
-        end
-        rows[#rows + 1] = Grid {
-            fixedHeight = math.floor(24 * s),
-            cells = columns,
-            contents = {
-                text(item.displayName, "Unageo-Regular", size, GREY),
-                text(inHangar > 0 and tostring(inHangar) or "-", "Unageo-Regular", size,
-                    inHangar > 0 and WHITE or DIM, AlignHorizontal.Right),
-                text(inHold > 0 and tostring(inHold) or "-", "Unageo-Regular", size,
-                    inHold > 0 and WHITE or DIM, AlignHorizontal.Right),
-                wideButton("To ship", s, 78, inHangar >= 1, false, function()
-                    move(store, hold, inHangar, "to the ship")
-                end),
-                wideButton("To hangar", s, 78, inHold >= 1, false, function()
-                    move(hold, store, inHold, "to the hangar")
-                end),
-                wideButton("Sell", s, 78, inHangar >= 1, false, function()
-                    sellAtMarket(station, item.id, inHangar)
-                end),
-            }
-        }
-    end
-
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    for _, row in ipairs(jobRows(key, outpost, s)) do rows[#rows + 1] = row end
     return Grid {
         layoutType = GuiLayoutType.Vertical,
-        spacing = math.floor(2 * s),
+        spacing = math.floor(4 * s),
         cells = Grid.Fit(),
         contents = rows
     }
@@ -687,25 +466,25 @@ local function nearby(s)
     local rows = {
         text(string.format("MARKETS WITHIN %d JUMPS        what was last seen of them",
                 MarketIntel:getRange()),
-            "Unageo-Medium", math.floor(13 * s), DIM),
+            "TitilliumWebSemiBold", math.floor(13 * s), DIM),
         UIComponent.Divider { color = RULE },
     }
 
     local spreads = MarketIntel:bestSpreads(galaxy, systemId, now, 8)
     if #spreads > 0 then
-        rows[#rows + 1] = text("BEST SPREADS", "Unageo-Medium", math.floor(13 * s), ACCENT)
+        rows[#rows + 1] = text("BEST SPREADS", "TitilliumWebSemiBold", math.floor(13 * s), ACCENT)
         for _, spread in ipairs(spreads) do
             rows[#rows + 1] = Grid {
                 fixedHeight = math.floor(22 * s),
                 cells = { Grid.Fixed(COL_ITEM * s), Grid.Fixed(330 * s), Grid.Fixed(330 * s),
                           Grid.Fixed(120 * s) },
                 contents = {
-                    text(spread.item.displayName, "Unageo-Regular", size, GREY),
+                    text(spread.item.displayName, "TitilliumWeb", size, GREY),
                     text(string.format("buy %d at %s, %s", spread.buyPrice, spread.buyAt.label,
-                        spread.buyAt.systemName), "Unageo-Regular", size, GOLD),
+                        spread.buyAt.systemName), "TitilliumWeb", size, GOLD),
                     text(string.format("sell %d at %s, %s", spread.sellPrice, spread.sellAt.label,
-                        spread.sellAt.systemName), "Unageo-Regular", size, GREEN),
-                    text(string.format("+%d a unit", spread.margin), "Unageo-Medium", size,
+                        spread.sellAt.systemName), "TitilliumWeb", size, GREEN),
+                    text(string.format("+%d a unit", spread.margin), "TitilliumWebSemiBold", size,
                         WHITE, AlignHorizontal.Right),
                 }
             }
@@ -716,7 +495,7 @@ local function nearby(s)
     local known = MarketIntel:nearby(galaxy, systemId, now)
     if #known == 0 then
         rows[#rows + 1] = text("No market has been seen yet. Dock at one.",
-            "Unageo-Regular", size, DIM)
+            "TitilliumWeb", size, DIM)
     end
     for _, record in ipairs(known) do
         local counted = 0
@@ -727,13 +506,13 @@ local function nearby(s)
                       Grid.Fixed(180 * s) },
             contents = {
                 text(string.format("%s, %s", record.label, record.systemName),
-                    "Unageo-Regular", size, GREY),
+                    "TitilliumWeb", size, GREY),
                 text(record.jumps == 0 and "this system"
                     or string.format("%d jump%s away", record.jumps, record.jumps == 1 and "" or "s"),
-                    "Unageo-Regular", size, DIM),
-                text(string.format("%d goods quoted", counted), "Unageo-Regular", size, DIM),
+                    "TitilliumWeb", size, DIM),
+                text(string.format("%d goods quoted", counted), "TitilliumWeb", size, DIM),
                 text(record.jumps == 0 and "live" or MarketIntel.describeAge(record.age),
-                    "Unageo-Regular", size, record.jumps == 0 and ACCENT or DIM,
+                    "TitilliumWeb", size, record.jumps == 0 and ACCENT or DIM,
                     AlignHorizontal.Right),
             }
         }
@@ -747,96 +526,166 @@ local function nearby(s)
     }
 end
 
---- The tab row.
+--- The Forces tab, at one of the player's outposts: launch a drone from the
+--- hangar, hire a mercenary, and give every unit in the system its order.
 ---@param s number
 ---@return UILayoutGrid
-local function tabs(s)
-    local function tab(label, name)
-        return wideButton(label, s, 150, true, Station.tab == name, function() Station.tab = name end)
+local function forces(s)
+    local game = LimitTheoryRedux
+    local key = stationKey()
+    local size = math.floor(14 * s)
+    local cfg = Config.game.forces
+    local rows = {}
+
+    local droneDef, hangarStock = game:droneStock()
+    local drones = droneDef and hangarStock and hangarStock:count(droneDef.id) or 0
+    local room = PlayerForces:room(key)
+    rows[#rows + 1] = text(string.format("FORCES              %d of %d berths free here  ·  wages %s an hour",
+            room, cfg.maxPerOutpost, PlayerWallet.format(PlayerForces:wageBill())),
+        "TitilliumWebSemiBold", math.floor(13 * s), DIM)
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(30 * s),
+        cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
+        contents = {
+            text(string.format("Combat drone: built, not hired. %d in this hangar.", drones),
+                "TitilliumWeb", size, GREY),
+            text("no upkeep", "TitilliumWeb", size, DIM, AlignHorizontal.Right),
+            wideButton("Launch", s, 110, drones > 0 and room > 0, false, function() game:launchDrone() end),
+        }
+    }
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(30 * s),
+        cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
+        contents = {
+            text(string.format("Mercenary: %s to hire, then %s an hour while they serve.",
+                    PlayerWallet.format(cfg.mercenary.hireCost), PlayerWallet.format(cfg.mercenary.wagePerHour)),
+                "TitilliumWeb", size, GREY),
+            text("", "TitilliumWeb", size, DIM, AlignHorizontal.Right),
+            wideButton("Hire", s, 110, room > 0 and PlayerWallet:has(cfg.mercenary.hireCost), false,
+                function() game:hireMercenary() end),
+        }
+    }
+
+    local units = PlayerForces:inSystem(game.currentSystemId or 1)
+    rows[#rows + 1] = text(#units > 0 and "IN THIS SYSTEM" or "IN THIS SYSTEM      none yet",
+        "TitilliumWebSemiBold", math.floor(13 * s), DIM)
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    for _, unit in ipairs(units) do
+        local status = game:unitStatus(unit)
+        local home = PlayerStations:byKey(unit.homeKey)
+        local guarding = unit.order == PlayerForces.Order.Guard
+        local orderText = guarding and ("guarding " .. (home and home.name or "its outpost"))
+            or "patrolling your outposts"
+        local here = unit.homeKey == key
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(28 * s),
+            cells = { Grid.Fixed(500 * s), Grid.Fixed(200 * s), Grid.Fixed(110 * s), Grid.Fixed(110 * s) },
+            contents = {
+                text(string.format("%s  ·  %s", unit.name, orderText), "TitilliumWeb", size, GREY),
+                text(string.format("hull %d%%  shield %d%%",
+                        math.floor(100 * status.hull / math.max(1, status.maxHull)),
+                        math.floor(100 * status.shield / math.max(1, status.maxShield))),
+                    "TitilliumWeb", size, status.hull < status.maxHull * 0.4 and GOLD or DIM, AlignHorizontal.Right),
+                wideButton(guarding and "Patrol" or "Guard", s, 100, true, false, function()
+                    game:setUnitOrder(unit, guarding and PlayerForces.Order.Patrol or PlayerForces.Order.Guard)
+                end),
+                wideButton(unit.kind == PlayerForces.Kind.Drone and "Recall" or "Dismiss", s, 100,
+                    unit.kind ~= PlayerForces.Kind.Drone or (here and status.here), false,
+                    function() game:releaseUnit(unit) end),
+            }
+        }
     end
-    return Grid {
-        spacing = math.floor(10 * s),
-        cells = Grid.Fit(),
-        contents = {
-            tab("Market", "market"),
-            tab("Factory", "factory"),
-            tab("Hangar", "hangar"),
-            tab("Nearby", "nearby"),
-        }
-    }
-end
-
---- The whole screen.
----@param s number
----@return UILayoutGrid
-local function screen(s)
-    local station = dockedStation()
-    local used, capacity = PlayerCargo:getLoad()
-    local missing, repairCost = LimitTheoryRedux:hullRepairQuote()
-
-    local headline = Grid {
-        cells = { Grid.Fixed(700 * s), Grid.Fixed(420 * s) },
-        contents = {
-            text(stationName(), "Unageo-Semibold", math.floor(34 * s), WHITE),
-            text(string.format("%s   ·   hold %d / %d t", PlayerWallet.format(PlayerWallet:get()),
-                math.floor(used), math.floor(capacity)), "Unageo-Medium", math.floor(17 * s),
-                GOLD, AlignHorizontal.Right),
-        }
-    }
-
-    local footer = Grid {
-        spacing = math.floor(14 * s),
-        cells = Grid.Fit(),
-        contents = {
-            UIComponent.Button {
-                title = missing > 0
-                    and string.format("Repair hull (%s)", PlayerWallet.format(repairCost))
-                    or "Hull intact",
-                width = math.floor(260 * s),
-                height = math.floor(34 * s),
-                font = { name = "Unageo-Medium", size = math.floor(16 * s) },
-                color = { text = missing > 0 and WHITE or DIM, background = BUTTON_BG, highlight = BUTTON_HI },
-                callback = function() LimitTheoryRedux:repairHull() end
-            },
-            UIComponent.Button {
-                title = "Undock  (F)",
-                width = math.floor(200 * s),
-                height = math.floor(34 * s),
-                font = { name = "Unageo-Medium", size = math.floor(16 * s) },
-                color = { text = WHITE, background = BUTTON_BG, highlight = BUTTON_HI },
-                callback = function() LimitTheoryRedux:undockPlayer() end
-            },
-        }
-    }
-
-    local contents = { headline, UIComponent.Divider { color = RULE } }
-    if station then
-        contents[#contents + 1] = tabs(s)
-        if Station.tab == "factory" then
-            contents[#contents + 1] = factory(station, s)
-        elseif Station.tab == "hangar" then
-            contents[#contents + 1] = hangar(station, s)
-        elseif Station.tab == "nearby" then
-            contents[#contents + 1] = nearby(s)
-        else
-            contents[#contents + 1] = market(station, s)
-        end
-    else
-        contents[#contents + 1] = text("Not docked.", "Unageo-Regular", math.floor(16 * s), DIM)
-    end
-    contents[#contents + 1] = footer
+    rows[#rows + 1] = text("A drone is recalled into its own outpost's hangar. Guards fly around their outpost; "
+        .. "patrols make the round of all your outposts here.", "TitilliumWeb", math.floor(12 * s), DIM)
 
     return Grid {
         layoutType = GuiLayoutType.Vertical,
-        align = { AlignHorizontal.Stretch, AlignVertical.Stretch },
-        childrenAlign = { AlignHorizontal.Center, AlignVertical.Center },
-        cellAlign = { AlignHorizontal.Center, AlignVertical.Center },
-        color = { background = Color(0.01, 0.02, 0.04, 0.92) },
-        padding = { math.floor(60 * s), math.floor(36 * s) },
-        spacing = math.floor(18 * s),
+        spacing = math.floor(2 * s),
         cells = Grid.Fit(),
-        contents = contents
+        contents = rows
     }
+end
+
+--- The tabs, in the strip's order
+local function tabList()
+    local list = {
+        { id = "hangar", label = "HANGAR" },
+        { id = "market", label = "MARKET" },
+        { id = "factory", label = "FACTORY" },
+        { id = "refit", label = "SHIP FITTING" },
+        { id = "nearby", label = "NEARBY" },
+    }
+    -- The bounty board at the system's stations; the player's own ships are
+    -- commanded from their outposts
+    if PlayerStations.isOwnedKey(stationKey()) then
+        list[#list + 1] = { id = "forces", label = "FORCES" }
+    else
+        list[#list + 1] = { id = "bounties", label = "BOUNTY BOARD" }
+    end
+    return list
+end
+
+--- Draw the current tab into the main area (W x H design pixels).
+local function drawTab(station, W, H)
+    local s = scale()
+    if not station then
+        StationTabs.panelled("NOT DOCKED", nil, nil, W, H)
+        return
+    end
+    local owned = PlayerStations.isOwnedKey(stationKey())
+    if Station.tab == "hangar" then
+        StationTabs.hangar(station, W, H)
+    elseif Station.tab == "refit" then
+        StationTabs.fitting(station, W, H)
+    elseif Station.tab == "bounties" and not owned then
+        StationTabs.bounties(station, W, H)
+    elseif Station.tab == "factory" then
+        StationTabs.panelled("INDUSTRY", "blueprints, materials and jobs at this station", factory(station, s), W, H)
+    elseif Station.tab == "nearby" then
+        StationTabs.panelled("MARKETS NEARBY", "what was last seen of them", nearby(s), W, H)
+    elseif Station.tab == "forces" and owned then
+        StationTabs.panelled("YOUR FORCES", "drones and hired ships of this outpost", forces(s), W, H)
+    else
+        Station.tab = "market"
+        StationTabs.market(station, W, H)
+    end
+end
+
+local function screen()
+    local game = LimitTheoryRedux
+    local station = dockedStation()
+    local dock = game.docked
+    local missing, repairCost = game:hullRepairQuote()
+
+    -- Where: the system, the owner, what kind of place
+    local chips = {}
+    local system = game.galaxy and game.galaxy.systems and game.galaxy.systems[game.currentSystemId]
+    if system and system.name then chips[#chips + 1] = { text = system.name:upper() } end
+    if dock and dock.faction then
+        local Factions = require("Modules.NPC.Factions")
+        local r, g, b = Factions.color(dock.faction)
+        chips[#chips + 1] = { text = Factions.name(dock.faction):upper(), color = Color(r, g, b, 1) }
+    end
+    chips[#chips + 1] = { text = dock and dock.outpost and "YOUR OUTPOST" or "STATION", color = C.CYAN }
+
+    StationFrame.draw({
+        title = stationName(),
+        chips = chips,
+        tabs = tabList(),
+        active = Station.tab,
+        onTab = function(id) Station.tab = id end,
+        actions = {
+            {
+                label = missing > 0 and string.format("REPAIR HULL  %s", PlayerWallet.format(repairCost))
+                    or "HULL INTACT",
+                enabled = missing > 0,
+                callback = function() game:repairHull() end,
+            },
+        },
+        onUndock = function() game:undockPlayer() end,
+        body = function(W, H) drawTab(station, W, H) end,
+    })
 end
 
 function Station:onViewOpen(isPageOpen) end
@@ -848,8 +697,12 @@ function Station:onViewOpen(isPageOpen) end
 Station:addContent({
     state = {},
     render = function()
-        screen(scale()):render()
+        screen()
     end
 })
+
+-- The debug menu (~) over the station screen too
+local DebugMenu = require("UI.HmGui.Views.Gameplay.DebugMenu")
+Station:addContent({ state = {}, render = function() DebugMenu.render() end })
 
 return Station

@@ -1,0 +1,93 @@
+# What a ship leaves behind when it is destroyed: the cargo canister that
+# floats where it died. The player's ship pulls canisters in when it is close
+# and loads them into the hold (Config.game.loot has the ranges and timings).
+#
+# Loaded by script/Shared/Data/LootData.lua, which checks every entry and
+# stops with "res/data/loot.toml:<line>: ..." on a mistake.
+#
+# One [role.<name>] table per NPC role (Config.game.npc.roles in
+# GameConfig.lua); a role with no table drops nothing. In it:
+#
+#   drops   the list of what may be in the canister, each rolled on its own:
+#           { item = "<item name>", chance = <0..1>, min = <units>, max = <units> }
+#           Items are named as in items.toml. `min`/`max` default to 1.
+#           Modules and weapons are items like any other, so a wreck's guns
+#           drop as the fitting items they are.
+#
+# The player's own drones and hires drop nothing.
+
+[role.pirate]
+drops = [
+    { item = "Hull Scrap", chance = 0.9, min = 8, max = 20 },
+    { item = "Salvaged Electronics", chance = 0.6, min = 2, max = 6 },
+    { item = "Energy Cell", chance = 0.5, min = 10, max = 40 },
+    { item = "Ship Weapon, Pulse Turret", chance = 0.12 },
+    { item = "Ship Weapon, Launcher Turret", chance = 0.06 },
+    { item = "Shield Capacitor", chance = 0.08 },
+    { item = "Afterburner", chance = 0.04 },
+    { item = "Radioactive Isotopes", chance = 0.1, min = 1, max = 3 },
+]
+
+[role.pirateScout]
+drops = [
+    { item = "Hull Scrap", chance = 0.9, min = 4, max = 10 },
+    { item = "Salvaged Electronics", chance = 0.4, min = 1, max = 3 },
+    { item = "Energy Cell", chance = 0.4, min = 5, max = 20 },
+    { item = "Ship Weapon, Pulse Turret", chance = 0.08 },
+    { item = "Manoeuvring Thrusters", chance = 0.04 },
+]
+
+# Pirate merchants carry stolen goods
+[role.pirateMerchant]
+drops = [
+    { item = "Hull Scrap", chance = 0.9, min = 8, max = 18 },
+    { item = "Salvaged Electronics", chance = 0.5, min = 2, max = 5 },
+    { item = "Steel", chance = 0.4, min = 5, max = 20 },
+    { item = "Copper", chance = 0.3, min = 5, max = 20 },
+    { item = "Hydrocarbons", chance = 0.3, min = 5, max = 15 },
+    { item = "Infolytic Chip", chance = 0.15, min = 1, max = 3 },
+    { item = "Cargo Pod", chance = 0.05 },
+]
+
+[role.security]
+drops = [
+    { item = "Hull Scrap", chance = 0.9, min = 10, max = 24 },
+    { item = "Salvaged Electronics", chance = 0.7, min = 3, max = 7 },
+    { item = "Energy Cell", chance = 0.5, min = 20, max = 50 },
+    { item = "Ship Weapon, Beam Turret", chance = 0.1 },
+    { item = "Shield Booster", chance = 0.06 },
+    { item = "Ship Sensor", chance = 0.06 },
+]
+
+[role.mercenary]
+drops = [
+    { item = "Hull Scrap", chance = 0.9, min = 6, max = 16 },
+    { item = "Salvaged Electronics", chance = 0.5, min = 2, max = 4 },
+    { item = "Ship Weapon, Pulse Turret", chance = 0.1 },
+    { item = "Armour Plating", chance = 0.05 },
+]
+
+[role.trader]
+drops = [
+    { item = "Hull Scrap", chance = 0.9, min = 6, max = 16 },
+    { item = "Salvaged Electronics", chance = 0.3, min = 1, max = 3 },
+    { item = "Steel", chance = 0.4, min = 10, max = 30 },
+    { item = "Plastic", chance = 0.3, min = 10, max = 30 },
+    { item = "Liquid Water", chance = 0.3, min = 10, max = 40 },
+    { item = "Data Cube", chance = 0.2, min = 2, max = 6 },
+    { item = "Cargo Pod", chance = 0.05 },
+]
+
+[role.miner]
+drops = [
+    { item = "Hull Scrap", chance = 0.9, min = 6, max = 14 },
+    { item = "Siderite", chance = 0.6, min = 10, max = 40 },
+    { item = "Olivine", chance = 0.5, min = 10, max = 40 },
+    { item = "Mining Laser", chance = 0.08 },
+]
+
+[role.worker]
+drops = [
+    { item = "Hull Scrap", chance = 0.8, min = 3, max = 8 },
+    { item = "Energy Cell", chance = 0.4, min = 5, max = 15 },
+]

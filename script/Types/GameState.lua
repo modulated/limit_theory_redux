@@ -45,6 +45,15 @@ GameState.render = {
     zNear               = Config.render.camera.zNear,
     zFar                = Config.render.camera.zFar,
     thrusterLights      = Config.render.general.thrusterLights,
+    -- Speed effects (Settings > Graphics; SpeedFeelSystem)
+    speedFov            = Config.render.speedFeel.settings.fov,
+    speedShake          = Config.render.speedFeel.settings.shake,
+    speedBlur           = Config.render.speedFeel.settings.radialBlur,
+    speedAberration     = Config.render.speedFeel.settings.aberration,
+    speedVignette       = Config.render.speedFeel.settings.vignette,
+    speedTravelDrive    = Config.render.speedFeel.settings.travelDrive,
+    speedDust           = Config.render.speedFeel.settings.dust,
+    speedIntensity      = Config.render.speedFeel.settings.intensity,
     pulseLights         = Config.render.general.pulseLights,
     renderDistances     = {
         Ship = 10000,
@@ -72,6 +81,11 @@ GameState.ui = {
     hudScale                         = Config.ui.general.hudScale,
 
     drawHud                          = Config.ui.general.drawHud,
+    -- The overview (O): which categories it lists and how it sorts them,
+    -- remembered with the other settings in user.ini
+    overviewFilters                  = Config.ui.general.overviewFilters,
+    overviewSort                     = Config.ui.general.overviewSort,
+    overviewSortDescending           = Config.ui.general.overviewSortDescending,
     showIndicatorNames               = Config.ui.general.showIndicatorNames,
 
     -- Trackers

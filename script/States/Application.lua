@@ -468,7 +468,11 @@ function Application:handleAppInput()
         self.doScreenshot = true
     end
 
-    if Input:isPressed(Bindings.ToggleFullscreen) then self:toggleFullscreen() end
+    -- Alt + Enter: a bare Enter is the UI's
+    if Input:isPressed(Bindings.ToggleFullscreen)
+        and (Input:isDown(Button.KeyboardAltLeft) or Input:isDown(Button.KeyboardAltRight)) then
+        self:toggleFullscreen()
+    end
 
     if Input:isPressed(Bindings.Pause) and GameState:GetCurrentState() == Enums.GameStates.InGame then
         self:togglePause()

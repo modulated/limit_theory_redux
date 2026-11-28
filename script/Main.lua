@@ -30,7 +30,13 @@ function InitSystem()
 
         dofile('./script/Config/Version.lua')
 
-        if Config.gameVersion ~= "0.0.0" and Config.gameVersion ~= Core.FFI.Engine.GetVersion() then
+        -- Not stamped by CI (a local build): the engine's version, which is
+        -- the workspace's (Cargo.toml) with "-dev"
+        if Config.gameVersion == "0.0.0" then
+            Config.gameVersion = Core.FFI.Engine.GetVersion()
+        end
+
+        if Config.gameVersion ~= Core.FFI.Engine.GetVersion() then
             Log.Error("Engine and script version mismatch. Engine: %s. Script: %s.", Core.FFI.Engine.GetVersion(),
                 Config.gameVersion)
         end
@@ -70,6 +76,17 @@ function InitSystem()
 
         -- Load Config Files
         loadConfigFiles(configDir)
+
+        -- Fill the data registries (items, recipes, fittings, hulls): see
+        -- Shared/Definitions/__init__.lua for why this is explicit
+        -- A mistake in res/data/*.toml stops the game here, saying where it is:
+        -- a game with half its items missing would only fail later, somewhere
+        -- that has nothing to do with the mistake.
+        local defsOk, defsErr = pcall(require, "Shared.Definitions")
+        if not defsOk then
+            Log.Error("Failed to load the game's data: %s", tostring(defsErr))
+            error("The game's data could not be loaded:\n" .. tostring(defsErr), 0)
+        end
 
         -- Load Types
         for _, fname in ipairs(io.listdirex(Config.paths.types)) do

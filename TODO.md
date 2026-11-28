@@ -28,12 +28,24 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
      entity tree, spawn the next one, behind a transit or loading screen.
    - Route planning across systems (Dijkstra/A* over the gate graph, in Lua).
    - A galaxy map, as a third state of `CycleMapMode`.
+   - [x] The overview (O): everything in the system, filtered by category (asteroids only
+         within `Config.game.overview.asteroidRange`), sorted by any column, scrolled with the
+         wheel, filters and sort remembered in user.ini; right click for Target, Attack, Look at,
+         Approach, Dock or Jump (now, or on arrival) and Show on map; the scroll bar drags and
+         pages; Tab locks the nearest hostile (again: the next). Still to do: naming systems'
+         belts; deleting the legacy System_Map view (UI/HmGui/Views/Gameplay/SystemMap.lua),
+         which nothing opens and whose Tab binding is dead.
 4. **Obstacle avoidance.** Autopilot flies straight lines and can fly through a planet. Expose
    `Physics::shape_cast`/`shape_overlap` (`engine/lib/phx/src/physics/physics.rs`) to Lua, then
    steer around bodies' bounding spheres. Optional: smooth routes with a 3D Catmull-Rom or
    Bézier curve.
-5. **Save and load.** Nothing is saved. Start with the universe seed and player state
-   (`script/Types/GameState.lua:123` has a placeholder for world state).
+5. **Save and load** (done: `script/Shared/Save/`). Binary saves (tagged values, CRC-checked,
+   zlib-compressed, written atomically with a backup) in seven slots: Quicksave (F4, Ctrl+F4 to
+   load), Autosave (on docking and on deploying an outpost) and five of the player's own, from
+   the pause menu and the main menu's Load Game. A save keeps the galaxy seed, where the ship is,
+   the wallet, hold, fleet, standing, hangars and lines, orders (with their escrow), market
+   intel, station stock and the player's outposts. Left over: NPC ships and the rocks mined out
+   are generated again on load, not saved.
 6. **Economy.** Stations hold stock, price it by scarcity, run the production chains against it
    and trade with the player on the docked station screen; the player has a hold, a mining laser
    and credits; NPC miners deliver their ore. Legacy's economy is deleted. The item list, the
@@ -42,10 +54,39 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
          order books (they are the other side of the player's orders).
    - [ ] Workers are only hands: never paid, never hired, their cargo irrelevant. Wages and a
          labour market would make a station's crew a real cost.
-   - [ ] Equipment and hulls that can be fitted and flown, not just bought (the next thing worth
-         building: it is what makes crafting matter).
+   - [x] Equipment and hulls that can be fitted and flown, not just bought (0.2.0: weapons go in
+         mounts, modules in slots, actives on the number keys, every part has a recipe, and a
+         Market Datalink module widens how many jumps of order books can be read). A hull bought
+         is a ship commissioned, and a fit belongs to its ship, so a fleet of ships rigged for
+         different work is the point. Left over: ships the player can
+         rename, and a fleet list away from the station screen (you can only see the ships parked
+         where you are standing).
    - [ ] Biomass has no source, so the hydrocarbon chain runs on imports.
-   - [ ] Saving the hold, the wallet, station stock and production progress.
+   - [x] Saving the hold, the wallet, station stock and production progress.
+   - [x] Player outposts (`PlayerStations`): a Refinery or Manufacturing Outpost Kit, or a Small
+         Space Station for a trading post, deployed from the overview's menu on a planet (a slot on
+         its stations' ring) or a belt. Each has storage (the hangar), a market of the owner's
+         orders with no fees, where NPCs not hostile to the player trade (miners sell into the
+         owner's bids, traders buy the listings) and pay the owner their sales tax, and the
+         lines of its specialisation, free. Its defences are an armed platform beside it that
+         engages whatever the player is hostile to and earns the bounties it takes; the platform
+         can be shot down (the station cannot) and is repaired or rebuilt at the outpost.
+   - [x] Forces: combat drones (built from iridium, a rare ore, through a three-recipe chain)
+         and hired mercenaries (fee plus hourly wage) guard an outpost or patrol all of them in
+         a system, from the outpost's Forces tab.
+   - [x] Loot: a destroyed ship leaves a cargo canister (res/data/loot.toml, by role) of
+         salvage, goods and now and then a module; the player's ship draws canisters in and
+         loads them, warning when the hold is full. Hull Scrap and Salvaged Electronics are
+         recycled at a refinery (recipes 53, 54).
+   - [x] Hunting: sensors identify ships within range and show the rest as signatures (maps,
+         overview, HUD edge markers), by how loud they are (size, firing, mining, running hard;
+         pirates hide quiet among the rocks of asteroid fields). Stations post bounty contracts on
+         named pirates, tracked in gold. Deep-Space Sensor Array and Signal Triangulator modules
+         (signatureRange, signatureAccuracy) make the player a better hunter.
+   - [x] Game data as TOML (`res/data/`): items, recipes, modules and ore compositions, checked
+         at load with file:line errors; `tools/data-check.lua` cross-checks and exports CSV.
+   - [x] A Sandbox start: Solo hull, a pulse turret, a mining laser, 500 credits, a Peaceful
+         home system with only pirate scouts.
    - [ ] Balance: tune with `luajit tools/economy-sim.lua --seeds 8 --prospector --trader`
          (it runs the economy headless). Income swings more than tenfold between systems
          depending on whether the local refineries want the local ore; mining and hauling pay
@@ -55,18 +96,26 @@ In order: each step builds on the one before. The design for 1-4 is in `ai/ideas
    Transport, Think; actions MoveTo, Wait, Attack, Flee, LeaveSystem); the player flies an
    armed gunship. Still to do:
    - [ ] Confirm the gunship recipe builds and the fights play well (untested at the time).
-   - [ ] Manual fire and target lock for the player (turrets only fire automatically).
+   - [ ] Manual fire for the player. Target lock exists (the overview's Target: every mount that
+         can reach it takes it; Attack turns them on a ship that is not hostile), but the turrets
+         still choose when to fire.
    - [ ] CriminalThink's black-market jobs (needs the economy).
-   - [ ] Prospecting scanner: rocks already carry their ore and remaining yield
-         (`Shared/Helpers/AsteroidOre.lua`, `AsteroidOre.ofEntity`); nothing reads it yet, so the
-         HUD names the ore as soon as a rock is in reach. See [doc/items.md](doc/items.md).
-   - [ ] Legacy's dust clouds (only the flecks are ported; the clouds need their texture
-         pass and shader converted).
+   - [x] Prospecting scanner (0.2.0): a rock is unnamed until the Survey Scanner reads it, which it
+         does at 2.5x the laser's reach; mining a unit out identifies it too. Left over: a belt's
+         composition is still public on the system map, and a surveyed rock has no marker in the
+         world. See [doc/items.md](doc/items.md).
+   - [ ] Legacy's dust clouds (the streaking dust is upstream's SpeedFeelSystem, which
+         replaced this fork's port of Legacy's flecks; the clouds need their texture pass and
+         shader converted).
    - [ ] Reputation from more than kills and hits (escorting, trading) once there is more
-         to do; the player can't attack neutral ships yet, so standing mostly rises.
-   - [ ] Credits only come from bounties and go on hull repairs: trading, mining sales and
-         ship upgrades would give them more uses (the economy).
-   - [ ] Armor: DefenseComponent has an armor value no damage path reads yet.
+         to do. The player can attack a neutral ship (the overview's Attack), which costs
+         standing hit by hit; the guns hold fire and a dialog asks before the next kill could
+         turn the faction hostile.
+   - [ ] Credits only come from bounties, trading and mining sales; they go on hull repairs,
+         factory leases, fittings and hulls. Insurance, fuel and ammunition are the obvious sinks
+         still missing.
+   - [ ] Armor: DefenseComponent has an armor value no damage path reads yet, so Armour Plating's
+         armour does nothing (its hull and thrust changes do).
    - [ ] Jobs chosen by payout and threat, as Legacy's Think did, once there is an economy.
    - [ ] Respawn or a way back after the player's ship is destroyed (now: GAME OVER).
 8. **Scenario list.** The New Game test-seed list is a stopgap

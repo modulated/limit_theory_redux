@@ -17,9 +17,72 @@ layout(std140) uniform MaterialParams {
   float twistFactor;
   int enableDebug;
   int debugMode;
+  int layers;        // stacked annuli in the mesh (1: a flat band)
 };
 
 in vec3 objPos;
+
+/* A planetary ring after Saturn's.
+
+   Structure, inside out (each ring's own boundaries jittered by its seed):
+     * C ring: faint and translucent, greyer;
+     * B ring: the dense, bright heart, with faint dark radial "spokes";
+     * Cassini division: a dark gap;
+     * A ring: a little dimmer and cooler, with an Encke-like gap near its edge.
+   All of it broken into fine ringlets by noise at several radial scales, with
+   a few narrower gaps scattered through, and small colour shifts from ringlet
+   to ringlet (reddish dusty bands, bluish icy ones).
+
+   Light: the face toward the star is lit; seen from the other side the ring
+   glows with what passes through it, so its translucent parts are the bright
+   ones there. Seen against the star, the fine dust lights up (forward
+   scattering). Opacity follows the optical depth along the line of sight,
+   so the ring is thin and see-through face-on and solid edge-on.
+
+   Sparkle: individual ice particles glint, tiny specks that twinkle, close up.
+
+   Depth: a flat band is a line edge-on, and vanishes from inside the ring.
+   The mesh can be a stack of `layers` annuli spread over +-2.5 sigma about
+   the plane (sigma is `ringHeight`), the matter's gaussian spread. Each layer
+   draws its share of the optical depth, so face-on the stack composites to
+   what one band would; from within it, the layers above and below are a
+   haze, faint overhead and dense toward the plane's horizon. Light is worked
+   out for the ring as a whole.
+
+   Seen from outside the stack, its layers showed as plates, each edge
+   stepped from the next: there the middle layer carries the whole ring and
+   the rest draw nothing. The spread comes in only as the eye nears the
+   stack (`insideStack`).
+*/
+
+// The stack spans +-2.5 sigma; a layer is the middle one within half a
+// spacing of the plane.
+float stackSpan() {
+    return 2.5 * max(ringHeight, 1e-6);
+}
+
+bool isMiddleLayer(float y) {
+    return layers <= 1 || abs(y) < stackSpan() / float(layers - 1);
+}
+
+// This fragment's layer's share of the ring's optical depth, `inside` (0..1)
+// being how far the eye is within the stack: outside, all of it on the
+// middle layer; inside, the gaussian at the layer's height over the sum at
+// every layer's height.
+float layerShare(float y, float inside) {
+    if (layers <= 1) return 1.0;
+    float sigma = max(ringHeight, 1e-6);
+    float span = stackSpan();
+    float spacing = 2.0 * span / float(layers - 1);
+    float total = 0.0;
+    for (int i = 0; i < layers; i++) {
+        float yi = (-span + float(i) * spacing) / sigma;
+        total += exp(-0.5 * yi * yi);
+    }
+    float yn = y / sigma;
+    float spread = exp(-0.5 * yn * yn) / max(total, 1e-6);
+    return mix(isMiddleLayer(y) ? 1.0 : 0.0, spread, inside);
+}
 
 // Per-ring random numbers come from an integer hash of the seed's bits, not
 // from `noise()`. `noise()` is `fract(sin(x) * 4137.3)`: a change in the last
@@ -45,129 +108,162 @@ float ringRandom(int index, int channel) {
     return float(h >> 8u) * (1.0 / 16777216.0);
 }
 
+// A whole-number offset for a noise lookup (exact, see above).
+float ringOffset(int index) {
+    return floor(ringRandom(index, 5) * 4096.0);
+}
+
+// A number in [0, 1) for one cell of the sparkle grid, and channel.
+float cellRandom(int cr, int ca, int channel) {
+    uint h = ringHash(uint(cr) * 73856093u ^ ringHash(uint(ca) * 19349663u + uint(channel) * 83492791u)
+                      ^ floatBitsToUint(seed));
+    return float(h >> 8u) * (1.0 / 16777216.0);
+}
+
+// 1 inside [a, b], easing in and out over `soft`.
+float band(float x, float a, float b, float soft) {
+    return smoothstep(a - soft, a + soft, x) * (1.0 - smoothstep(b - soft, b + soft, x));
+}
+
 void main() {
-    // --- Normalized radial coordinate ---
-    float r = length(vec2(objPos.x, objPos.z));
-    float rNorm = (r - rMin) / (rMax - rMin);
+    // --- Where in the ring ---
+    float r = length(objPos.xz);
+    float rNorm = clamp((r - rMin) / max(1e-6, rMax - rMin), 0.0, 1.0);
+    // Inner parts orbit faster (Kepler), slowly enough to read as drift
+    float spin = time * rotationSpeed * 0.02 * (1.6 - rNorm);
+    float angle = atan(objPos.z, objPos.x) + spin;
 
-    // --- Differential rotation ---
-    float speed = rotationSpeed * (1.0 - rNorm);
-    float angle = atan(objPos.z, objPos.x) + time * speed;
-    angle += twistFactor * rNorm;
+    // --- The major structure ---
+    float jitter = (ringRandom(1, 0) - 0.5) * 0.10;
+    float cEnd = 0.26 + jitter;                          // C ring -> B ring
+    float bEnd = 0.62 + jitter * 0.5;                    // B ring -> Cassini
+    float cassini = 0.045 + 0.035 * ringRandom(1, 1);    // its width
+    float aStart = bEnd + cassini;
+    float encke = mix(aStart, 1.0, 0.72 + 0.14 * ringRandom(1, 2));
 
-    float radius = r;
-    vec2 rotPos = vec2(cos(angle), sin(angle)) * radius;
-    vec2 angleCircle = vec2(cos(angle), sin(angle)) * 0.5 + 0.5;
+    // Optical depth (how much there is to see), band by band
+    float tau = mix(0.18, 1.45, smoothstep(cEnd - 0.03, cEnd + 0.03, rNorm));   // C faint, B dense
+    tau *= mix(1.0, 0.65, smoothstep(aStart - 0.01, aStart + 0.03, rNorm));    // A dimmer
+    tau *= 1.0 - 0.94 * band(rNorm, bEnd, aStart, 0.006);                     // Cassini
+    tau *= 1.0 - 0.90 * band(rNorm, encke - 0.006, encke + 0.006, 0.003);      // Encke
 
-    // --- Base vertical factor ---
-    float yNorm = clamp(objPos.y / ringHeight + 0.5, 0.0, 1.0);
-    float baseVerticalFade = mix(0.3, 1.0, exp(-4.0 * abs(yNorm - 0.5)));
+    // A few narrower gaps scattered through
+    for (int i = 0; i < 6; i++) {
+        float gp = 0.05 + 0.9 * ringRandom(2 + i, 0);
+        float gw = 0.002 + 0.007 * ringRandom(2 + i, 1);
+        tau *= 1.0 - (0.35 + 0.5 * ringRandom(2 + i, 2)) * band(rNorm, gp - gw, gp + gw, gw * 0.6);
+    }
 
-    // --- Perspective fade ---
-    vec3 toEye = eye - objPos;
+    // Ringlets: structure at several radial scales
+    float ringlets = 0.55 * fSmoothNoise(rNorm * 40.0 + ringOffset(10), 2, 2.0)
+                   + 0.30 * fSmoothNoise(rNorm * 220.0 + ringOffset(11), 2, 2.0)
+                   + 0.15 * fSmoothNoise(rNorm * 1100.0 + ringOffset(12), 1, 2.0);
+    tau *= 0.45 + 1.1 * ringlets;
+
+    // Spokes: faint dark radial streaks across the B ring, turning with it
+    float spokes = fSmoothNoise(vec2(angle * 14.0, rNorm * 3.0 + ringOffset(13)), 2, 2.0);
+    float inB = band(rNorm, cEnd + 0.03, bEnd - 0.03, 0.03);
+    tau *= 1.0 - inB * 0.22 * smoothstep(0.6, 0.85, spokes);
+
+    // Soft inner and outer edges
+    tau *= smoothstep(0.0, 0.025, rNorm) * (1.0 - smoothstep(0.985, 1.0, rNorm));
+    tau = max(tau, 0.0);
+
+    // --- Colour ---
+    // Each ring has its own palette, from dusty grey-brown to icy white
+    float icy = ringRandom(3, 0);
+    vec3 dusty = vec3(0.50, 0.44, 0.38);
+    vec3 tanColor = vec3(0.88, 0.77, 0.62);
+    vec3 ice = vec3(0.90, 0.93, 0.98);
+    vec3 baseColor = mix(dusty, mix(tanColor, ice, 0.35 + 0.3 * ringRandom(3, 1)), icy);
+    vec3 color = baseColor;
+    // C ring greyer and darker, A ring a touch cooler
+    color = mix(color * vec3(0.78, 0.78, 0.82), color, smoothstep(cEnd - 0.04, cEnd + 0.04, rNorm));
+    color = mix(color, color * vec3(0.94, 0.98, 1.06), smoothstep(aStart, aStart + 0.06, rNorm));
+    // Ringlet to ringlet: reddish dusty bands, bluish icy ones
+    float hue = fSmoothNoise(rNorm * 160.0 + ringOffset(14), 2, 2.0);
+    color *= mix(vec3(1.08, 0.96, 0.86), vec3(0.92, 0.98, 1.08), hue);
+    color *= 0.85 + 0.3 * fSmoothNoise(rNorm * 600.0 + ringOffset(15), 1, 2.0);
+
+    // --- Light ---
+    vec3 N = normalize(normal);
+    vec3 L = normalize(starDir);          // toward the star
+    vec3 toEye = eye - pos;
     float viewDist = length(toEye);
-    float fadeDistance = 1e5;
-    float perspectiveFade = clamp(1.0 - viewDist / fadeDistance, 0.0, 1.0);
+    vec3 V = toEye / max(viewDist, 1e-6); // toward the eye
+    float nl = dot(N, L);
+    float nv = dot(N, V);
+    float mu = max(abs(nv), 0.06);        // how face-on it is seen
 
-    // --- Radial edge fade ---
-    float edgeWidth = 0.08;
-    float radialFade = smoothstep(1.0, 1.0 - edgeWidth, rNorm) *
-                       smoothstep(0.0, 0.0 + edgeWidth, rNorm);
-
-    // --- Ring gaps: Cassini-like division pattern ---
-    float gapPattern = 1.0;
-    
-    // Major gap (Cassini division analog)
-    float majorGapPos = 0.72;
-    float majorGapWidth = 0.06;
-    float majorGap = smoothstep(majorGapPos - majorGapWidth*0.5, majorGapPos - majorGapWidth*0.3, rNorm) *
-                     (1.0 - smoothstep(majorGapPos + majorGapWidth*0.3, majorGapPos + majorGapWidth*0.5, rNorm));
-    gapPattern *= 1.0 - majorGap * 0.92;
-    
-    // Minor gaps with procedural variation
-    for(int i = 0; i < 5; i++) {
-        float gapPos = ringRandom(i, 0) * 0.7 + 0.15;
-        float gapWidth = 0.015 + 0.025 * ringRandom(i, 1);
-        float gapDepth = 0.4 + 0.5 * ringRandom(i, 2);
-        
-        float gap = smoothstep(gapPos - gapWidth, gapPos - gapWidth*0.5, rNorm) *
-                    (1.0 - smoothstep(gapPos + gapWidth*0.5, gapPos + gapWidth, rNorm));
-        gapPattern *= 1.0 - gap * gapDepth;
+    // How far the eye is within the stack: its height above the ring's
+    // plane, in the ring's own units. The eye's height above this layer
+    // (along the layer's world normal) plus the layer's own height, with the
+    // normal's sense against the ring's +y.
+    float worldScale = length(vec3(mWorld[0][0], mWorld[0][1], mWorld[0][2]));
+    float inside = 0.0;
+    if (layers > 1) {
+        vec3 ringUp = vec3(mWorld[1][0], mWorld[1][1], mWorld[1][2]);
+        float sense = dot(N, ringUp) >= 0.0 ? 1.0 : -1.0;
+        float eyeHeight = objPos.y + sense * dot(toEye, N) / max(worldScale, 1e-6);
+        float span = stackSpan();
+        inside = 1.0 - smoothstep(span, span * 2.0, abs(eyeHeight));
     }
 
-    // --- Dense streaks with improved density variation ---
-    float streak = 0.0;
-    int streakLayers = 50;
-    for(int i = 0; i < streakLayers; i++){
-        // Per-layer offsets are whole numbers from the integer hash, like
-        // densityVar below: `seed * float(i)` and `seed * 3.0` were the same
-        // uniform-only expressions as the gaps' (see ringRandom). With a
-        // 64-bit seed they are ~1e18, where rNorm vanishes from the sum and
-        // noise()'s sin() is the driver's guess; the streaks flickered.
-        float layerOffset = floor(ringRandom(8 + i, 2) * 4096.0);
-        float pos = fSmoothNoise(vec2(float(i), rNorm*60.0 + layerOffset), 1, 2.0) + rNorm*2.0;
-        float width = mix(0.015 + rNorm*0.04, 0.05 + rNorm*0.07, ringRandom(8 + i, 0));
-        float intensityOffset = floor(ringRandom(8 + i, 3) * 4096.0);
-        float intensity = mix(0.15, 0.65, fSmoothNoise(vec2(float(i), rNorm*3.0 + intensityOffset),1,2.0));
-        
-        // Variable vertical offset
-        float yOffset = 0.25 * ringRandom(8 + i, 1);
-        float layerYNorm = clamp(yNorm + yOffset - 0.5, 0.0, 1.0);
-        float layerFade = exp(-7.0 * abs(layerYNorm - 0.5));
+    // Opacity from the optical depth along the line of sight (this layer's)
+    float share = layerShare(objPos.y, inside);
+    float alpha = 1.0 - exp(-tau * share / mu);
 
-        // Better radial frequency scaling
-        float radialFreq = mix(50.0, 18.0, pow(rNorm, 0.7));
-        float layer = smoothstep(0.5 - width, 0.5 + width, fract(rNorm*radialFreq + pos)) * intensity * layerFade;
-
-        streak += layer;
+    float light;
+    if (nl * nv >= 0.0) {
+        // The lit face: brighter the more squarely the star hits it
+        light = 0.30 + 0.85 * abs(nl);
+    } else {
+        // The dark face: what passes through, so thin parts glow and dense
+        // parts go dark
+        light = (0.12 + 0.55 * abs(nl)) * exp(-tau * 0.9);
     }
-    streak = streak / (streak + 1.2); // Adjusted tonemap for more dynamic range
-    streak = clamp(streak, 0.0, 1.0);
+    // Against the star the dust lights up
+    float forward = pow(max(dot(-V, L), 0.0), 10.0);
+    light += forward * 0.9 * (1.0 - exp(-tau * 0.6));
+    color *= light;
 
-    // --- Enhanced dust with density modulation ---
-    vec3 dustCoord = vec3(rNorm*25.0, yNorm*12.0, angleCircle.x*12.0); 
-    float dustNoise = fSmoothNoise(dustCoord, 3, 2.1);
-    float dust = 0.04 + 0.1 * dustNoise;
-    dust *= streak * 0.9;
-    
-    // Radial density variation
-    // The per-ring offset is a whole number (exact); the noise varies per fragment.
-    float densityVar = 0.6 + 0.4 * fSmoothNoise(rNorm*30.0 + floor(ringRandom(0, 7) * 4096.0), 2, 2.0);
-    dust *= densityVar;
+    // --- Sparkle: ice glinting, close up ---
+    // The ring's width in the world (rMin and rMax are in its own space;
+    // mWorld carries the body's scale)
+    float ringWidth = (rMax - rMin) * worldScale;
+    float nearFade = clamp(1.0 - viewDist / (ringWidth * 4.0), 0.0, 1.0);
+    // On the middle layer only: the layers share the cell grid, and glints
+    // repeated in each would stack into streaks
+    if (isMiddleLayer(objPos.y) && nearFade > 0.0 && tau > 0.05) {
+        float radialCells = 1400.0;
+        int cr = int(floor(rNorm * radialCells));
+        float circumference = 6.2831853 * r / max(1e-6, rMax - rMin) * radialCells;
+        int ca = int(floor((angle / 6.2831853 + 0.5) * circumference));
+        float pick = cellRandom(cr, ca, 0);
+        if (pick > 0.985) {
+            float rate = 2.0 + 6.0 * cellRandom(cr, ca, 1);
+            float phase = 6.2831853 * cellRandom(cr, ca, 2);
+            float twinkle = pow(0.5 + 0.5 * sin(time * rate + phase), 6.0);
+            // A glint wants the light coming off the ring toward the eye
+            float glint = 0.4 + 0.6 * pow(max(dot(reflect(-L, N), V), 0.0), 4.0);
+            vec3 tint = mix(vec3(1.0, 0.85, 0.7), vec3(0.75, 0.88, 1.0), cellRandom(cr, ca, 3));
+            float s = twinkle * glint * nearFade;
+            color += tint * s * 1.6;
+            alpha = max(alpha, s * 0.9);
+        }
+    }
 
-    // Apply gap pattern
-    float ringMask = clamp((streak + dust) * gapPattern, 0.0, 1.0);
+    // Far off, the ring fades rather than shimmer
+    alpha *= clamp(1.0 - viewDist / 1e7, 0.0, 1.0);
 
-    // --- Final alpha with better edge behavior ---
-    float alpha = radialFade * baseVerticalFade * perspectiveFade * ringMask;
-    alpha = pow(alpha, 0.9); // Slight gamma adjustment for better visibility
+    if (enableDebug != 0) {
+        if (debugMode == 1) { color = vec3(rNorm); alpha = 1.0; }
+        else if (debugMode == 2) { color = vec3(tau * 0.5); alpha = 1.0; }
+    }
 
-    // --- Improved color gradient ---
-    vec3 innerColor = vec3(0.82, 0.76, 0.68);
-    vec3 midColor = vec3(0.92, 0.88, 0.82);
-    vec3 outerColor = vec3(1.0, 0.97, 0.88);
-    
-    // Three-way color blend
-    float colorMix1 = smoothstep(0.0, 0.45, rNorm);
-    float colorMix2 = smoothstep(0.45, 1.0, rNorm);
-    vec3 color = mix(innerColor, midColor, colorMix1);
-    color = mix(color, outerColor, colorMix2);
-    
-    // Color variation
-    color *= mix(0.93, 1.07, fSmoothNoise(vec2(rNorm*8.0, yNorm*6.0), 2, 2.0));
-    
-    // Subtle color shifts in gaps
-    color *= mix(1.0, 0.85, (1.0 - gapPattern) * 0.3);
-
-    // --- Enhanced lighting ---
-    float lightFactor = clamp(dot(normalize(vec3(0.0, yNorm-0.5, 0.0)), starDir), 0.0, 1.0);
-    float ambientOcclusion = 0.75 + 0.25 * gapPattern; // Darker in gaps
-    color *= (0.65 + 0.35 * lightFactor) * ambientOcclusion;
-
-    // --- Output ---
     setAlbedo(color);
-    setAlpha(alpha);
-    setNormal(normalize(normal));
+    setAlpha(clamp(alpha, 0.0, 1.0));
+    setNormal(N);
     setDepth();
     setMaterial(Material_NoShade);
 }

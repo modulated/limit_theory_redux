@@ -3,7 +3,7 @@ local Component = require("Core.ECS.Component")
 --- What a belt or ring is made of: the list of `{ id, weight }` its ruleset
 --- gives it for its field type (rocky, icy), which `MiningField` turns into
 --- the ore each rock holds. Empty or nil for a field the ruleset says nothing
---- about; mining then falls back to `Config.game.mining.ores`.
+--- about; mining then falls back to `[fallback]` in res/data/ores.toml.
 ---@class CompositionComponent: Component
 ---@overload fun(self: CompositionComponent, composition: table|nil): CompositionComponent subclass internal
 ---@overload fun(composition: table|nil): CompositionComponent subclass external

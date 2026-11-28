@@ -16,6 +16,9 @@ built with the feature, the dashboard starts **automatically** on port
 cargo run -p ltr --features stats-server
 ```
 
+The build scripts do the same with an optimized (`release-fast`) build:
+`./build.sh --profile-server` or `.\build.ps1 --profile-server`.
+
 Use `--stats-server <port>` to serve on a different port instead:
 
 ```bash

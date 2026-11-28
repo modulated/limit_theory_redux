@@ -37,6 +37,11 @@
 --                { { keys = "B", action = "New planet" }, ... }
 --   teardown(game)         undo what setup changed outside the scene (things
 --                          added with `game:addSceneEntity` are removed anyway)
+--   start        what a new game starts with, each field optional (default:
+--                Config.game.fitting and Config.game.economy):
+--                { credits, hull (a hull name), weapons, modules (fitting
+--                names), homeLevel (the first system's hostility level; 0
+--                is Peaceful) }
 --
 -- `game` is the game state. What a scenario uses of it:
 --   game.world, game.constructManager, game.seed, game.rng, game.universe,
@@ -70,12 +75,14 @@
 ---@field teardown fun(game: table)|nil
 
 local ids = {
+    "Sandbox",
     "SinglePlanetWithBelt",
     "StandardSolarSystem",
     "BinaryStarSystem",
     "TrinaryStarSystem",
     "WeaponTestbed",
     "ExplosionShowcase",
+    "SpeedFeelTest",
     "ShipShowcase",
     "StationShowcase",
     "JumpGateShowcase",

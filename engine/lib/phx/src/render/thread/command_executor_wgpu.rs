@@ -52,6 +52,12 @@
 //! framebuffer.
 
 use std::collections::HashMap;
+
+// The executor looks resources, pipelines and bind groups up several times
+// per draw, by small keys it made itself (ids, ints): FxHash does that far
+// faster than the default SipHash, whose resistance to crafted keys buys
+// nothing here.
+use rustc_hash::FxHashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -135,24 +141,27 @@ pub struct WgpuCommandExecutor {
     surface_size: (u32, u32),
 
     // === Resources ===
-    resources: HashMap<ResourceId, WgpuResource>,
+    resources: FxHashMap<ResourceId, WgpuResource>,
     /// How many times each shader or texture was created under its id. Part
     /// of every cache key that holds a reference to one.
-    generations: HashMap<ResourceId, u32>,
-    pipeline_descs: HashMap<PipelineId, PipelineDesc>,
-    samplers: HashMap<SamplerId, wgpu::Sampler>,
-    bind_groups: HashMap<BindGroupId, StoredBindGroup>,
-    buffers: HashMap<BufferId, wgpu::Buffer>,
+    generations: FxHashMap<ResourceId, u32>,
+    pipeline_descs: FxHashMap<PipelineId, PipelineDesc>,
+    samplers: FxHashMap<SamplerId, wgpu::Sampler>,
+    bind_groups: FxHashMap<BindGroupId, StoredBindGroup>,
+    buffers: FxHashMap<BufferId, wgpu::Buffer>,
 
     // === Caches ===
-    group_layouts: HashMap<GroupLayoutKey, Arc<GroupLayout>>,
+    group_layouts: FxHashMap<GroupLayoutKey, Arc<GroupLayout>>,
     next_layout_id: u32,
-    variants: HashMap<VariantKey, wgpu::RenderPipeline>,
+    variants: FxHashMap<VariantKey, wgpu::RenderPipeline>,
     /// Fragment modules with clamped outputs by `(shader, generation, mask)`.
-    fs_clamped: HashMap<(ResourceId, u32, u32), wgpu::ShaderModule>,
-    bg_cache: HashMap<Vec<u64>, CachedBg>,
+    fs_clamped: FxHashMap<(ResourceId, u32, u32), wgpu::ShaderModule>,
+    bg_cache: FxHashMap<Vec<u64>, CachedBg>,
+    /// The key `resolve_group` works out, kept between calls so a cache hit
+    /// allocates nothing.
+    bg_key_scratch: Vec<u64>,
     next_bg_serial: u64,
-    views: HashMap<ViewKey, wgpu::TextureView>,
+    views: FxHashMap<ViewKey, wgpu::TextureView>,
     defaults: Option<Defaults>,
     quad: Option<Quad>,
     warned: std::collections::HashSet<String>,
@@ -234,19 +243,20 @@ impl WgpuCommandExecutor {
             surface: None,
             surface_config: None,
             surface_size: (1, 1),
-            resources: HashMap::new(),
-            generations: HashMap::new(),
-            pipeline_descs: HashMap::new(),
-            samplers: HashMap::new(),
-            bind_groups: HashMap::new(),
-            buffers: HashMap::new(),
-            group_layouts: HashMap::new(),
+            resources: FxHashMap::default(),
+            generations: FxHashMap::default(),
+            pipeline_descs: FxHashMap::default(),
+            samplers: FxHashMap::default(),
+            bind_groups: FxHashMap::default(),
+            buffers: FxHashMap::default(),
+            group_layouts: FxHashMap::default(),
             next_layout_id: 1,
-            variants: HashMap::new(),
-            fs_clamped: HashMap::new(),
-            bg_cache: HashMap::new(),
+            variants: FxHashMap::default(),
+            fs_clamped: FxHashMap::default(),
+            bg_cache: FxHashMap::default(),
+            bg_key_scratch: Vec::new(),
             next_bg_serial: 1,
-            views: HashMap::new(),
+            views: FxHashMap::default(),
             defaults: None,
             quad: None,
             warned: Default::default(),

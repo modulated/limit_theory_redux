@@ -26,7 +26,7 @@ end)
 ---@class MiningRock
 ---@field position table {x, y, z}
 ---@field radius number
----@field item string the ore's display name ("Iron Ore")
+---@field item string the ore's display name ("Siderite")
 ---@field itemId integer the ore's item id
 ---@field field Entity the belt or ring the rock belongs to
 ---@field yield number units left
@@ -93,7 +93,7 @@ function MiningField:build(belts, seed)
         end
     end
     if fallbackFields > 0 then
-        Log.Debug("Mining: %d of %d fields had no composition, used Config.game.mining.ores",
+        Log.Debug("Mining: %d of %d fields had no composition, used the ores.toml fallback",
             fallbackFields, #belts)
     end
     Log.Info("Mining: %d mineable rocks", #self.rocks)

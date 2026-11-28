@@ -5,30 +5,59 @@ item that is defined, which of them can be mined, which can be traded, and the p
 that turn one into another. It is meant to be edited: the tables are the design surface, and the
 Status sections say how much of each is actually wired up.
 
-Status summary (2026-11): it all runs. 58 items with permanent ids; every belt and ring has a
+Status summary (2026-11): it all runs. 70 items with permanent ids; every belt and ring has a
 composition and mining reads it; a rock knows what it holds; stations hold stock, price it by how
 short they are, run the production chains against it, and trade with the player on a docked screen;
 every station has an order book where prices are whatever
 someone will pay, and the player can take the best order or place one of their own; the player has
 a hold, a mining laser, credits, a hangar at every station and lines they can rent there; NPC
-workers are the hands the factory floors run on. Legacy's economy is deleted. What is
-missing is listed in the last section — chiefly NPC traders that actually haul, equipment that can be fitted, and
+workers are the hands the factory floors run on. Legacy's economy is deleted. Since 0.2.0 the
+equipment is no longer decoration: weapons go in a hull's mounts, modules in its slots, some of
+them fire on a key, and a hull itself is a thing you buy and switch into at a station (section 8).
+What is missing is listed in the last section — chiefly NPC traders that actually haul, and
 saving.
 
 ## 1. Where it lives
+
+**The game's data is in `res/data/`**, as TOML files a person can edit and any tool can read:
+
+| File | What it holds |
+|------|---------------|
+| `res/data/items.toml` | every item: id, name, group, mass, energy density, base price |
+| `res/data/recipes.toml` | every recipe: id, class, duration, inputs and outputs by item name |
+| `res/data/modules.toml` | every weapon and module: the item it is, its slot and size, its effects and ability |
+| `res/data/ores.toml` | what the asteroids hold: the compositions the rulesets give their belts and rings, and the fallback |
+| `res/data/loot.toml` | what a destroyed ship leaves, by its role: salvage, goods, modules, each with a chance and a range |
+
+Each file's header explains its fields. The loaders (`script/Shared/Definitions/ItemDefs.lua`,
+`ProductionDefs.lua`, `FittingDefs.lua`, `script/Shared/Data/OreData.lua`) check every entry when the
+game starts, and a mistake stops it with the file, the line and what is wrong:
+
+    res/data/recipes.toml:140: recipe 10 (Iron Refinery): inputs, entry 2 names no item 'Iron Or' (names are as in items.toml)
+
+Unknown fields are refused too, so a misspelt key is not silently ignored. For balancing:
+
+    luajit tools/data-check.lua                 # check the files against each other
+    luajit tools/data-check.lua --csv recipes   # a spreadsheet: costs, values, margins
+    luajit tools/economy-sim.lua --recipes      # every recipe's margin at base prices
+
+To add an item, recipe or module: add a block to the file with the next free id (each file ends
+by saying which, and `data-check` prints them), name things as `items.toml` does, and run
+`data-check`. The hulls are still Lua (`Shared/Definitions/HullDefs.lua`): their weapon sockets
+are geometry, not balance.
 
 | What | File |
 |------|------|
 | Item type (`mass`, `energy`, `startEquilibriumPrice`) | `script/Shared/Types/ItemDefinition.lua` |
 | Item group type | `script/Shared/Types/ItemGroup.lua` |
-| Item registry (`Items.RawMaterials.IronOre`, `Items:getDefinition(id)`) | `script/Shared/Registries/Items.lua` |
-| **The item list** | `script/Shared/Definitions/ItemDefs.lua` |
-| Asteroid/ring composition (which ore a rock holds) | `script/Config/Gen/Rulesets/*.lua` (`composition`) |
+| Item registry (`Items.RawMaterials.Siderite`, `Items:getDefinition(id)`) | `script/Shared/Registries/Items.lua` |
+| **The item list** | `res/data/items.toml`, loaded by `script/Shared/Definitions/ItemDefs.lua` |
+| Asteroid/ring composition (which ore a rock holds) | `res/data/ores.toml`, named by `script/Config/Gen/Rulesets/*.lua` (`composition`) |
 | Asteroid entity carrying an item + quantity | `script/Modules/CelestialObjects/Entities/AsteroidEntity.lua` |
 | Mineable rocks, yields and regrowth | `script/Modules/NPC/Managers/MiningField.lua`, `Config.game.mining` |
 | Miner job (mine, dock, sell) | `script/Modules/NPC/Jobs/Mining.lua`, `Actions/MineAt.lua` |
 | Player credits (bounties, repairs) | `script/Modules/Economy/Managers/PlayerWallet.lua`, `Config.game.economy` |
-| **The production recipes** | `script/Shared/Definitions/ProductionDefs.lua`, `Shared/Registries/Productions.lua`, `Shared/Types/ProductionDefinition.lua` |
+| **The production recipes** | `res/data/recipes.toml`, loaded by `script/Shared/Definitions/ProductionDefs.lua`; `Shared/Registries/Productions.lua`, `Shared/Types/ProductionDefinition.lua` |
 | **The market**: order books, matching, escrow, fees | `script/Modules/Economy/Systems/MarketSystem.lua`, `Components/OrderBookComponent.lua` |
 | What a station reckons things are worth, its stock and imports | `script/Modules/Economy/Systems/StationTradeSystem.lua` |
 | What is known of other systems' markets | `script/Modules/Economy/Managers/MarketIntel.lua` |
@@ -38,25 +67,32 @@ saving.
 | The docked station screen | `script/UI/HmGui/Views/Gameplay/Station.lua` |
 | The player's hangar and rented lines | `script/Modules/Economy/Managers/PlayerFactories.lua` |
 | A station's crew | `script/Modules/Economy/Components/WorkforceComponent.lua`, `Modules/NPC/Jobs/Work.lua` |
-| Mining and trade tuning | `Config.game.mining`, `Config.game.trade`, `Config.game.production`, `Config.game.factory`, `Config.game.cargo` |
+| **The hulls and the fittings** | `script/Shared/Definitions/HullDefs.lua`; `res/data/modules.toml` loaded by `FittingDefs.lua` (section 8) |
+| Mining and trade tuning | `Config.game.mining`, `Config.game.trade`, `Config.game.production`, `Config.game.factory`, `Config.game.cargo`, `Config.game.fitting` |
 
 ### Item definition
 
-```lua
-ItemDefinition { name = "Iron Ore", mass = 6, energyDensity = 1.68, startEquilibriumPrice = 30 }
+```toml
+[[item]]
+id = 6
+name = "Siderite"
+group = "Raw Materials"
+mass = 6
+energy_density = 1.68
+price = 30
 ```
 
 - `energy` is stored as `round(mass * energyDensity)`; `energyDensity` itself is not kept.
 - **`id` is written by hand and is permanent.** It is the only part of an item that may end up in
   saved data, so it is never changed and never reused: a new item takes the next free number (the
-  last line of `ItemDefs.lua` says which), and a removed item leaves its number unused. The registry
+  last line of `items.toml` says which), and a removed item leaves its number unused. The registry
   asserts that every item has an id and that no two share one, so a mistake fails at load instead of
   quietly turning someone's cargo into something else. Ids 1–51 are the numbers the old
   registration-order scheme had given out, so nothing shifted when they were written down.
-- **Two names.** `name` is the lookup key with the spaces taken out (`Items.RawMaterials.IronOre`,
-  `def.name == "IronOre"`); `displayName` is the name as written (`"Iron Ore"`) and is what the UI
+- **Two names.** `name` is the lookup key with the spaces taken out (`Items.RawMaterials.Siderite`,
+  `def.name == "Siderite"`); `displayName` is the name as written (`"Siderite"`) and is what the UI
   and the logs show. Rewording an item is therefore free — only the id matters.
-- `Items:getByName(name)` finds an item by either spelling (`"Iron Ore"` or `"IronOre"`), which is
+- `Items:getByName(name)` finds an item by either spelling (`"Siderite"` or `"Siderite"`), which is
   how config and save data should name one.
 - `startEquilibriumPrice` is the market's starting equilibrium price. Items without one
   (only `Credit`) are not priced.
@@ -83,13 +119,13 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 
 | Item | Mass | E/mass | Energy | Price |
 |------|------|--------|--------|-------|
-| Silicate Ore | 4 | 1.3 | 5 | 20 |
-| Iron Ore | 6 | 1.68 | 10 | 30 |
-| Copper Ore | 7 | 1.74 | 12 | 35 |
-| Aluminum Ore | 4 | 1.6 | 6 | 25 |
-| Beryllium Ore | 4 | 1.45 | 6 | 40 |
-| Thorium Ore | 7 | 7.5 | 52 | 100 |
-| Carboniferous Ore | 6 | 1.4 | 8 | 28 |
+| Olivine | 4 | 1.3 | 5 | 20 |
+| Siderite | 6 | 1.68 | 10 | 30 |
+| Chalcopyrite | 7 | 1.74 | 12 | 35 |
+| Bauxite | 4 | 1.6 | 6 | 25 |
+| Beryl | 4 | 1.45 | 6 | 40 |
+| Monazite | 7 | 7.5 | 52 | 100 |
+| Chondrite | 6 | 1.4 | 8 | 28 |
 
 ### Refined Materials
 
@@ -139,17 +175,26 @@ Energy is the derived `mass × energyDensity`. Price is `startEquilibriumPrice`.
 | Ship Engine, Thruster | 600 | 20 | 12000 | 7200 |
 | Ship Engine, Impeller | 1500 | 18 | 27000 | 4000 |
 | Ship Weapon, Pulse Turret | 100 | 10 | 1000 | 2800 |
-| Ship Weapon, Beam Turret | 120 | 10 | 1200 | 650 |
-| Ship Weapon, Launcher Turret | 90 | 8 | 720 | 550 |
+| Ship Weapon, Beam Turret | 120 | 10 | 1200 | 3600 |
+| Ship Weapon, Launcher Turret | 90 | 8 | 720 | 3200 |
 | Ship Weapon, Pulse Bay | 1000 | 9 | 9000 | 3000 |
-| Ship Weapon, Beam Bay | 1200 | 9 | 10800 | 3500 |
-| Ship Weapon, Cannon Bay | 2500 | 10 | 25000 | 5000 |
+| Ship Weapon, Beam Bay | 1200 | 9 | 10800 | 14000 |
+| Ship Weapon, Cannon Bay | 2500 | 10 | 25000 | 9000 |
 | Ship Weapon, Launcher Bay | 800 | 7 | 5600 | 2500 |
+| Shield Capacitor | 120 | 13 | 1560 | 1500 |
+| Armour Plating | 400 | 3 | 1200 | 900 |
+| Cargo Pod | 250 | 4 | 1000 | 1100 |
+| Manoeuvring Thrusters | 150 | 12 | 1800 | 1400 |
+| Shield Booster | 90 | 20 | 1800 | 1800 |
+| Afterburner | 180 | 16 | 2880 | 2200 |
+| Hull Repair Pulse | 200 | 15 | 3000 | 2600 |
+| Mining Laser | 160 | 14 | 2240 | 1700 |
+| Survey Scanner | 70 | 18 | 1260 | 2000 |
+| Market Datalink | 60 | 21 | 1260 | 3400 |
 
-These are economy *goods*, with no link yet to the weapons the ships actually fit
-(`script/Shared/Definitions/WeaponDefs.lua`, `Shared/Registries/WeaponRegistry.lua`) or to the
-procedural modules in `Shared/Content/ProceduralCatalog.lua`. Fitting an "Equipment" item to a hull
-is not implemented.
+Every one of these is a *fitting* as well as a good: see section 8. The weapon prices follow the
+mount size classes — a medium turret costs a few thousand, an L or XL bay weapon a multiple of
+that — so a hull with heavy mounts is worth flying to.
 
 ### Constructs (hulls and stations)
 
@@ -162,6 +207,12 @@ is not implemented.
 | Ship Hull, Large | 237250 | 45 | 10676250 | 200000 |
 | Ship Hull, Very Large | 518000 | 42 | 21756000 | 500000 |
 | Space Station, Small | 1550000 | 40 | 62000000 | 1000000 |
+| Refinery Outpost Kit | 2000 | 30 | 60000 | 450000 |
+| Manufacturing Outpost Kit | 2000 | 30 | 60000 | 650000 |
+
+The first four hulls are flyable (`Shared/Definitions/HullDefs.lua`): buy one, and a station's
+shipyard will put you in it. Large and Very Large are still goods only. The two kits (Drydock
+recipes 48 and 49) and the Small Space Station deploy the player's own outposts (section 6).
 
 ### Waste
 
@@ -190,8 +241,8 @@ context as `beltType`/`ringType`, which is what the composition's `ByType` rule 
 
 | Field type | Composition (weights sum to 1) |
 |------------|--------------------------------|
-| Rocky ring | Silicate Ore 0.45, Iron Ore 0.28, Carboniferous Ore 0.12, Aluminum Ore 0.1, Beryllium Ore 0.05 |
-| Icy ring | Water Ice 0.55, Silicate Ore 0.2, Hydrogen 0.1, Carboniferous Ore 0.05, Helium 0.05, Nitrogen 0.03, Oxygen 0.02 |
+| Rocky ring | Olivine 0.45, Siderite 0.28, Chondrite 0.12, Bauxite 0.1, Beryl 0.05 |
+| Icy ring | Water Ice 0.55, Olivine 0.2, Hydrogen 0.1, Chondrite 0.05, Helium 0.05, Nitrogen 0.03, Oxygen 0.02 |
 
 Its belts: rocky Silicate 0.5 / Iron 0.4 / Carboniferous 0.1; icy Water Ice 0.65 / Hydrogen 0.15 /
 Helium 0.1 / Carboniferous 0.05 / Silicate 0.05. `SinglePlanetWithBelt` and `PlanetShowcase` use
@@ -207,25 +258,25 @@ decides it, so every part of the game agrees:
 - `AsteroidFieldSystem` gives every rock it spawns near the player `Item` and `Quantity`
   components from it, refreshed as the miners work, so **the rock itself can be asked what it
   holds** — `AsteroidOre.ofEntity(entity)` returns the item and the units, and
-  `AsteroidOre.describeEntity(entity)` says it in words ("Iron Ore x1240", "Iron Ore, spent").
+  `AsteroidOre.describeEntity(entity)` says it in words ("Siderite x1240", "Siderite, spent").
   This is the hook a prospecting scanner reads;
 - a planet's ring is materialized as a child belt entity, so the composition lookup walks up to
   the parent that holds it.
 
 Nothing shows the ore in the HUD yet: the rocks carry it, and reading it is the scanner's job.
 
-`Config.game.mining.ores` is the fallback for a field the generator gave no composition (it is
+The `[fallback]` of `res/data/ores.toml` is used for a field the generator gave no composition (it is
 logged at debug level when that happens):
 
 | Ore | Weight | Share |
 |-----|--------|-------|
-| Silicate Ore | 5 | 28.1% |
-| Iron Ore | 4 | 22.5% |
-| Aluminum Ore | 3 | 16.9% |
-| Carboniferous Ore | 2.5 | 14.0% |
-| Copper Ore | 2 | 11.2% |
-| Beryllium Ore | 1 | 5.6% |
-| Thorium Ore | 0.3 | 1.7% |
+| Olivine | 5 | 28.1% |
+| Siderite | 4 | 22.5% |
+| Bauxite | 3 | 16.9% |
+| Chondrite | 2.5 | 14.0% |
+| Chalcopyrite | 2 | 11.2% |
+| Beryl | 1 | 5.6% |
+| Monazite | 0.3 | 1.7% |
 
 Other `Config.game.mining` knobs: `rocksPerBelt = 24`, `unitsPerScale = 0.004` (a rock's size sets
 its unit count), `regrowPerSecond = 0.02`, `timePerUnit = 3.0` s to mine one unit, `sellTime = 8.0`
@@ -286,7 +337,7 @@ entities, price and marketplace components and its test state: there is one mark
 
 ## 5. Production (crafting)
 
-The recipes are `script/Shared/Definitions/ProductionDefs.lua`, in the `Productions` registry, and
+The recipes are `res/data/recipes.toml`, in the `Productions` registry, and
 `Modules/Economy/Systems/ProductionSystem.lua` runs them: a line takes its inputs out of the
 station's stock when it starts, counts down its duration (compressed by
 `Config.game.production.timeScale`) and puts the outputs in when it finishes. Nothing is made out
@@ -320,13 +371,13 @@ Classes: **Powerplant** (Legacy's P0), **Refinery** (P1), **Factory** (P2), **Dr
 | Powerplant | Fusion Reactor | Liquid Water x572 | Energy Cell x1000, Radioactive Waste x1 | 40 |
 | Powerplant | Waste Recycler | Waste x14 | Energy Cell x5 | 4 |
 | Refinery | Water Melter | Energy Cell x3, Water Ice x15 | Liquid Water x20 | 6 |
-| Refinery | Silicon Refinery | Energy Cell x1, Silicate Ore x2 | Silicon x1, Waste x6 | 12 |
-| Refinery | Carbon Refinery | Energy Cell x1, Carboniferous Ore x1 | Carbon x1, Waste x3 | 13 |
-| Refinery | Beryllium Refinery | Energy Cell x1, Beryllium Ore x1 | Beryllium x1, Waste x7 | 22 |
-| Refinery | Aluminum Refinery | Energy Cell x1, Aluminum Ore x1 | Aluminum x1, Waste x5 | 15 |
-| Refinery | Iron Refinery | Energy Cell x1, Iron Ore x1 | Iron x1, Waste x4 | 14 |
-| Refinery | Copper Refinery | Energy Cell x2, Copper Ore x3 | Copper x2, Anode Sludge x1, Waste x7 | 16 |
-| Refinery | Thorium Refinery | Energy Cell x2, Thorium Ore x2 | Thorium x1, Radioactive Waste x2, Waste x5 | 20 |
+| Refinery | Silicon Refinery | Energy Cell x1, Olivine x2 | Silicon x1, Waste x6 | 12 |
+| Refinery | Carbon Refinery | Energy Cell x1, Chondrite x1 | Carbon x1, Waste x3 | 13 |
+| Refinery | Beryllium Refinery | Energy Cell x1, Beryl x1 | Beryllium x1, Waste x7 | 22 |
+| Refinery | Aluminum Refinery | Energy Cell x1, Bauxite x1 | Aluminum x1, Waste x5 | 15 |
+| Refinery | Iron Refinery | Energy Cell x1, Siderite x1 | Iron x1, Waste x4 | 14 |
+| Refinery | Copper Refinery | Energy Cell x2, Chalcopyrite x3 | Copper x2, Anode Sludge x1, Waste x7 | 16 |
+| Refinery | Thorium Refinery | Energy Cell x2, Monazite x2 | Thorium x1, Radioactive Waste x2, Waste x5 | 20 |
 | Refinery | Hydrocarbon Refinery | Energy Cell x1, Biomass x1 | Hydrocarbons x1, Waste x15 | 14 |
 | Factory | Water Electrolyser | Energy Cell x1, Liquid Water x1 | Hydrogen x2, Oxygen x1 | 5 |
 | Factory | Steel Foundry | Energy Cell x1, Iron x1, Carbon x1 | Steel x1, Waste x4 | 13 |
@@ -352,7 +403,7 @@ credits out) was not ported: pirates earn by raiding.
 ### Feedstock items
 
 The chain needs five items between the ores and the built goods that the registry did not have at
-first: **Silicon**, **Carbon**, **Carboniferous Ore** (carbonaceous chondrite), **Beryllium** and
+first: **Silicon**, **Carbon**, **Chondrite** (carbonaceous chondrite), **Beryllium** and
 **Hydrocarbons**; **Lithium** and **Boron** came along with them as Legacy fillers. All seven are in
 the tables above now (ids 52–58), with Legacy's masses and energy densities. Legacy's "Petroleum"
 is this registry's **Hydrocarbons**: it is biomass cracked into fuel and plastics feedstock, and the
@@ -381,7 +432,7 @@ generated again; everything is keyed by `system id:station index`, which is stab
   run is worth (at least `factory.rentMinFee`). If the credits are not there when a run finishes,
   the station keeps the goods and the lease lapses.
 - **Inputs and outputs** are the hangar's: a line eats from it and fills it back up, so it stalls
-  with "needs Iron Ore x4" or "hangar full" rather than quietly spending money.
+  with "needs Siderite x4" or "hangar full" rather than quietly spending money.
 - **Crew is shared** with the station, its own lines first, so a rented line can read "no crew".
 - **While you are away** a lease keeps working: the time is credited when you come back to the
   system, up to `factory.offlineCatchUpMax` (an hour) of it.
@@ -390,6 +441,76 @@ What it pays: `--crafter` in the sim rents the best line at a station, buys its 
 sells the output back, which is the worst case — about 130 credits an hour. The gain is in sourcing
 the inputs yourself (ore you mined, goods bought where they are cheap), where a refined good is
 worth roughly twice the ore it came from.
+
+### Outposts: stations of your own
+
+`Modules/Economy/Managers/PlayerStations.lua`, configured by `Config.game.outposts`. An outpost is
+deployed from a kit, picked from the overview's right-click menu on a planet or an asteroid belt
+("Deploy ..."): the autopilot flies to the nearest free slot and the kit is spent there. The kit
+comes out of the hold, or out of a hangar at a station in the same system (the Small Space
+Station, at 1,550,000 t, only ever travels that way).
+
+- **Where.** `orbitSlots` slots on the ring the generated stations sit on around each planet
+  (offset half a step from their angles), and `beltSlots` along each belt. A slot within
+  `minSpacing` of a station, an outpost or a gate is taken.
+- **What kind.** A **Refinery Outpost** runs any Refinery or Powerplant recipe, a **Manufacturing
+  Outpost** any Factory or Drydock recipe, four lines each, with no fee and no crew to share; a
+  **Trading Post** (the Small Space Station) has no lines.
+- **Storage** is the hangar, as at any station, filed under the outpost's key `p:<id>`.
+- **The market** is the owner's orders and nothing else: the outpost posts none of its own and
+  buys no scrap. The owner pays no broker fee and no sales tax there. NPCs whose faction is not
+  hostile to the player dock and trade: a miner sells its hold into the owner's bids, at their
+  price, down to `minerMinPrice` of the ore's base price (it picks the outpost only if the bids
+  cover its whole hold, and takes anything left to the next station); a trader buys the
+  cheapest listings up to `traderMaxMarkup` of base, spending up to `traderBudget` a visit. The
+  sales tax an NPC pays on a sale there is the owner's; the Factory tab shows what it has earned.
+
+- **Defences** (`outposts.defense`): an armed platform beside the outpost, in the player's
+  colours, that engages every faction the player is hostile to (pirates, and anyone the player
+  has turned on) and pays the player the bounty on the outlaws it kills, without moving any
+  standing. The outpost itself cannot be destroyed; the platform can. Its hull and shields show
+  on the Factory tab, where it is repaired at the hull rate or, once shot down, rebuilt for
+  `rebuildCost`.
+
+### Salvage: what wrecks leave
+
+A ship destroyed by anyone leaves a **cargo canister** where it died, filled by its role's table in
+`res/data/loot.toml` (each drop rolled on its own chance; modules and weapons are items, so a
+wreck's gear drops as the fitting items it is). Canisters glow amber and are labelled with what is
+in them; they last `loot.lifetime` seconds (`Config.game.loot`). Within `tractorRange` the
+player's ship draws a canister in (faster as it gets close) and at `collectRange` empties it into
+the hold. What does not fit stays in the canister, with a "Hold full" warning every
+`fullWarningInterval` seconds while the ship is by it; make room and the rest comes in. The
+player's own drones and hires leave nothing. `LootSystem` (`Modules/Economy/Systems`) runs it.
+
+Two salvage items are recycled at a refinery into basic materials:
+
+| Recipe | In | Out |
+|--------|----|-----|
+| Scrap Recycler (53) | Hull Scrap x20, Energy Cell x5 | Iron x5, Aluminum x3, Copper x1, Waste x4 |
+| Electronics Recycler (54) | Salvaged Electronics x6, Energy Cell x5 | Copper x4, Silicon x3, Gold x1, Waste x2 |
+
+### Forces: drones and mercenaries
+
+`Modules/Economy/Managers/PlayerForces.lua`, configured by `Config.game.forces`; commanded from the
+**Forces** tab, which shows when docked at one of your outposts. Each unit has a home outpost (up
+to `maxPerOutpost` each) and an order: **guard** (fly around the outpost) or **patrol** (the round
+of all your outposts in the system). They fly as NPC gunships of your side
+(`npc.roles.drone`, `npc.roles.hiredMercenary`), attack whatever you are hostile to, and pay you
+the bounty on outlaws they kill. They are flown only while you are in their system, and saved
+with the game, hull and shields as last seen.
+
+- **Combat drones** are built, not hired: launch one from the outpost's hangar, recall it back
+  into the hangar. No upkeep; destroyed is gone. The chain is deliberately hard: **Iridosmine**
+  (a trace in the standard systems' rocky belts and rings, none in the small ones) is refined
+  into **Iridium**, which with infolytic chips, radioactive isotopes and a ship computer makes a
+  **Drone Control Core**; a drydock puts the core, more iridium, steel, a pulse turret and a
+  sensor together into a **Combat Drone** (recipes 50–52, about 52,000 credits of goods).
+- **Mercenaries** are hired for `mercenary.hireCost` and paid `mercenary.wagePerHour` for every
+  hour of game time, wherever you are. When the wages cannot be paid, they leave.
+
+Outposts, with the state of their defences, are saved with the game, and built again from their
+records whenever the player comes back to the system.
 
 ## 7. Tuning it without running the game
 
@@ -444,27 +565,111 @@ next station, and the prospector mines a full hold and sells it where it pays
 best. Nothing about prices, stock, production or imports is modelled: that is
 the game's own code.
 
-## 8. Gaps and implementation order
+## 8. Fitting: what a ship carries
+
+A ship is a **hull** with **fittings** in it. Both are items, so both are bought, built or looted
+like anything else, and the whole of the above economy is what supplies them.
+
+| What | File |
+|------|------|
+| The hulls that can be flown | `script/Shared/Definitions/HullDefs.lua` -> `Shared/Registries/Hulls.lua` |
+| The parts that go in them | `res/data/modules.toml` -> `Shared/Definitions/FittingDefs.lua` -> `Shared/Registries/Fittings.lua` |
+| Working a fit out and applying it | `script/Modules/Constructs/Systems/ShipFittingSystem.lua` |
+| Modules that fire on a key | `script/Modules/Constructs/Systems/AbilitySystem.lua` |
+| The ships the player owns, and their fits | `Modules/Constructs/Managers/PlayerFleet.lua` |
+| The screen you refit on | `script/UI/HmGui/Views/Gameplay/Station.lua` (the Refit tab) |
+
+**A hull** decides three things: its weapon mounts (how many, and what size class each takes), how
+many module slots it has, and the hull and shield it starts from.
+
+| Hull | Mounts | Slots | Hull | Shield | Price |
+|------|--------|-------|------|--------|-------|
+| Solo Hull | 2xM 2xSM | 3 | 420 | 80 | 24000 |
+| Small Hull | 4xM 2xSM | 4 | 700 | 160 | 30000 |
+| Compact Hull | 2xL 4xM 2xSM | 5 | 1200 | 300 | 70000 |
+| Medium Hull | 4xL 4xM 2xSM | 6 | 2200 | 600 | 100000 |
+
+**A fitting** is either a weapon, which goes in a mount of its own size class or larger, or a
+module, which goes in a slot. A module either changes a stat or does something on command:
+
+- *Passive*: Shield Capacitor, Armour Plating, Cargo Pod, Manoeuvring Thrusters, Ship Sensor, Ship
+  Computer, Thruster Engine, Impeller, Market Datalink. They add to a stat and then scale it, in
+  that order, so two of a thing stack sensibly.
+- *Active*: Shield Booster, Afterburner, Hull Repair Pulse, Survey Scanner — on the action bar,
+  each with its own cooldown. A module that cannot do anything (a full shield, an undamaged hull)
+  refuses and costs no cooldown.
+- *Tool*: the Mining Laser goes on a weapon **mount** (SM or larger), because it is aimed, but it
+  is never a gun: its mount is left out of the ship's weapon battery. On the action bar it toggles:
+  it mines the rock targeted for mining (the overview's *Target for mining* on an asteroid), or the
+  nearest in reach, in cycles (`tool.cycle` seconds, shortened by the `miningRate` stat), putting
+  `tool.units` of ore in the hold at the end of each and starting the next on its own, until it is
+  stopped, the rock is empty or out of reach, or the hold is full. Without one, a rock is just a
+  rock.
+
+**The action bar** (bottom centre, keys 1-8, `Config.game.actionBar.slots`) holds what the ship
+can do on command: tools on mounts and active modules. Each ship keeps its own arrangement; what is
+newly fitted takes the first free slot, and with the cursor free (the overview open) a slot can be
+clicked to use it or dragged onto another to swap them. A slot shows its key, what is in it, a bar
+filling for the mining cycle or the cooldown, and the seconds left.
+
+Two of them change what the player can *know* rather than what the ship can do:
+
+- The **Market Datalink** adds 2 to `marketReach`, the jumps out whose order books can still be
+  read. The base is `Config.game.market.remoteJumps` (3), so one datalink sees 5 jumps and two see
+  7; the Intel tab's heading follows it. This is the module-upgradeable market reach the order book
+  was built for.
+- The **Survey Scanner** is prospecting. A rock is "an unsurveyed rock" until the scanner reads it
+  — the HUD will not name the ore, though you can still mine it blind — and the scanner reads at
+  2.5x the laser's reach, so it finds rocks before you are in cutting range. A unit in the hold
+  identifies the rock too: cut it and you have seen what comes out. What is read stays read for
+  that rock.
+
+**Refitting** happens docked, out of that station's hangar, for free: the Refit tab lists the mounts
+and slots, and what in the hangar will go in them. A part fitted comes out of the hangar; a part
+removed goes back into it.
+
+**A fit belongs to its ship, not to the player.** The player owns a *fleet*
+(`Modules/Constructs/Managers/PlayerFleet.lua`): each ship has an id, a hull, a name, its own guns
+and modules, and the station it is parked at. Taking a different ship out gives you that ship's fit,
+not the one you were flying with — so a Compact rigged for mining and a Compact rigged to fight are
+two ships, and switching between them costs nothing but the walk across the hangar.
+
+- **Commissioning**: a hull is a good until you fit it out. "Fit out and fly" spends the hull item
+  from the hangar and makes a ship with *nothing* in it; the ship you were flying stays at that
+  station, fitted as it is.
+- **Flying another**: the refit screen lists your ships parked here, each with its hull and its fit.
+  One button takes it; the one you arrived in stays behind.
+- **Stripping**: one button per ship empties its mounts and slots into this station's hangar — the
+  ship you are in, or any of yours parked here. A part the hangar has no room for stays on the ship
+  rather than vanishing from both.
+- **Breaking up**: an empty ship can be broken up, which puts the bare hull back as an item to
+  sell. A ship with anything still in it refuses, and so does the one you are flying, so nothing is
+  ever sold out from under its own modules.
+
+Only the mounts with a gun in them shoot: a turret has to name a weapon it can resolve, so an empty
+mount is left out of the ship's weapon battery and neither tracks nor fires. A ship with nothing
+fitted flies unarmed.
+
+## 9. Gaps and implementation order
 
 Done: the item registry with permanent ids, the feedstock items, ore from each field's own
 composition, rocks that know what they hold, station stock and prices, production with a crew of
 NPC workers, rebalanced recipes, the player's hold, player mining, the docked station screen, a
-hangar and rentable factory lines at every station, and the deletion of Legacy's economy.
+hangar and rentable factory lines at every station, the deletion of Legacy's economy, and
+(0.2.0) fittings, modules with abilities and buyable hulls — every part has a recipe, so the
+whole catalogue can be bought or built.
 
 - [ ] **Biomass has no source.** The Hydrocarbon Refinery (and so plastics, and so chips) runs on
       imports alone. It wants a farm or a station recipe, or a mineable source.
 - [ ] **NPC traders should haul goods**, not wait 6–12 s at a stop: buy where a thing is cheap,
       sell where it is dear, which is what would make prices differ between stations for a reason.
       `Jobs/Transport.lua` and `StationTradeSystem` already have the pieces.
-- [ ] **Equipment and hulls are inert**: an Equipment item is a good with a price, with no link to
-      `WeaponRegistry` or the procedural module catalog, so a bought turret cannot be fitted. A
-      drydock's hull cannot be flown either. This is the next thing worth building: it is what
-      makes crafting matter.
 - [ ] **Workers are only hands.** A worker shuttle's cargo is irrelevant, it is never paid, and a
       station does not hire. Pay, wages and a labour market would make the crew a real cost.
-- [ ] **A prospecting scanner**: rocks carry their ore and remaining yield
-      (`AsteroidOre.ofEntity`); nothing reads it yet, so the ore is on the HUD as soon as a rock is
-      in reach.
+- [ ] **Prospecting stops at the rock.** A rock's ore is hidden until a Survey Scanner reads it,
+      but a belt's *composition* is still public on the system map, so a prospector can tell which
+      belt is worth sweeping without owning a scanner. Whether that is a feature or a hole is a
+      design call; a surveyed-rock marker in the world would also help more than a HUD line.
 - [ ] **Saving.** The hold, the wallet, every station's stock and every production line's progress
       are the state a saved game needs (see item ids, section 1).
 - [ ] **Balance.** `Config.game.trade` and `Config.game.production` were set by eye: the target

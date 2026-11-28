@@ -1,3 +1,4 @@
+local OreData = require("Shared.Data.OreData")
 local Items = require("Shared.Registries.Items")
 
 --- PlanetShowcase: one planet to look at, different per seed (the Planet
@@ -83,12 +84,7 @@ local Ruleset = {
                 type = Enums.Gen.Rule.ByType,
                 parentKey = "ringType",
                 types = {
-                    [Enums.Gen.AsteroidRingTypes.Rocky] = {
-                        { id = Items.RawMaterials.SilicateOre.id,      weight = 0.45 },
-                        { id = Items.RawMaterials.IronOre.id,          weight = 0.35 },
-                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.1 },
-                        { id = Items.RawMaterials.AluminumOre.id,      weight = 0.1 }
-                    }
+                    [Enums.Gen.AsteroidRingTypes.Rocky] = OreData.composition("basic_rocky")
                 }
             }
         }
@@ -105,12 +101,7 @@ local Ruleset = {
                 type = Enums.Gen.Rule.ByType,
                 parentKey = "beltType",
                 types = {
-                    [Enums.Gen.AsteroidRingTypes.Rocky] = {
-                        { id = Items.RawMaterials.SilicateOre.id,      weight = 0.45 },
-                        { id = Items.RawMaterials.IronOre.id,          weight = 0.35 },
-                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.1 },
-                        { id = Items.RawMaterials.AluminumOre.id,      weight = 0.1 }
-                    }
+                    [Enums.Gen.AsteroidRingTypes.Rocky] = OreData.composition("basic_rocky")
                 }
             }
         }

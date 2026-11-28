@@ -13,5 +13,6 @@ return {
     WeaponTracking    = require("Modules.Constructs.Components.WeaponTrackingComponent"),
     Projectile        = require("Modules.Constructs.Components.ProjectileComponent"),
     Beam              = require("Modules.Constructs.Components.BeamComponent"),
+    Loadout           = require("Modules.Constructs.Components.LoadoutComponent"),
 
 }

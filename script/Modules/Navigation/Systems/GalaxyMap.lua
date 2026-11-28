@@ -183,6 +183,17 @@ function GalaxyMap:draw(state, x, y, sx, sy)
         DrawEx.Line(ax, ay, bx, by, routeLinks[link.id] and COLORS.routeLink or COLORS.link)
     end
 
+    -- The jump drive's reach, round where you are (a capital with a drive)
+    local game = LimitTheoryRedux
+    local reach = game and game.jumpDriveReach and game:jumpDriveReach() or 0
+    if reach > 0 and galaxy.radius and galaxy.systems[state.currentId] then
+        local hx, hy = toScreen(state, galaxy.systems[state.currentId], cx, cy)
+        local r = reach * galaxy.radius * state.zoom
+        if r > 4 and r < math.max(sx, sy) * 4 then
+            DrawEx.Ring(hx, hy, r, { r = 0.4, g = 1.0, b = 0.6, a = 0.35 }, false)
+        end
+    end
+
     -- Systems; their names are placed after the loop, clear of each other
     local labels = MapLabels.begin()
     for _, system in ipairs(galaxy.systems) do
@@ -216,17 +227,26 @@ function GalaxyMap:draw(state, x, y, sx, sy)
     end
     MapLabels.draw(labels, x, y + MapFrame.barHeight, sx, sy - MapFrame.barHeight)
 
-    self:drawInfo(state, x + 10, y + sy - 170, 360)
-    self:drawLegend(x + sx - 200, y + sy - 130)
+    self:drawInfo(state, x + 10, y + sy - 188, 360)
+    self:drawLegend(x + sx - 200, y + sy - 130, state)
 end
 
 --- What the colours mean, in the bottom-right corner.
-function GalaxyMap:drawLegend(x, y)
+function GalaxyMap:drawLegend(x, y, state)
     local levels = Config.game.hostility.levels
-    DrawEx.Rect(x - 8, y - 8, 196, 26 + #levels * 18, Color(0.1, 0.1, 0.12, 0.9))
+    -- Level 0 (Peaceful) only where a start put it: list it then
+    local first = 1
+    if levels[0] and state and state.galaxy then
+        for _, system in ipairs(state.galaxy.systems) do
+            if system.hostility == 0 then first = 0 break end
+        end
+    end
+    local rows = #levels - first + 1
+    DrawEx.Rect(x - 8, y - 8, 196, 26 + rows * 18, Color(0.1, 0.1, 0.12, 0.9))
     DrawEx.TextAlpha(FONT, "Hostility", 12, x, y, 180, 16, 0.85, 0.85, 0.85, 0.9, 0.0, 0.5)
-    for i, level in ipairs(levels) do
-        local ly = y + 4 + i * 18
+    for i = first, #levels do
+        local level = levels[i]
+        local ly = y + 4 + (i - first + 1) * 18
         local c = level.color
         DrawEx.Rect(x + 2, ly + 4, 8, 8, Color(c[1], c[2], c[3], 1.0))
         DrawEx.TextAlpha(FONT, level.name, 11, x + 18, ly, 160, 16, c[1], c[2], c[3], 0.95, 0.0, 0.5)
@@ -246,7 +266,7 @@ function GalaxyMap:drawInfo(state, x, y, w)
 
     local system = galaxy.systems[id]
     local route = state.selectedId and state.route or state.course
-    DrawEx.Rect(x - 5, y - 5, w + 10, 158, Color(0.1, 0.1, 0.12, 0.9))
+    DrawEx.Rect(x - 5, y - 5, w + 10, 176, Color(0.1, 0.1, 0.12, 0.9))
     local lineH, ty = 18, y
     DrawEx.TextAlpha(FONT, system.name, 14, x, ty, w, lineH, 1.0, 0.8, 0.3, 1.0, 0.0, 0.5)
     ty = ty + lineH + 4
@@ -262,6 +282,12 @@ function GalaxyMap:drawInfo(state, x, y, w)
     if level then
         line(string.format("%s: %s", level.name, level.description or ""), level.color)
     end
+
+    -- The jump drive, for a capital that has one
+    local game = LimitTheoryRedux
+    local driveText, driveColor = nil, nil
+    if game and game.jumpDriveLine then driveText, driveColor = game:jumpDriveLine(id) end
+    if driveText then line(driveText, driveColor) end
 
     if id == state.currentId then
         line("You are here")

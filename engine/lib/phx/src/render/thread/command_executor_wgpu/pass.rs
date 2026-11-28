@@ -822,9 +822,11 @@ impl WgpuCommandExecutor {
             flavor,
         };
         let shader_id = desc.shader;
-        let Some(variant) = self.variant(&key) else {
+        // Built (or found) before the wgpu pass opens, as before: a draw
+        // whose pipeline cannot be built opens nothing
+        if pass.variant.as_ref() != Some(&key) && self.variant(&key).is_none() {
             return false;
-        };
+        }
         let groups = match self.resources.get(&shader_id) {
             Some(WgpuResource::Shader(s)) => s.groups.clone(),
             _ => return false,
@@ -837,7 +839,18 @@ impl WgpuCommandExecutor {
             return false;
         }
 
-        if pass.variant.as_ref() != Some(&key) {
+        // Most draws keep the pass's pipeline: only a change (or a pass just
+        // opened, which starts with none) needs the variant itself
+        let variant = if pass.variant.as_ref() == Some(&key) {
+            None
+        } else {
+            match self.variants.get(&key) {
+                Some(variant) => Some(variant.clone()),
+                None => return false,
+            }
+        };
+
+        if let Some(variant) = variant {
             // Bind groups below the first group whose layout changed stay valid.
             let first = (0..4)
                 .find(|&g| pass.layouts[g] != groups[g].id)

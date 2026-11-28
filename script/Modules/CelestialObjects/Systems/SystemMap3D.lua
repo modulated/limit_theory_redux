@@ -90,8 +90,11 @@ function SystemMap3D:collectEntities(state, rootEntity, shipEntity, npcEntries)
         local body = rbCmp and rbCmp:getRigidBody()
         if body then
             live[npc.entity] = true
+            local p = body:getPos()
+            -- A signature is drawn where the sensors put it, not where it is
+            if npc.offset then p = Position(p.x + npc.offset.x, p.y + npc.offset.y, p.z + npc.offset.z) end
             table.insert(state.entities, {
-                entity = npc.entity, label = npc.label, pos = body:getPos(),
+                entity = npc.entity, label = npc.label, pos = p,
                 scale = body:getBoundingRadius(), orbitRadius = 0, inclination = 0,
                 isMoon = false, parentPos = nil, trailWidth = 0, isNpc = true, labelPriority = 30,
                 color = Color(npc.color[1], npc.color[2], npc.color[3], 0.8),
@@ -154,6 +157,10 @@ function SystemMap3D:_walk(state, entity, parentPos)
     end
 
     if label then
+        -- Celestials by their names (Vega II, Vega II a)
+        if not name:find("SpaceStationEntity") and not name:find("JumpGateEntity") then
+            label = require("Modules.CelestialObjects.Managers.CelestialNames"):of(entity, label)
+        end
         local rbCmp = entity:get(PhysicsComponents.RigidBody)
         if rbCmp and rbCmp:getRigidBody() then pos = rbCmp:getRigidBody():getPos() end
 

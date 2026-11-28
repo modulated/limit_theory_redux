@@ -41,20 +41,228 @@ local function applyInversion(yaw, pitch)
     return yaw, pitch
 end
 
---- How much a ship's turning torque is scaled: a bigger hull of the same
---- mass turns slower (inertia grows with the radius squared), so a ship can
---- carry a multiplier that keeps the reference fighter's feel
---- (ShipFlightControl.torqueScale, set when the ship is built; default 1).
-local function torqueScale(shipEntity)
+--- How much what is fitted helps the ship turn: a module that helps it, or
+--- armour plate that does not (ShipFittingSystem writes `fitTurnScale`). It
+--- scales how quickly the ship reaches the rate asked for.
+---@param shipEntity Entity
+---@return number
+local function fitTurnScale(shipEntity)
     local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
-    return flightCtrl and flightCtrl.torqueScale or 1
+    if not flightCtrl then return 1 end
+    return flightCtrl.fitTurnScale or 1
+end
+
+--- How much the ship's thrust is scaled by what is fitted: engines up,
+--- plating and cargo pods down, an afterburner while it burns
+--- (ShipFittingSystem writes `fitThrustScale`; AbilitySystem the boost).
+---@param shipEntity Entity
+---@return number
+local function thrustScale(shipEntity)
+    local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return 1 end
+    return (flightCtrl.fitThrustScale or 1) * (flightCtrl.abilityThrustScale or 1)
+end
+
+-- LTR_DEBUG_INPUT=1 logs what the mouse is actually telling the game, once a
+-- second while the mouse is steering: the cursor's position against the
+-- window's size, the movement reported this frame, the steering that came
+-- out of it and the rate the ship is turning at. The numbers say which of
+-- those is lying when the ship will not fly straight.
+local DEBUG_INPUT = (os.getenv("LTR_DEBUG_INPUT") or "") ~= ""
+local debugTimer = 0
+
+---@param rb RigidBody
+---@param yaw number
+---@param pitch number
+---@param spin table the ship's angular velocity, in its own axes
+---@param dt number
+local function logSteering(rb, yaw, pitch, spin, dt)
+    debugTimer = debugTimer + (dt or 0)
+    if debugTimer < 1.0 then return end
+    debugTimer = 0
+    local pos = Input:mouse():position()
+    local delta = Input:mouse():delta()
+    Log.Info(
+        "input: cursor (%.0f, %.0f) of %.0fx%.0f logical, %.0fx%.0f physical" ..
+        "  ·  moved (%.1f, %.1f)  ·  steering yaw %.3f pitch %.3f" ..
+        "  ·  turning (%.2f, %.2f, %.2f) rad/s  ·  scheme %s",
+        pos.x, pos.y, Window:width(), Window:height(),
+        Window:physicalWidth(), Window:physicalHeight(),
+        delta.x, delta.y, yaw, pitch, spin.x, spin.y, spin.z,
+        tostring(Config.game.shipFlight.chaseSteering))
+end
+
+--- Steer the ship toward the turn rate the input asks for.
+---
+--- The input asks for a *rate* (a share of `maxTurnRate`), and the ship's
+--- turn rate is moved toward it directly: by `turnRateGain` of the difference
+--- a second, never faster than `maxTurnAccel` (scaled by what is fitted), and
+--- set on the body as an angular velocity.
+---
+--- It used to be done with torque, converting the acceleration wanted into a
+--- torque through an *estimate* of the hull's inertia (a sphere's). The
+--- physics works out the real inertia from the collider's shape, and a long
+--- hull's about its roll axis is a small fraction of a sphere's: every
+--- correction there landed many times too hard, overshot, and the next one
+--- harder still, until the ship span at whatever the torque limit allowed
+--- (with `torqueScale` up to 400). The chase camera turns with the ship's up,
+--- so the whole view span with it: the "slight mouse movement and the camera
+--- goes wild" bug. Setting the rate needs no inertia at all, so it cannot
+--- ring, whatever the hull.
+---
+--- Letting go brings the ship back to straight at the same pace, which also
+--- recovers from a spin a collision started.
+---@param shipEntity Entity
+---@param rb RigidBody
+---@param pitch number -1..1
+---@param yaw number -1..1
+---@param roll number -1..1
+---@param dt number
+---@param rateScale number|nil a share of the maximum turn rate (travel drive)
+local function applySteering(shipEntity, rb, pitch, yaw, roll, dt, rateScale)
+    local cfg = Config.game.shipFlight
+    local rot = rb:getRot()
+    local maxRate = (cfg.maxTurnRate or 1.8) * (rateScale or 1)
+    local rollRate = maxRate * (cfg.rollRateShare or 0.6)
+    local gain = cfg.turnRateGain or 6.0
+    local step = math.max(dt or 0, 1e-4)
+    local accelLimit = (cfg.maxTurnAccel or 8.0) * fitTurnScale(shipEntity) * step
+
+    -- Where the ship is turning now, in its own axes
+    local spin = rot:inverse():mulV(rb:getVelocityA())
+
+    --- The new rate about one axis: toward the rate asked for, by the gain's
+    --- share of the difference, at most the acceleration limit this step.
+    local function axisRate(input, current, limit)
+        local desired = Math.Clamp(input, -1, 1) * limit
+        local change = (desired - current) * math.min(1, gain * step)
+        return current + Math.Clamp(change, -accelLimit, accelLimit)
+    end
+
+    local x = axisRate(pitch, spin.x, maxRate)
+    local y = axisRate(-yaw, spin.y, maxRate)
+    local z = axisRate(-roll, spin.z, rollRate)
+
+    -- The physics damps angular velocity by angularDrag during the step that
+    -- follows (rapier: by 1 / (1 + dt * damping)); set it that much higher so
+    -- the rate the ship turns at is the one worked out here
+    local undamp = 1 + step * (cfg.angularDrag or 0)
+    rb:setVelocityA(rot:mulV(Vec3f(x * undamp, y * undamp, z * undamp)))
+
+    if DEBUG_INPUT then logSteering(rb, yaw, pitch, spin, dt) end
+end
+
+--- Steering from the mouse's *movement*: the ship holds a turn while the
+--- mouse is pushed, and the turn decays back to straight when the mouse
+--- stops. Nothing here depends on where the cursor is, which is what makes
+--- it work when the cursor cannot be trusted -- it is confined at the
+--- window's edge, or a remote desktop session is placing it.
+---@param shipEntity Entity
+---@param dt number
+---@return number yaw
+---@return number pitch
+local function movementSteering(shipEntity, dt)
+    local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return 0, 0 end
+    local cfg = Config.game.shipFlight
+    local delta = Input:mouse():delta()
+    local sx = math.max(Window:width(), 1)
+    local sy = math.max(Window:height(), 1)
+    local sens = UserSettings.mouseSensitivityFactor() -- Mouse Sensitivity setting
+
+    local yaw = Math.Clamp(flightCtrl:getTargetYaw() + delta.x / sx * sens, -0.8, 0.8)
+    local pitch = Math.Clamp(flightCtrl:getTargetPitch() - delta.y / sy * sens, -0.8, 0.8)
+
+    -- Back toward straight when the mouse stops. Clamped so a long frame
+    -- cannot send the factor negative and flip the turn.
+    local keep = Math.Clamp(1.0 - (cfg.steeringDecay or 4.0) * dt, 0, 1)
+    flightCtrl:setTargetYaw(yaw * keep)
+    flightCtrl:setTargetPitch(pitch * keep)
+
+    -- Dead zones
+    if math.abs(yaw) < 0.004 then yaw = 0 end
+    if math.abs(pitch) < 0.008 then pitch = 0 end
+    return yaw, pitch
+end
+
+--- The virtual joystick: the mouse's movement moves a stick (kept on the
+--- ship's flight control, in shares of full deflection), and where the stick
+--- is *is* the turn rate. Centred, the ship flies straight; it stays where
+--- it was left, so the same place always means the same turn. Nothing reads
+--- the OS cursor, so a confined cursor or a remote desktop cannot wedge it.
+--- The HUD shows the stick (LimitTheoryRedux's flight HUD).
+---@param shipEntity Entity
+---@return number yaw
+---@return number pitch
+local function virtualSteering(shipEntity)
+    local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return 0, 0 end
+    local cfg = Config.game.shipFlight
+    local delta = Input:mouse():delta()
+    -- Full deflection is this many pixels of mouse travel from the centre
+    local radius = math.max(1, Window:height() * (cfg.stickRadius or 0.22))
+    local sens = UserSettings.mouseSensitivityFactor()
+    local x = flightCtrl:getTargetYaw() + delta.x / radius * sens
+    local y = flightCtrl:getTargetPitch() - delta.y / radius * sens
+    local len = math.sqrt(x * x + y * y)
+    if len > 1 then
+        x, y, len = x / len, y / len, 1
+    end
+    flightCtrl:setTargetYaw(x)
+    flightCtrl:setTargetPitch(y)
+
+    -- Within the dead zone (where "centred" is) the ship holds its heading;
+    -- the rate starts from 0 at its edge
+    local dead = cfg.stickDeadZone or 0.08
+    if len < dead then return 0, 0 end
+    local k = (len - dead) / (1 - dead) / len
+    return x * k, y * k
+end
+
+--- Where the virtual stick is (shares of full deflection, y up), and the
+--- dead zone, for the HUD.
+---@param shipEntity Entity
+---@return number x, number y, number deadZone
+function ShipFlightSystem:stick(shipEntity)
+    local flightCtrl = shipEntity and shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return 0, 0, 0 end
+    return flightCtrl:getTargetYaw() or 0, flightCtrl:getTargetPitch() or 0,
+        Config.game.shipFlight.stickDeadZone or 0.08
+end
+
+--- The stick back to the centre (the mouse handed to a panel, a new ship).
+---@param shipEntity Entity
+function ShipFlightSystem:centreStick(shipEntity)
+    local flightCtrl = shipEntity and shipEntity:get(ConstructComponents.ShipFlightControl)
+    if not flightCtrl then return end
+    flightCtrl:setTargetYaw(0)
+    flightCtrl:setTargetPitch(0)
+end
+
+--- What the mouse is asking the ship to do, by the scheme in force
+--- (shipFlight.chaseSteering): the virtual stick by default, in both
+--- piloting cameras.
+---@param shipEntity Entity
+---@param dt number
+---@param useDelta boolean first person
+---@return number yaw
+---@return number pitch
+local function mouseSteering(shipEntity, dt, useDelta)
+    local scheme = Config.game.shipFlight.chaseSteering or "virtual"
+    if scheme == "virtual" then
+        return virtualSteering(shipEntity)
+    end
+    if useDelta or scheme ~= "cursor" then
+        return movementSteering(shipEntity, dt)
+    end
+    return cursorSteering()
 end
 
 --- Update ship from input.
 ---@param dt number
 ---@param shipEntity Entity
 ---@param mouseAim boolean Mouse controls ship rotation
----@param useDelta boolean Use mouse delta (first person) vs steering toward the cursor (chase)
+---@param useDelta boolean First person (always steers by movement)
 function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
     if not shipEntity then return end
 
@@ -65,6 +273,7 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
 
     local cfg = Config.game.shipFlight
 
+    local fitThrust = thrustScale(shipEntity)
     -- Read thrust input
     local forward = ShipActions.ThrustZ:get()
     local right   = ShipActions.ThrustX:get()
@@ -81,36 +290,13 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
     -- Read rotation input
     local yaw   = 0
     local pitch = 0
-    if mouseAim then
-        if useDelta then
-            -- FPS mode: indirect aiming with accumulation and decay
-            local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
-            if flightCtrl then
-                local delta = Input:mouse():delta()
-                local sx = Window:width()
-                local sy = Window:height()
-                local sens = UserSettings.mouseSensitivityFactor() -- Mouse Sensitivity setting
-
-                local tYaw = Math.Clamp(
-                    flightCtrl:getTargetYaw() + delta.x / sx * sens, -0.8, 0.8)
-                local tPitch = Math.Clamp(
-                    flightCtrl:getTargetPitch() - delta.y / sy * sens, -0.8, 0.8)
-
-                yaw   = tYaw
-                pitch = tPitch
-
-                -- Decay toward center when mouse stops
-                flightCtrl:setTargetYaw(tYaw * (1.0 - 4.0 * dt))
-                flightCtrl:setTargetPitch(tPitch * (1.0 - 4.0 * dt))
-            end
-            -- Dead zones
-            if math.abs(yaw)   < 0.004 then yaw   = 0 end
-            if math.abs(pitch) < 0.008 then pitch = 0 end
-        else
-            -- Chase: turn toward the cursor (legacy style)
-            yaw, pitch = cursorSteering()
-        end
+    if mouseAim and Window:isFocused() then
+        yaw, pitch = mouseSteering(shipEntity, dt, useDelta)
         yaw, pitch = applyInversion(yaw, pitch)
+    else
+        -- The mouse is elsewhere (a panel, free look): the stick recentres,
+        -- so taking it back is not a sudden turn
+        ShipFlightSystem:centreStick(shipEntity)
     end
 
     -- Boost (matches legacy: 1.0 + 2.0 * boost)
@@ -121,25 +307,17 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
 
     -- Apply translational forces
     if math.abs(forward) > 1e-6 then
-        rb:applyForce(rot:getForward():scale(forward * cfg.thrustForward * mult))
+        rb:applyForce(rot:getForward():scale(forward * cfg.thrustForward * mult * fitThrust))
     end
     if math.abs(right) > 1e-6 then
-        rb:applyForce(rot:getRight():scale(right * cfg.thrustRight * 0.5))
+        rb:applyForce(rot:getRight():scale(right * cfg.thrustRight * 0.5 * fitThrust))
     end
     if math.abs(up) > 1e-6 then
-        rb:applyForce(rot:getUp():scale(up * cfg.thrustUp))
+        rb:applyForce(rot:getUp():scale(up * cfg.thrustUp * fitThrust))
     end
 
-    -- Apply torque in local space
-    if math.max(math.max(math.abs(pitch), math.abs(yaw)), math.abs(roll)) > 1e-6 then
-        local k = torqueScale(shipEntity)
-        local localTorque = Vec3f(
-            pitch * cfg.torquePitch * k,
-            -yaw  * cfg.torqueYaw * k,
-            -roll * cfg.torqueRoll * 0.5 * k
-        )
-        rb:applyTorque(rot:mulV(localTorque))
-    end
+    -- Steer toward the rate asked for (and brake toward a stop with no input)
+    applySteering(shipEntity, rb, pitch, yaw, roll, dt)
 end
 
 --- Reduced steering only (for travel drive — no thrust, slower rotation)
@@ -155,36 +333,39 @@ function ShipFlightSystem:updateSteeringOnly(dt, shipEntity, mouseAim, useDelta)
     local rb = rbCmp:getRigidBody()
     if not rb then return end
 
-    local cfg = Config.game.shipFlight
     local roll = ShipActions.Roll:get()
     local yaw, pitch = 0, 0
-    if mouseAim then
-        if useDelta then
-            local delta = Input:mouse():delta()
-            local sx, sy = Window:width(), Window:height()
-            local sens = UserSettings.mouseSensitivityFactor()
-            yaw   = Math.Clamp(delta.x / sx * 4.0 * sens, -1.0, 1.0)
-            pitch = Math.Clamp(-delta.y / sy * 4.0 * sens, -1.0, 1.0)
-            if math.abs(yaw)   < 0.0001 then yaw   = 0 end
-            if math.abs(pitch) < 0.0001 then pitch = 0 end
-        else
-            yaw, pitch = cursorSteering()
-        end
+    if mouseAim and Window:isFocused() then
+        yaw, pitch = mouseSteering(shipEntity, dt, useDelta)
         yaw, pitch = applyInversion(yaw, pitch)
+    else
+        ShipFlightSystem:centreStick(shipEntity)
     end
 
-    -- Reduced torque at high speed (10% of normal)
-    local steerFactor = 0.1
-    local rot = rb:getRot()
-    if math.max(math.max(math.abs(pitch), math.abs(yaw)), math.abs(roll)) > 1e-6 then
-        local k = torqueScale(shipEntity) * steerFactor
-        local localTorque = Vec3f(
-            pitch * cfg.torquePitch * k,
-            -yaw  * cfg.torqueYaw * k,
-            -roll * cfg.torqueRoll * 0.5 * k
-        )
-        rb:applyTorque(rot:mulV(localTorque))
-    end
+    -- A tenth of the turn rate under travel drive: the ship is covering
+    -- ground, not dogfighting
+    applySteering(shipEntity, rb, pitch, yaw, roll, dt, 0.1)
+end
+
+--- Turn a ship at a rate (shares of maxTurnRate), the way manual flight
+--- does: for the autopilot, which must not steer by torque either.
+---@param shipEntity Entity
+---@param pitch number -1..1
+---@param yaw number -1..1
+---@param dt number
+function ShipFlightSystem:steer(shipEntity, pitch, yaw, dt)
+    local rbCmp = shipEntity and shipEntity:get(PhysicsComponents.RigidBody)
+    local rb = rbCmp and rbCmp:getRigidBody()
+    if not rb then return end
+    applySteering(shipEntity, rb, pitch, yaw, 0, dt)
+end
+
+--- How much the ship's thrust is scaled by what is fitted (and an
+--- afterburner): for the autopilot's engine limit.
+---@param shipEntity Entity
+---@return number
+function ShipFlightSystem:thrustScale(shipEntity)
+    return thrustScale(shipEntity)
 end
 
 ---@param shipEntity Entity

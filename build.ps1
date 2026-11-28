@@ -4,6 +4,7 @@
 #
 #   .\build.ps1                 optimized build (what CI ships)
 #   .\build.ps1 --fast          optimized build with thin LTO, for local play-testing
+#   .\build.ps1 --profile-server  --fast build with the live stats/profiler server compiled in
 #   .\build.ps1 --debug         debug build
 #   .\build.ps1 --run-tests     also run clippy and the tests
 #
@@ -19,6 +20,7 @@ Set-Location -Path $PSScriptRoot
 $runTests = $false
 $debug = $false
 $fast = $false
+$profileServer = $false
 $bundle = $false
 
 foreach ($arg in $args) {
@@ -31,12 +33,15 @@ foreach ($arg in $args) {
             Write-Output "    --run-tests     run tests"
             Write-Output "    --debug         build and run tests in debug mode"
             Write-Output "    --fast          optimized build with thin LTO, for local play-testing (not for shipping)"
+            Write-Output "    --profile-server  --fast build with the live stats/profiler server compiled in"
+            Write-Output "                    (it starts with the game: http://127.0.0.1:8777, or --stats-server <port>)"
             Write-Output "    --bundle        assemble an app bundle (macOS only: use build.sh there)"
             exit 0
         }
         '^--?run-tests$' { $runTests = $true; continue }
         '^--?debug$'     { $debug = $true; continue }
         '^--?fast$'      { $fast = $true; continue }
+        '^--?profile-server$' { $profileServer = $true; $fast = $true; continue }
         '^--?bundle$'    { $bundle = $true; continue }
         default {
             Write-Error "Unknown flag $arg"
@@ -74,12 +79,16 @@ function Invoke-Cargo {
     }
 }
 
+# The stats/profiler server is a cargo feature of ltr (doc/STAT_SERVER.md)
+$features = @()
+if ($profileServer) { $features = @('--features', 'stats-server') }
+
 if ($debug) {
     $targetDir = Join-Path 'target' 'debug'
-    Invoke-Cargo build --color auto
+    Invoke-Cargo build @features --color auto
 } elseif ($fast) {
     $targetDir = Join-Path 'target' 'release-fast'
-    Invoke-Cargo build --profile release-fast --color auto
+    Invoke-Cargo build --profile release-fast @features --color auto
 } else {
     $targetDir = Join-Path 'target' 'release'
     Invoke-Cargo build --release --color auto
@@ -111,3 +120,7 @@ if ($bundle) {
 }
 
 Write-Output "Built into .\bin: ltr$binSuffix, ${libPrefix}phx$libSuffix"
+if ($profileServer) {
+    Write-Output "Built with the stats server: it starts with the game on http://127.0.0.1:8777"
+    Write-Output "(another port: .\bin\ltr$binSuffix --stats-server <port>)"
+}

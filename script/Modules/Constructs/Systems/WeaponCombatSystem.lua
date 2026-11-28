@@ -134,7 +134,13 @@ end
 function WeaponCombatSystem:refreshTargets(dt)
     self.frame = self.frame + 1
     local frame = self.frame
-    local live = {}
+    -- One list, refilled every frame (callers use it within the frame)
+    local live = self.liveScratch
+    if not live then
+        live = {}
+        self.liveScratch = live
+    end
+    local count = 0
     for entity, targetable in Registry:iterEntities(ConstructComponents.Targetable) do
         local health = entity:get(CoreComponents.Health)
         local bodyComponent = entity:get(PhysicsComponents.RigidBody)
@@ -155,13 +161,19 @@ function WeaponCombatSystem:refreshTargets(dt)
             end
             local position = body:getPos()
             local previous = record.position
+            -- The record's own vector, updated in place: a new one per
+            -- contact per frame was garbage for the collector
+            local velocity = record.velocity
+            if not velocity then
+                velocity = Vec3f()
+                record.velocity = velocity
+            end
             if previous and dt > 0 then
-                record.velocity = Vec3f(
-                    (position.x - previous.x) / dt,
-                    (position.y - previous.y) / dt,
-                    (position.z - previous.z) / dt)
+                velocity.x = (position.x - previous.x) / dt
+                velocity.y = (position.y - previous.y) / dt
+                velocity.z = (position.z - previous.z) / dt
             else
-                record.velocity = Vec3f()
+                velocity.x, velocity.y, velocity.z = 0, 0, 0
             end
             record.position = position
             record.team = targetable:getTeam()
@@ -171,8 +183,12 @@ function WeaponCombatSystem:refreshTargets(dt)
             record.healthFraction = maxHealth > 0 and health:getCurrentHealth() / maxHealth or 1.0
             record.frame = frame
             record.exploded = nil -- alive (again): it explodes when it dies
-            live[#live + 1] = record
+            count = count + 1
+            live[count] = record
         end
+    end
+    for index = #live, count + 1, -1 do
+        live[index] = nil
     end
     for id, record in pairs(self.targets) do
         if record.frame ~= frame then
@@ -195,6 +211,14 @@ local function selectCandidates(battery, live)
     local origin = battery.shipBody:getPos()
     local rangeSquared = battery.engagementRange * battery.engagementRange
     local shipId = battery.ship.id
+    -- A contact the battery was told to attack whatever its team (the
+    -- player attacking a ship that is not hostile: WeaponBattery.attackEntity)
+    local attackId = battery.attackEntity and battery.attackEntity.id
+    local attackIds = nil
+    if battery.attackEntities and #battery.attackEntities > 0 then
+        attackIds = {}
+        for _, e in ipairs(battery.attackEntities) do attackIds[tostring(e.id)] = true end
+    end
     for _, record in ipairs(live) do
         local engages
         if battery.hostileTeams then
@@ -202,6 +226,8 @@ local function selectCandidates(battery, live)
         else
             engages = battery.team == nil or record.team ~= battery.team
         end
+        if attackId and record.id == attackId then engages = true end
+        if attackIds and attackIds[tostring(record.id)] then engages = true end
         if record.id ~= shipId and engages then
             local dx = record.position.x - origin.x
             local dy = record.position.y - origin.y

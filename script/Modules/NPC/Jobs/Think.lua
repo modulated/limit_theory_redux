@@ -1,3 +1,4 @@
+local Factions = require("Modules.NPC.Factions")
 local Patrolling = require("Modules.NPC.Jobs.Patrolling")
 local Marauding = require("Modules.NPC.Jobs.Marauding")
 local Transport = require("Modules.NPC.Jobs.Transport")
@@ -62,11 +63,40 @@ local function transportJob(npc, ctx)
     return Transport(stops, exitGate, stats.stops == "hideouts" and "Smuggling" or "Hauling cargo")
 end
 
+--- A place among the rocks of one of the system's belts or rings (a real
+--- rock's position), or nil.
+---@param places table
+---@param rng table
+---@return table|nil {x, y, z}
+function Think.lurkSpot(places, rng)
+    local CelestialComponents = require("Modules.CelestialObjects.Components")
+    local belts = places.belts or {}
+    if #belts == 0 then return nil end
+    for _ = 1, 3 do
+        local belt = belts[rng:getInt(1, #belts)]
+        local cmp = belt and belt:isValid() and belt:get(CelestialComponents.AsteroidBelt)
+        local rocks = cmp and cmp:getAsteroidData()
+        if rocks and #rocks > 0 then
+            local a = rocks[rng:getInt(1, #rocks)]
+            if a and a.px then return { x = a.px, y = a.py, z = a.pz } end
+        end
+    end
+    return nil
+end
+
 ---@param npc table NpcSystem's record
 ---@param ctx table NpcSystem
 ---@return table|nil job an NPC action, nil to stay idle
 function Think.chooseJob(npc, ctx)
     local places, rng = ctx.places, ctx.rng
+
+    -- The player's own ships: what their order says (LimitTheoryRedux
+    -- sets `assignment.nodes` to the outpost's surroundings or the round of
+    -- the player's outposts)
+    if npc.assignment then
+        local nodes = npc.assignment.nodes and npc.assignment.nodes() or {}
+        return #nodes > 0 and Patrolling(nodes) or nil
+    end
 
     -- A guard: its charge, or a new one
     if npc.isGuard then
@@ -95,6 +125,17 @@ function Think.chooseJob(npc, ctx)
     elseif not stats.gunship then
         return transportJob(npc, ctx)
     else
+        -- Pirates often lie in wait inside an asteroid field, among the
+        -- rocks, where their signature is lost in the clutter (NpcSystem:
+        -- loudness); the rest of the time at the gates and the planets
+        npc.lurkSpot = nil
+        if npc.faction == Factions.Pirate and rng:getUniform() < 0.6 then
+            local spot = Think.lurkSpot(places, rng)
+            if spot then
+                npc.lurkSpot = spot
+                return Marauding(spot, 1.2)
+            end
+        end
         local grounds = {}
         for _, gate in ipairs(places.gates) do grounds[#grounds + 1] = gate.position end
         for _, p in ipairs(places.pointsOfInterest) do grounds[#grounds + 1] = p end

@@ -17,6 +17,15 @@ function PlayerCargo:reset()
     self.stock = StockComponent(Config.game.cargo.holdCapacity)
 end
 
+--- Resize the hold: the hull's own capacity plus whatever cargo modules are
+--- fitted (`ShipFittingSystem`). Goods already aboard are never thrown away,
+--- so a hold that shrinks below what it holds simply takes nothing more
+--- until it is unloaded.
+---@param capacity number
+function PlayerCargo:setCapacity(capacity)
+    self:get():setCapacity(math.max(0, capacity or 0))
+end
+
 --- The hold itself, which the trade system puts goods into and takes them
 --- out of.
 ---@return StockComponent

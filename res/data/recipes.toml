@@ -1,0 +1,1008 @@
+# What stations (and the player's own lines) can make: the production chains.
+#
+# Loaded at start-up by script/Shared/Definitions/ProductionDefs.lua, which
+# checks every entry and stops with "res/data/recipes.toml:<line>: ..." on a
+# mistake. One [[recipe]] block per recipe.
+#
+#   id        permanent number. Stations and the player's lines record recipes
+#             by id: never change or reuse one; a new recipe takes the next
+#             free one (see the end of this file).
+#   name      what the game shows
+#   class     where it runs: "Powerplant", "Refinery", "Factory", "Drydock" or
+#             "Misc". A station's trade and an outpost's specialisation are
+#             classes.
+#   duration  seconds for one run at Legacy's pace; the game divides it by
+#             production.timeScale in GameConfig.lua
+#   inputs    what one run takes:  { item = "<item name>", count = <units> }
+#   outputs   what one run makes, the same way. Items are named exactly as in
+#             items.toml.
+#
+# Balancing: `luajit tools/economy-sim.lua --recipes` prints each recipe's
+# input cost, output value and margin at the items' base prices.
+
+[[recipe]]
+id = 1
+name = "Solar Energy Array"
+class = "Powerplant"
+duration = 8
+inputs = []
+outputs = [
+    { item = "Energy Cell", count = 10 },
+]
+
+[[recipe]]
+id = 2
+name = "Nuclear Reactor"
+class = "Powerplant"
+duration = 20
+inputs = [
+    { item = "Radioactive Isotopes", count = 6 },
+]
+outputs = [
+    { item = "Energy Cell", count = 240 },
+    { item = "Radioactive Waste", count = 8 },
+]
+
+[[recipe]]
+id = 3
+name = "Fusion Reactor"
+class = "Powerplant"
+duration = 40
+inputs = [
+    { item = "Liquid Water", count = 572 },
+]
+outputs = [
+    { item = "Energy Cell", count = 1000 },
+    { item = "Radioactive Waste", count = 1 },
+]
+
+[[recipe]]
+id = 4
+name = "Waste Recycler"
+class = "Powerplant"
+duration = 4
+inputs = [
+    { item = "Waste", count = 14 },
+]
+outputs = [
+    { item = "Energy Cell", count = 5 },
+]
+
+[[recipe]]
+id = 5
+name = "Water Melter"
+class = "Refinery"
+duration = 6
+inputs = [
+    { item = "Energy Cell", count = 3 },
+    { item = "Water Ice", count = 15 },
+]
+outputs = [
+    { item = "Liquid Water", count = 20 },
+]
+
+[[recipe]]
+id = 6
+name = "Silicon Refinery"
+class = "Refinery"
+duration = 12
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Olivine", count = 2 },
+]
+outputs = [
+    { item = "Silicon", count = 1 },
+    { item = "Waste", count = 6 },
+]
+
+[[recipe]]
+id = 7
+name = "Carbon Refinery"
+class = "Refinery"
+duration = 13
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Chondrite", count = 1 },
+]
+outputs = [
+    { item = "Carbon", count = 1 },
+    { item = "Waste", count = 3 },
+]
+
+[[recipe]]
+id = 8
+name = "Beryllium Refinery"
+class = "Refinery"
+duration = 22
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Beryl", count = 1 },
+]
+outputs = [
+    { item = "Beryllium", count = 1 },
+    { item = "Waste", count = 7 },
+]
+
+[[recipe]]
+id = 9
+name = "Aluminum Refinery"
+class = "Refinery"
+duration = 15
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Bauxite", count = 1 },
+]
+outputs = [
+    { item = "Aluminum", count = 1 },
+    { item = "Waste", count = 5 },
+]
+
+[[recipe]]
+id = 10
+name = "Iron Refinery"
+class = "Refinery"
+duration = 14
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Siderite", count = 1 },
+]
+outputs = [
+    { item = "Iron", count = 1 },
+    { item = "Waste", count = 4 },
+]
+
+[[recipe]]
+id = 11
+name = "Copper Refinery"
+class = "Refinery"
+duration = 16
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Chalcopyrite", count = 3 },
+]
+outputs = [
+    { item = "Copper", count = 2 },
+    { item = "Anode Sludge", count = 1 },
+    { item = "Waste", count = 7 },
+]
+
+[[recipe]]
+id = 12
+name = "Thorium Refinery"
+class = "Refinery"
+duration = 20
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Monazite", count = 2 },
+]
+outputs = [
+    { item = "Thorium", count = 1 },
+    { item = "Radioactive Waste", count = 2 },
+    { item = "Waste", count = 5 },
+]
+
+[[recipe]]
+id = 13
+name = "Hydrocarbon Refinery"
+class = "Refinery"
+duration = 14
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Biomass", count = 1 },
+]
+outputs = [
+    { item = "Hydrocarbons", count = 1 },
+    { item = "Waste", count = 15 },
+]
+
+[[recipe]]
+id = 14
+name = "Water Electrolyser"
+class = "Factory"
+duration = 5
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Liquid Water", count = 1 },
+]
+outputs = [
+    { item = "Hydrogen", count = 2 },
+    { item = "Oxygen", count = 1 },
+]
+
+[[recipe]]
+id = 15
+name = "Steel Foundry"
+class = "Factory"
+duration = 13
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Iron", count = 1 },
+    { item = "Carbon", count = 1 },
+]
+outputs = [
+    { item = "Steel", count = 1 },
+    { item = "Waste", count = 4 },
+]
+
+[[recipe]]
+id = 16
+name = "Silver Recovery Plant"
+class = "Factory"
+duration = 18
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Anode Sludge", count = 3 },
+]
+outputs = [
+    { item = "Silver", count = 1 },
+    { item = "Waste", count = 6 },
+]
+
+[[recipe]]
+id = 17
+name = "Gold Recovery Plant"
+class = "Factory"
+duration = 21
+inputs = [
+    { item = "Energy Cell", count = 5 },
+    { item = "Anode Sludge", count = 4 },
+]
+outputs = [
+    { item = "Gold", count = 1 },
+    { item = "Waste", count = 7 },
+]
+
+[[recipe]]
+id = 18
+name = "Platinum Recovery Plant"
+class = "Factory"
+duration = 25
+inputs = [
+    { item = "Energy Cell", count = 7 },
+    { item = "Anode Sludge", count = 5 },
+]
+outputs = [
+    { item = "Platinum", count = 1 },
+    { item = "Waste", count = 9 },
+]
+
+[[recipe]]
+id = 19
+name = "Isotope Factory"
+class = "Factory"
+duration = 11
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Thorium", count = 2 },
+]
+outputs = [
+    { item = "Radioactive Isotopes", count = 1 },
+    { item = "Radioactive Waste", count = 7 },
+    { item = "Waste", count = 3 },
+]
+
+[[recipe]]
+id = 20
+name = "Plastics Factory"
+class = "Factory"
+duration = 9
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Hydrocarbons", count = 1 },
+]
+outputs = [
+    { item = "Plastic", count = 1 },
+    { item = "Waste", count = 8 },
+]
+
+[[recipe]]
+id = 21
+name = "Infolytic Chip Factory"
+class = "Factory"
+duration = 11
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Plastic", count = 1 },
+    { item = "Gold", count = 1 },
+    { item = "Silicon", count = 1 },
+]
+outputs = [
+    { item = "Infolytic Chip", count = 1 },
+    { item = "Waste", count = 2 },
+]
+
+[[recipe]]
+id = 22
+name = "Transparent Aluminum Factory"
+class = "Factory"
+duration = 13
+inputs = [
+    { item = "Energy Cell", count = 1 },
+    { item = "Silicon", count = 1 },
+    { item = "Aluminum", count = 1 },
+]
+outputs = [
+    { item = "Transparent Aluminum", count = 1 },
+    { item = "Waste", count = 3 },
+]
+
+[[recipe]]
+id = 23
+name = "Glassiron Factory"
+class = "Factory"
+duration = 17
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Silicon", count = 1 },
+    { item = "Iron", count = 1 },
+    { item = "Beryllium", count = 1 },
+]
+outputs = [
+    { item = "Glassiron", count = 1 },
+    { item = "Waste", count = 3 },
+]
+
+[[recipe]]
+id = 24
+name = "Ship Sensor Factory"
+class = "Factory"
+duration = 450
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Glassiron", count = 3 },
+    { item = "Transparent Aluminum", count = 2 },
+    { item = "Steel", count = 2 },
+    { item = "Infolytic Chip", count = 2 },
+]
+outputs = [
+    { item = "Ship Sensor", count = 1 },
+    { item = "Waste", count = 55 },
+]
+
+[[recipe]]
+id = 25
+name = "Ship Computer Factory"
+class = "Factory"
+duration = 360
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Glassiron", count = 2 },
+    { item = "Transparent Aluminum", count = 2 },
+    { item = "Steel", count = 2 },
+    { item = "Silicon", count = 2 },
+    { item = "Infolytic Chip", count = 2 },
+]
+outputs = [
+    { item = "Ship Computer", count = 1 },
+    { item = "Waste", count = 70 },
+]
+
+[[recipe]]
+id = 26
+name = "Thruster Engine Factory"
+class = "Factory"
+duration = 900
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Glassiron", count = 12 },
+    { item = "Transparent Aluminum", count = 2 },
+    { item = "Steel", count = 2 },
+    { item = "Infolytic Chip", count = 2 },
+    { item = "Thorium", count = 2 },
+]
+outputs = [
+    { item = "Ship Engine, Thruster", count = 1 },
+    { item = "Waste", count = 55 },
+]
+
+[[recipe]]
+id = 27
+name = "Pulse Turret Weapon Factory"
+class = "Factory"
+duration = 790
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Glassiron", count = 3 },
+    { item = "Transparent Aluminum", count = 2 },
+    { item = "Steel", count = 2 },
+    { item = "Infolytic Chip", count = 2 },
+]
+outputs = [
+    { item = "Ship Weapon, Pulse Turret", count = 1 },
+    { item = "Waste", count = 40 },
+]
+
+[[recipe]]
+id = 28
+name = "Solo Ship Hull Drydock"
+class = "Drydock"
+duration = 1800
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Glassiron", count = 21 },
+    { item = "Transparent Aluminum", count = 3 },
+    { item = "Steel", count = 5 },
+    { item = "Gold", count = 1 },
+    { item = "Platinum", count = 1 },
+    { item = "Infolytic Chip", count = 1 },
+    { item = "Thorium", count = 1 },
+    { item = "Ship Sensor", count = 1 },
+    { item = "Ship Computer", count = 1 },
+    { item = "Ship Engine, Thruster", count = 1 },
+]
+outputs = [
+    { item = "Ship Hull, Solo", count = 1 },
+    { item = "Waste", count = 725 },
+]
+
+[[recipe]]
+id = 29
+name = "Space Station Fabricator"
+class = "Drydock"
+duration = 14400
+inputs = [
+    { item = "Energy Cell", count = 716 },
+    { item = "Glassiron", count = 2046 },
+    { item = "Transparent Aluminum", count = 369 },
+    { item = "Steel", count = 809 },
+    { item = "Gold", count = 116 },
+    { item = "Platinum", count = 19 },
+    { item = "Infolytic Chip", count = 18 },
+    { item = "Ship Sensor", count = 1 },
+    { item = "Ship Computer", count = 1 },
+    { item = "Thorium", count = 1 },
+]
+outputs = [
+    { item = "Space Station, Small", count = 1 },
+    { item = "Waste", count = 9750 },
+]
+
+[[recipe]]
+id = 30
+name = "Shield Capacitor Factory"
+class = "Factory"
+duration = 420
+inputs = [
+    { item = "Energy Cell", count = 3 },
+    { item = "Glassiron", count = 1 },
+    { item = "Steel", count = 1 },
+    { item = "Infolytic Chip", count = 1 },
+]
+outputs = [
+    { item = "Shield Capacitor", count = 1 },
+    { item = "Waste", count = 45 },
+]
+
+[[recipe]]
+id = 31
+name = "Armour Plating Mill"
+class = "Factory"
+duration = 300
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Glassiron", count = 1 },
+    { item = "Steel", count = 2 },
+]
+outputs = [
+    { item = "Armour Plating", count = 1 },
+    { item = "Waste", count = 60 },
+]
+
+[[recipe]]
+id = 32
+name = "Cargo Pod Factory"
+class = "Factory"
+duration = 360
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Transparent Aluminum", count = 2 },
+    { item = "Steel", count = 2 },
+]
+outputs = [
+    { item = "Cargo Pod", count = 1 },
+    { item = "Waste", count = 50 },
+]
+
+[[recipe]]
+id = 33
+name = "Manoeuvring Thruster Factory"
+class = "Factory"
+duration = 480
+inputs = [
+    { item = "Energy Cell", count = 2 },
+    { item = "Glassiron", count = 1 },
+    { item = "Transparent Aluminum", count = 1 },
+    { item = "Steel", count = 2 },
+    { item = "Silicon", count = 1 },
+    { item = "Plastic", count = 1 },
+]
+outputs = [
+    { item = "Manoeuvring Thrusters", count = 1 },
+    { item = "Waste", count = 45 },
+]
+
+[[recipe]]
+id = 34
+name = "Shield Booster Factory"
+class = "Factory"
+duration = 540
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Glassiron", count = 1 },
+    { item = "Gold", count = 1 },
+    { item = "Silicon", count = 1 },
+    { item = "Infolytic Chip", count = 1 },
+]
+outputs = [
+    { item = "Shield Booster", count = 1 },
+    { item = "Waste", count = 50 },
+]
+
+[[recipe]]
+id = 35
+name = "Afterburner Factory"
+class = "Factory"
+duration = 600
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Glassiron", count = 2 },
+    { item = "Steel", count = 2 },
+    { item = "Plastic", count = 2 },
+    { item = "Thorium", count = 1 },
+]
+outputs = [
+    { item = "Afterburner", count = 1 },
+    { item = "Waste", count = 60 },
+]
+
+[[recipe]]
+id = 36
+name = "Hull Repair Pulse Factory"
+class = "Factory"
+duration = 720
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Glassiron", count = 1 },
+    { item = "Steel", count = 1 },
+    { item = "Gold", count = 1 },
+    { item = "Infolytic Chip", count = 2 },
+]
+outputs = [
+    { item = "Hull Repair Pulse", count = 1 },
+    { item = "Waste", count = 55 },
+]
+
+[[recipe]]
+id = 37
+name = "Mining Laser Factory"
+class = "Factory"
+duration = 540
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Glassiron", count = 1 },
+    { item = "Transparent Aluminum", count = 1 },
+    { item = "Silicon", count = 1 },
+    { item = "Infolytic Chip", count = 1 },
+]
+outputs = [
+    { item = "Mining Laser", count = 1 },
+    { item = "Waste", count = 45 },
+]
+
+[[recipe]]
+id = 38
+name = "Survey Scanner Factory"
+class = "Factory"
+duration = 600
+inputs = [
+    { item = "Energy Cell", count = 3 },
+    { item = "Transparent Aluminum", count = 1 },
+    { item = "Silicon", count = 2 },
+    { item = "Infolytic Chip", count = 2 },
+]
+outputs = [
+    { item = "Survey Scanner", count = 1 },
+    { item = "Waste", count = 40 },
+]
+
+[[recipe]]
+id = 39
+name = "Beam Turret Weapon Factory"
+class = "Factory"
+duration = 850
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Glassiron", count = 2 },
+    { item = "Transparent Aluminum", count = 2 },
+    { item = "Steel", count = 2 },
+    { item = "Silicon", count = 1 },
+    { item = "Infolytic Chip", count = 2 },
+]
+outputs = [
+    { item = "Ship Weapon, Beam Turret", count = 1 },
+    { item = "Waste", count = 45 },
+]
+
+[[recipe]]
+id = 40
+name = "Launcher Turret Weapon Factory"
+class = "Factory"
+duration = 800
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Glassiron", count = 2 },
+    { item = "Steel", count = 4 },
+    { item = "Silicon", count = 2 },
+    { item = "Plastic", count = 2 },
+    { item = "Copper", count = 1 },
+    { item = "Infolytic Chip", count = 1 },
+]
+outputs = [
+    { item = "Ship Weapon, Launcher Turret", count = 1 },
+    { item = "Waste", count = 60 },
+]
+
+[[recipe]]
+id = 41
+name = "Cannon Bay Weapon Works"
+class = "Factory"
+duration = 1800
+inputs = [
+    { item = "Energy Cell", count = 10 },
+    { item = "Glassiron", count = 8 },
+    { item = "Steel", count = 10 },
+    { item = "Platinum", count = 1 },
+    { item = "Thorium", count = 2 },
+    { item = "Infolytic Chip", count = 2 },
+]
+outputs = [
+    { item = "Ship Weapon, Cannon Bay", count = 1 },
+    { item = "Waste", count = 220 },
+]
+
+[[recipe]]
+id = 42
+name = "Beam Bay Weapon Works"
+class = "Factory"
+duration = 2700
+inputs = [
+    { item = "Energy Cell", count = 20 },
+    { item = "Glassiron", count = 10 },
+    { item = "Transparent Aluminum", count = 8 },
+    { item = "Gold", count = 4 },
+    { item = "Platinum", count = 2 },
+    { item = "Thorium", count = 1 },
+    { item = "Infolytic Chip", count = 6 },
+]
+outputs = [
+    { item = "Ship Weapon, Beam Bay", count = 1 },
+    { item = "Waste", count = 260 },
+]
+
+[[recipe]]
+id = 43
+name = "Small Ship Hull Drydock"
+class = "Drydock"
+duration = 4200
+inputs = [
+    { item = "Energy Cell", count = 6 },
+    { item = "Glassiron", count = 27 },
+    { item = "Transparent Aluminum", count = 4 },
+    { item = "Steel", count = 7 },
+    { item = "Gold", count = 1 },
+    { item = "Platinum", count = 1 },
+    { item = "Infolytic Chip", count = 2 },
+    { item = "Thorium", count = 1 },
+    { item = "Ship Sensor", count = 1 },
+    { item = "Ship Computer", count = 1 },
+    { item = "Ship Engine, Thruster", count = 1 },
+]
+outputs = [
+    { item = "Ship Hull, Small", count = 1 },
+    { item = "Waste", count = 980 },
+]
+
+[[recipe]]
+id = 44
+name = "Compact Ship Hull Drydock"
+class = "Drydock"
+duration = 9000
+inputs = [
+    { item = "Energy Cell", count = 14 },
+    { item = "Glassiron", count = 60 },
+    { item = "Transparent Aluminum", count = 10 },
+    { item = "Steel", count = 18 },
+    { item = "Gold", count = 2 },
+    { item = "Platinum", count = 2 },
+    { item = "Infolytic Chip", count = 4 },
+    { item = "Thorium", count = 3 },
+    { item = "Ship Sensor", count = 1 },
+    { item = "Ship Computer", count = 2 },
+    { item = "Ship Engine, Thruster", count = 3 },
+]
+outputs = [
+    { item = "Ship Hull, Compact", count = 1 },
+    { item = "Waste", count = 2200 },
+]
+
+[[recipe]]
+id = 45
+name = "Medium Ship Hull Drydock"
+class = "Drydock"
+duration = 14400
+inputs = [
+    { item = "Energy Cell", count = 22 },
+    { item = "Glassiron", count = 90 },
+    { item = "Transparent Aluminum", count = 16 },
+    { item = "Steel", count = 28 },
+    { item = "Gold", count = 3 },
+    { item = "Platinum", count = 3 },
+    { item = "Infolytic Chip", count = 6 },
+    { item = "Thorium", count = 5 },
+    { item = "Ship Sensor", count = 2 },
+    { item = "Ship Computer", count = 2 },
+    { item = "Ship Engine, Thruster", count = 4 },
+]
+outputs = [
+    { item = "Ship Hull, Medium", count = 1 },
+    { item = "Waste", count = 3200 },
+]
+
+[[recipe]]
+id = 47
+name = "Market Datalink Factory"
+class = "Factory"
+duration = 660
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Transparent Aluminum", count = 1 },
+    { item = "Gold", count = 2 },
+    { item = "Silicon", count = 2 },
+    { item = "Infolytic Chip", count = 3 },
+]
+outputs = [
+    { item = "Market Datalink", count = 1 },
+    { item = "Waste", count = 40 },
+]
+
+[[recipe]]
+id = 46
+name = "Impeller Engine Factory"
+class = "Factory"
+duration = 1100
+inputs = [
+    { item = "Energy Cell", count = 4 },
+    { item = "Glassiron", count = 4 },
+    { item = "Transparent Aluminum", count = 2 },
+    { item = "Steel", count = 6 },
+    { item = "Thorium", count = 1 },
+]
+outputs = [
+    { item = "Ship Engine, Impeller", count = 1 },
+    { item = "Waste", count = 120 },
+]
+
+[[recipe]]
+id = 48
+name = "Refinery Outpost Kit Drydock"
+class = "Drydock"
+duration = 7200
+inputs = [
+    { item = "Energy Cell", count = 500 },
+    { item = "Glassiron", count = 400 },
+    { item = "Transparent Aluminum", count = 300 },
+    { item = "Steel", count = 600 },
+    { item = "Thorium", count = 80 },
+    { item = "Ship Sensor", count = 5 },
+    { item = "Ship Computer", count = 10 },
+]
+outputs = [
+    { item = "Refinery Outpost Kit", count = 1 },
+    { item = "Waste", count = 1800 },
+]
+
+[[recipe]]
+id = 49
+name = "Manufacturing Outpost Kit Drydock"
+class = "Drydock"
+duration = 9000
+inputs = [
+    { item = "Energy Cell", count = 300 },
+    { item = "Glassiron", count = 600 },
+    { item = "Transparent Aluminum", count = 400 },
+    { item = "Steel", count = 900 },
+    { item = "Thorium", count = 100 },
+    { item = "Infolytic Chip", count = 20 },
+    { item = "Ship Sensor", count = 8 },
+    { item = "Ship Computer", count = 15 },
+]
+outputs = [
+    { item = "Manufacturing Outpost Kit", count = 1 },
+    { item = "Waste", count = 2600 },
+]
+
+
+[[recipe]]
+id = 50
+name = "Iridium Refinery"
+class = "Refinery"
+duration = 60
+inputs = [
+    { item = "Iridosmine", count = 10 },
+    { item = "Energy Cell", count = 20 },
+]
+outputs = [
+    { item = "Iridium", count = 3 },
+    { item = "Anode Sludge", count = 4 },
+]
+
+[[recipe]]
+id = 51
+name = "Drone Control Core Factory"
+class = "Factory"
+duration = 900
+inputs = [
+    { item = "Infolytic Chip", count = 4 },
+    { item = "Iridium", count = 4 },
+    { item = "Radioactive Isotopes", count = 2 },
+    { item = "Ship Computer", count = 1 },
+    { item = "Energy Cell", count = 50 },
+]
+outputs = [
+    { item = "Drone Control Core", count = 1 },
+    { item = "Waste", count = 6 },
+]
+
+[[recipe]]
+id = 52
+name = "Combat Drone Drydock"
+class = "Drydock"
+duration = 3600
+inputs = [
+    { item = "Drone Control Core", count = 1 },
+    { item = "Iridium", count = 10 },
+    { item = "Steel", count = 60 },
+    { item = "Ship Weapon, Pulse Turret", count = 1 },
+    { item = "Ship Sensor", count = 1 },
+    { item = "Energy Cell", count = 200 },
+]
+outputs = [
+    { item = "Combat Drone", count = 1 },
+    { item = "Waste", count = 30 },
+]
+
+
+# Recycling the salvage from wrecks back into basic materials
+[[recipe]]
+id = 53
+name = "Scrap Recycler"
+class = "Refinery"
+duration = 30
+inputs = [
+    { item = "Hull Scrap", count = 20 },
+    { item = "Energy Cell", count = 5 },
+]
+outputs = [
+    { item = "Iron", count = 5 },
+    { item = "Aluminum", count = 3 },
+    { item = "Copper", count = 1 },
+    { item = "Waste", count = 4 },
+]
+
+[[recipe]]
+id = 54
+name = "Electronics Recycler"
+class = "Refinery"
+duration = 45
+inputs = [
+    { item = "Salvaged Electronics", count = 6 },
+    { item = "Energy Cell", count = 5 },
+]
+outputs = [
+    { item = "Copper", count = 4 },
+    { item = "Silicon", count = 3 },
+    { item = "Gold", count = 1 },
+    { item = "Waste", count = 2 },
+]
+
+
+[[recipe]]
+id = 55
+name = "Deep-Space Sensor Array Factory"
+class = "Factory"
+duration = 420
+inputs = [
+    { item = "Ship Sensor", count = 1 },
+    { item = "Infolytic Chip", count = 2 },
+    { item = "Copper", count = 6 },
+    { item = "Energy Cell", count = 30 },
+]
+outputs = [
+    { item = "Deep-Space Sensor Array", count = 1 },
+    { item = "Waste", count = 3 },
+]
+
+[[recipe]]
+id = 56
+name = "Signal Triangulator Factory"
+class = "Factory"
+duration = 360
+inputs = [
+    { item = "Infolytic Chip", count = 4 },
+    { item = "Silicon", count = 8 },
+    { item = "Gold", count = 2 },
+    { item = "Energy Cell", count = 30 },
+]
+outputs = [
+    { item = "Signal Triangulator", count = 1 },
+    { item = "Waste", count = 2 },
+]
+
+[[recipe]]
+id = 57
+name = "Large Ship Hull Drydock"
+class = "Drydock"
+duration = 21600
+inputs = [
+    { item = "Energy Cell", count = 40 },
+    { item = "Glassiron", count = 180 },
+    { item = "Transparent Aluminum", count = 32 },
+    { item = "Steel", count = 70 },
+    { item = "Gold", count = 6 },
+    { item = "Platinum", count = 6 },
+    { item = "Infolytic Chip", count = 12 },
+    { item = "Thorium", count = 10 },
+    { item = "Ship Sensor", count = 3 },
+    { item = "Ship Computer", count = 3 },
+    { item = "Ship Engine, Thruster", count = 6 },
+]
+outputs = [
+    { item = "Ship Hull, Large", count = 1 },
+    { item = "Waste", count = 6400 },
+]
+
+[[recipe]]
+id = 58
+name = "Capital Ship Hull Drydock"
+class = "Drydock"
+duration = 43200
+inputs = [
+    { item = "Energy Cell", count = 90 },
+    { item = "Glassiron", count = 420 },
+    { item = "Transparent Aluminum", count = 80 },
+    { item = "Steel", count = 180 },
+    { item = "Gold", count = 14 },
+    { item = "Platinum", count = 14 },
+    { item = "Iridium", count = 20 },
+    { item = "Infolytic Chip", count = 30 },
+    { item = "Thorium", count = 24 },
+    { item = "Ship Sensor", count = 6 },
+    { item = "Ship Computer", count = 6 },
+    { item = "Ship Engine, Impeller", count = 6 },
+]
+outputs = [
+    { item = "Ship Hull, Very Large", count = 1 },
+    { item = "Waste", count = 14000 },
+]
+
+[[recipe]]
+id = 59
+name = "Jump Drive Factory"
+class = "Factory"
+duration = 28800
+inputs = [
+    { item = "Iridium", count = 40 },
+    { item = "Platinum", count = 20 },
+    { item = "Thorium", count = 30 },
+    { item = "Radioactive Isotopes", count = 60 },
+    { item = "Infolytic Chip", count = 40 },
+    { item = "Transparent Aluminum", count = 30 },
+    { item = "Drone Control Core", count = 2 },
+    { item = "Ship Computer", count = 4 },
+]
+outputs = [
+    { item = "Jump Drive", count = 1 },
+    { item = "Radioactive Waste", count = 20 },
+]
+
+# The next free recipe id: 60

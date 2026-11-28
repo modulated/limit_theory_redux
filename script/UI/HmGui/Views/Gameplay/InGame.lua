@@ -29,7 +29,6 @@ local NO_LINES = {}
 local hud = {
     driveText = "", driveAlpha = 0,
     autopilotText = "",
-    zoneText = "",
     overlayLines = NO_LINES,
     cameraText = "", cameraAlpha = 0,
 }
@@ -132,25 +131,6 @@ local function updateAutopilot(ship)
 end
 
 ------------------------------------------------------------------------------
--- Zone and travel-drive cap, top left (below where System / Location will go
--- once systems and bodies have names).
-
-local ZONE_NAMES = { planet = "Planet", moon = "Moon", star = "Star", openSpace = "Open space" }
-
---- 2005 -> "2,005"
-local function thousands(n)
-    local s = tostring(math.floor(n + 0.5))
-    local grouped = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
-    return (grouped:gsub("^,", ""))
-end
-
-local function updateZone()
-    local wells = GravityWellSystem
-    hud.zoneText = string.format("Zone: %s  ·  Travel cap ×%s",
-        ZONE_NAMES[wells.currentZoneType] or wells.currentZoneType, thousands(wells:getMaxDriveSpeed()))
-end
-
-------------------------------------------------------------------------------
 -- Camera mode: a label in the cameras that don't fly the ship (orbit, free),
 -- and a short message on every camera switch.
 
@@ -221,7 +201,6 @@ function InGame:onUpdate()
     updateSpeedTape(ship, dt)
     updateDrive(ship, dt)
     updateAutopilot(ship)
-    updateZone()
     hud.overlayLines = self.overlayLines and self.overlayLines() or NO_LINES
     updateCamera(player, dt)
 end
@@ -245,7 +224,6 @@ local function hudScale()
 end
 
 local AUTOPILOT_COLOR = Color(0.51, 0.92, 1.00, 1.0)
-local ZONE_COLOR = Color(0.35, 0.70, 1.00, 1.0)
 
 -- Centre, slightly above: autopilot status over the travel drive text. The
 -- autopilot line keeps a fixed height, so the drive text never moves.
@@ -277,25 +255,7 @@ local travelBlock = UIComponent.Container {
     },
 }
 
-local zoneLine = UIComponent.Container {
-    visible = hudVisible,
-    align = { AlignHorizontal.Stretch, AlignVertical.Stretch },
-    layoutType = GuiLayoutType.Vertical,
-    childrenAlign = { AlignHorizontal.Left, AlignVertical.Top },
-    scale = hudScale,
-    padding = { 40, 30 },
-    contents = {
-        UIComponent.Text {
-            text = function() return hud.zoneText end,
-            font = "UbuntuBold",
-            size = 18,
-            color = ZONE_COLOR,
-            outline = true,
-        },
-    },
-}
-
--- The scenario's text (what it shows, its keys), under the zone line. A text
+-- The scenario's text (what it shows, its keys), top left. A text
 -- per line: Gui:text doesn't break lines.
 local OVERLAY_COLOR = Color(0.85, 0.90, 1.00, 0.9)
 local MAX_OVERLAY_LINES = 12 -- the Physics Test shows up to 10
@@ -360,9 +320,66 @@ local pausedText = UIComponent.Container {
 
 InGame:addContent(speedTape)
 InGame:addContent(travelBlock)
-InGame:addContent(zoneLine)
 InGame:addContent(scenarioText)
 InGame:addContent(cameraLabel)
 InGame:addContent(pausedText)
+
+-- The panels: each claims the mouse while the cursor is on it (Input/UIMouse),
+-- and the answer is published after the last one
+local UIMouse = require("Input.UIMouse")
+InGame:addContent({ state = {}, render = function() UIMouse.beginFrame() end })
+
+-- The action bar, bottom centre (the number keys)
+local ActionBarPanel = require("UI.HmGui.Views.Gameplay.ActionBarPanel")
+InGame:addContent({ state = {}, render = function() ActionBarPanel.render() end })
+
+-- The weapon bar above it (each mount: what it is doing, at what) and the
+-- scrolling battle text right of the middle
+local WeaponsPanel = require("UI.HmGui.Views.Gameplay.WeaponsPanel")
+InGame:addContent({ state = {}, render = function() WeaponsPanel.render() end })
+local BattleTextPanel = require("UI.HmGui.Views.Gameplay.BattleTextPanel")
+InGame:addContent({ state = {}, render = function() BattleTextPanel.render() end })
+
+-- Top left: the system, its hostility, and the ship's shield and hull
+local StatusPanel = require("UI.HmGui.Views.Gameplay.StatusPanel")
+InGame:addContent({ state = {}, render = function() StatusPanel.render() end })
+
+-- The windows (I, U, Y), left of the screen
+local WindowsPanel = require("UI.HmGui.Views.Gameplay.WindowsPanel")
+InGame:addContent({ state = {}, render = function() WindowsPanel.render() end })
+
+-- The debug menu (~), top right
+local DebugMenu = require("UI.HmGui.Views.Gameplay.DebugMenu")
+InGame:addContent({ state = {}, render = function() DebugMenu.render() end })
+
+-- The targets, top centre (X clears one; right click for its menu)
+local TargetsPanel = require("UI.HmGui.Views.Gameplay.TargetsPanel")
+InGame:addContent({ state = {}, render = function() TargetsPanel.render() end })
+
+-- The overview (R): drawn after the bar and the windows, so its context menu
+-- sits over them
+local OverviewPanel = require("UI.HmGui.Views.Gameplay.OverviewPanel")
+InGame:addContent({
+    state = {},
+    render = function()
+        OverviewPanel.render()
+    end
+})
+
+-- A question the game needs answered (before an attack turns a faction
+-- hostile): after the overview, so it sits over it
+local ConfirmDialog = require("UI.HmGui.Views.Gameplay.ConfirmDialog")
+InGame:addContent({
+    state = {},
+    render = function()
+        ConfirmDialog.render()
+    end
+})
+
+-- Over everything once the ship is lost: the fade, and the way on
+local DeathPanel = require("UI.HmGui.Views.Gameplay.DeathPanel")
+InGame:addContent({ state = {}, render = function() DeathPanel.render() end })
+
+InGame:addContent({ state = {}, render = function() UIMouse.endFrame() end })
 
 return InGame

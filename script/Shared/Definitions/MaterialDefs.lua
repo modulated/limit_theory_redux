@@ -95,6 +95,7 @@ MaterialType {
         twistFactor   = 0.25,
         enableDebug   = 0,
         debugMode     = 0,
+        layers        = 1, -- the mesh's stacked annuli (Primitive.Ring)
     },
     -- drawUser[0].x: the time of the ring rotation
     perDraw  = function(entity, user)

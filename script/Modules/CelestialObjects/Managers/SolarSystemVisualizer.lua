@@ -386,12 +386,20 @@ function SolarSystemVisualizer:_materializeAsteroidRing(entity, physicsWorld)
     -- which the generator emits as its own entity.
     local innerRadius = orbitRadius - width * 0.5
     local outerRadius = orbitRadius + width * 0.5
-    local mesh = Primitive.Ring(innerRadius, outerRadius, 128)
+    -- A single flat band is a line edge-on, and edge-on is where its rocks
+    -- are: from among them the ring all but vanished. So the band is a
+    -- stack of thin layers spread as the rocks are (a gaussian about the
+    -- plane, AsteroidBeltRenderer's sigma), each carrying its share of the
+    -- ring's opacity: face-on it looks as one band did, and from inside it
+    -- is a haze all round, thickest toward the plane's horizon.
+    local sigma = width * 0.08
+    local layers = 7
+    local mesh = Primitive.Ring(innerRadius, outerRadius, 128, layers, sigma * 5)
 
-    -- rMin, rMax and the seed are this ring's parameters; the rest (ringHeight,
-    -- rotationSpeed, twistFactor, debug off) are the PlanetRing defaults.
+    -- rMin, rMax, the seed and the stack are this ring's parameters; the rest
+    -- (rotationSpeed, twistFactor, debug off) are the PlanetRing defaults.
     local matRing = Materials.PlanetRing:instance()
-    PlanetMaterials.ring(matRing, innerRadius, outerRadius, seed)
+    PlanetMaterials.ring(matRing, innerRadius, outerRadius, seed, layers, sigma)
 
     local renderCmp = entity:get(RenderComp)
     if not renderCmp then

@@ -16,6 +16,23 @@ end)
 
 local SCAN_INTERVAL = 0.5
 
+--- At one of the player's outposts a trader buys from the owner's listings
+--- (MarketSystem:npcBuy): what it pays goes to the owner, less nothing.
+---@class NpcBuyListings: NpcAction
+local BuyListings = Subclass("NpcBuyListings", Action, function(self, dock) self.dock = dock end)
+function BuyListings:getName() return "Trading" end
+function BuyListings:onUpdate(npc, ctx, dt)
+    local dock = self.dock
+    if dock and dock.entity:isValid() and npc.pilot.docked == dock then
+        local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
+        local spent, units = MarketSystem:npcBuy(dock.entity, dock.key)
+        if units > 0 then
+            Log.Debug("NPC: %s bought %d units for %d at %s", npc.label, units, spent, dock.label or "an outpost")
+        end
+    end
+    self:finish(npc)
+end
+
 function Transport:getName() return self.name end
 
 function Transport:onStart(npc, ctx)
@@ -43,6 +60,7 @@ function Transport:onUpdate(npc, ctx, dt)
         if stop.dock then
             -- A station: dock, trade a while, undock (pushed in reverse)
             npc.pilot:pushAction(Actions.Undock())
+            if stop.dock.outpost then npc.pilot:pushAction(BuyListings(stop.dock)) end
             npc.pilot:pushAction(Actions.Wait(ctx.rng:getUniformRange(6, 12), "Trading"))
             npc.pilot:pushAction(Actions.DockAt(stop.dock))
         else

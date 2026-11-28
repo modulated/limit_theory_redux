@@ -1,0 +1,722 @@
+# The items of the game's economy: every good that can be mined, refined,
+# made, bought, sold, carried or fitted.
+#
+# Loaded at start-up by script/Shared/Definitions/ItemDefs.lua, which checks
+# every entry and stops with "res/data/items.toml:<line>: ..." on a mistake.
+# The format is TOML (https://toml.io): one [[item]] block per item.
+#
+#   id              permanent number. Saved games record items by id, so an id
+#                   is never changed or reused: a new item takes the next free
+#                   one (see the end of this file), a removed item leaves its
+#                   number unused.
+#   name            what the game shows. Code reaches an item by the plain
+#                   letters of its name ("Ship Engine, Thruster" ->
+#                   ShipEngineThruster) and other data files name it as
+#                   written here, so renaming an item means renaming it there
+#                   too (the loader says where).
+#   group           the item's category. Groups appear in the order their
+#                   first item does. Code reaches items by group
+#                   (Items.RawMaterials.Siderite), so a group is not renamed
+#                   lightly either.
+#   mass            tonnes per unit: what it costs in a hold or a hangar
+#   energy_density  energy per tonne (energy = mass x energy_density)
+#   price           the base price the markets start from and drift around
+#                   (credits). Leave it out for an item nobody trades.
+#
+# Balancing: `luajit tools/economy-sim.lua --recipes` lists every recipe's
+# margin at these prices; `luajit tools/data-check.lua` checks the files
+# against each other.
+
+# --------------------------------------------------------------------------
+# Virtual
+# --------------------------------------------------------------------------
+
+[[item]]
+id = 1
+name = "Credit"
+group = "Virtual"
+mass = 0
+energy_density = 0
+
+# --------------------------------------------------------------------------
+# Data
+# --------------------------------------------------------------------------
+
+[[item]]
+id = 2
+name = "Data Cube"
+group = "Data"
+mass = 1
+energy_density = 2.1
+price = 50
+
+[[item]]
+id = 3
+name = "Info Wafer"
+group = "Data"
+mass = 1
+energy_density = 3.82
+price = 75
+
+[[item]]
+id = 4
+name = "Infolytic Chip"
+group = "Data"
+mass = 3
+energy_density = 1.35
+price = 430
+
+# --------------------------------------------------------------------------
+# Raw Materials
+# --------------------------------------------------------------------------
+
+[[item]]
+id = 5
+name = "Olivine"
+group = "Raw Materials"
+mass = 4
+energy_density = 1.3
+price = 20
+
+[[item]]
+id = 6
+name = "Siderite"
+group = "Raw Materials"
+mass = 6
+energy_density = 1.68
+price = 30
+
+[[item]]
+id = 7
+name = "Chalcopyrite"
+group = "Raw Materials"
+mass = 7
+energy_density = 1.74
+price = 35
+
+[[item]]
+id = 8
+name = "Bauxite"
+group = "Raw Materials"
+mass = 4
+energy_density = 1.6
+price = 25
+
+[[item]]
+id = 9
+name = "Beryl"
+group = "Raw Materials"
+mass = 4
+energy_density = 1.45
+price = 40
+
+[[item]]
+id = 10
+name = "Monazite"
+group = "Raw Materials"
+mass = 7
+energy_density = 7.5
+price = 100
+
+# Carbonaceous chondrite, the carbon ore the refineries need
+[[item]]
+id = 52
+name = "Chondrite"
+group = "Raw Materials"
+mass = 6
+energy_density = 1.4
+price = 28
+
+# Rare: a trace in the standard systems' rocky belts and rings, and nowhere
+# in the small ones. What the drones are made of.
+[[item]]
+id = 71
+name = "Iridosmine"
+group = "Raw Materials"
+mass = 8
+energy_density = 1.9
+price = 260
+
+# --------------------------------------------------------------------------
+# Refined Materials
+# --------------------------------------------------------------------------
+
+[[item]]
+id = 11
+name = "Iron"
+group = "Refined Materials"
+mass = 5
+energy_density = 1
+price = 50
+
+[[item]]
+id = 12
+name = "Copper"
+group = "Refined Materials"
+mass = 5
+energy_density = 1
+price = 70
+
+[[item]]
+id = 13
+name = "Aluminum"
+group = "Refined Materials"
+mass = 3
+energy_density = 1.8
+price = 55
+
+[[item]]
+id = 14
+name = "Silver"
+group = "Refined Materials"
+mass = 5
+energy_density = 1.5
+price = 150
+
+[[item]]
+id = 15
+name = "Gold"
+group = "Refined Materials"
+mass = 6
+energy_density = 2
+price = 200
+
+[[item]]
+id = 16
+name = "Platinum"
+group = "Refined Materials"
+mass = 8
+energy_density = 3
+price = 250
+
+[[item]]
+id = 17
+name = "Steel"
+group = "Refined Materials"
+mass = 7
+energy_density = 1
+price = 150
+
+[[item]]
+id = 18
+name = "Transparent Aluminum"
+group = "Refined Materials"
+mass = 5
+energy_density = 1.7
+price = 165
+
+[[item]]
+id = 19
+name = "Glassiron"
+group = "Refined Materials"
+mass = 11
+energy_density = 1
+price = 250
+
+[[item]]
+id = 20
+name = "Plastic"
+group = "Refined Materials"
+mass = 3
+energy_density = 1.9
+price = 70
+
+[[item]]
+id = 21
+name = "Thorium"
+group = "Refined Materials"
+mass = 9
+energy_density = 27
+price = 300
+
+# Refinery and factory feedstock: the production chains in
+# doc/items.md need these between the ores and the built goods.
+[[item]]
+id = 53
+name = "Silicon"
+group = "Refined Materials"
+mass = 2
+energy_density = 1.7
+price = 55
+
+[[item]]
+id = 54
+name = "Carbon"
+group = "Refined Materials"
+mass = 2
+energy_density = 1.3
+price = 60
+
+[[item]]
+id = 55
+name = "Beryllium"
+group = "Refined Materials"
+mass = 2
+energy_density = 1.3
+price = 65
+
+[[item]]
+id = 56
+name = "Lithium"
+group = "Refined Materials"
+mass = 1
+energy_density = 1.2
+price = 70
+
+[[item]]
+id = 57
+name = "Boron"
+group = "Refined Materials"
+mass = 2
+energy_density = 1.2
+price = 50
+
+# Legacy called this Petroleum; it is biomass cracked into fuel and
+# plastics feedstock, so it is named for what it is.
+[[item]]
+id = 58
+name = "Hydrocarbons"
+group = "Refined Materials"
+mass = 6
+energy_density = 3.5
+price = 55
+
+[[item]]
+id = 72
+name = "Iridium"
+group = "Refined Materials"
+mass = 6
+energy_density = 1.2
+price = 1150
+
+# --------------------------------------------------------------------------
+# Gases
+# --------------------------------------------------------------------------
+
+[[item]]
+id = 22
+name = "Hydrogen"
+group = "Gases"
+mass = 1
+energy_density = 2
+price = 25
+
+[[item]]
+id = 23
+name = "Helium"
+group = "Gases"
+mass = 1
+energy_density = 1.01
+price = 10
+
+[[item]]
+id = 24
+name = "Nitrogen"
+group = "Gases"
+mass = 1
+energy_density = 1.05
+price = 12
+
+[[item]]
+id = 25
+name = "Oxygen"
+group = "Gases"
+mass = 1
+energy_density = 1.5
+price = 30
+
+# --------------------------------------------------------------------------
+# Consumables
+# --------------------------------------------------------------------------
+
+[[item]]
+id = 26
+name = "Biomass"
+group = "Consumables"
+mass = 4
+energy_density = 4
+price = 60
+
+[[item]]
+id = 27
+name = "Water Ice"
+group = "Consumables"
+mass = 5
+energy_density = 1
+price = 20
+
+[[item]]
+id = 28
+name = "Liquid Water"
+group = "Consumables"
+mass = 4
+energy_density = 1
+price = 25
+
+# --------------------------------------------------------------------------
+# Equipment
+# --------------------------------------------------------------------------
+
+[[item]]
+id = 29
+name = "Ship Computer"
+group = "Equipment"
+mass = 110
+energy_density = 22
+price = 2600
+
+[[item]]
+id = 30
+name = "Ship Sensor"
+group = "Equipment"
+mass = 80
+energy_density = 19
+price = 2500
+
+[[item]]
+id = 31
+name = "Ship Engine, Thruster"
+group = "Equipment"
+mass = 600
+energy_density = 20
+price = 7200
+
+[[item]]
+id = 32
+name = "Ship Engine, Impeller"
+group = "Equipment"
+mass = 1500
+energy_density = 18
+price = 4000
+
+[[item]]
+id = 33
+name = "Ship Weapon, Pulse Turret"
+group = "Equipment"
+mass = 100
+energy_density = 10
+price = 2800
+
+[[item]]
+id = 34
+name = "Ship Weapon, Beam Turret"
+group = "Equipment"
+mass = 120
+energy_density = 10
+price = 3600
+
+[[item]]
+id = 35
+name = "Ship Weapon, Launcher Turret"
+group = "Equipment"
+mass = 90
+energy_density = 8
+price = 3200
+
+[[item]]
+id = 36
+name = "Ship Weapon, Pulse Bay"
+group = "Equipment"
+mass = 1000
+energy_density = 9
+price = 3000
+
+[[item]]
+id = 37
+name = "Ship Weapon, Beam Bay"
+group = "Equipment"
+mass = 1200
+energy_density = 9
+price = 14000
+
+[[item]]
+id = 38
+name = "Ship Weapon, Cannon Bay"
+group = "Equipment"
+mass = 2500
+energy_density = 10
+price = 9000
+
+[[item]]
+id = 39
+name = "Ship Weapon, Launcher Bay"
+group = "Equipment"
+mass = 800
+energy_density = 7
+price = 2500
+
+# Modules a ship can be fitted with (res/data/modules.toml).
+# Each is a good like any other: bought on a market or made in a
+# factory, carried in the hangar, bolted on at a station.
+[[item]]
+id = 59
+name = "Shield Booster"
+group = "Equipment"
+mass = 90
+energy_density = 12
+price = 1800
+
+[[item]]
+id = 60
+name = "Armour Plating"
+group = "Equipment"
+mass = 400
+energy_density = 2
+price = 900
+
+[[item]]
+id = 61
+name = "Shield Capacitor"
+group = "Equipment"
+mass = 120
+energy_density = 14
+price = 1500
+
+[[item]]
+id = 62
+name = "Cargo Pod"
+group = "Equipment"
+mass = 250
+energy_density = 3
+price = 1100
+
+[[item]]
+id = 63
+name = "Afterburner"
+group = "Equipment"
+mass = 180
+energy_density = 16
+price = 2200
+
+[[item]]
+id = 64
+name = "Manoeuvring Thrusters"
+group = "Equipment"
+mass = 150
+energy_density = 10
+price = 1400
+
+[[item]]
+id = 65
+name = "Hull Repair Pulse"
+group = "Equipment"
+mass = 200
+energy_density = 15
+price = 2600
+
+[[item]]
+id = 66
+name = "Mining Laser"
+group = "Equipment"
+mass = 160
+energy_density = 11
+price = 1700
+
+[[item]]
+id = 67
+name = "Survey Scanner"
+group = "Equipment"
+mass = 70
+energy_density = 18
+price = 2000
+
+[[item]]
+id = 68
+name = "Market Datalink"
+group = "Equipment"
+mass = 60
+energy_density = 21
+price = 3400
+
+# The mind of an unmanned ship: iridium circuitry, infolytic chips and an
+# isotope cell. The hard part of a combat drone.
+[[item]]
+id = 73
+name = "Drone Control Core"
+group = "Equipment"
+mass = 20
+energy_density = 25
+price = 13500
+
+# Hunting sensors (modules.toml): how far off a ship's signature shows, and
+# how closely it is placed
+[[item]]
+id = 77
+name = "Deep-Space Sensor Array"
+group = "Equipment"
+mass = 140
+energy_density = 20
+price = 4900
+
+[[item]]
+id = 78
+name = "Signal Triangulator"
+group = "Equipment"
+mass = 60
+energy_density = 24
+price = 3800
+
+# --------------------------------------------------------------------------
+# Constructs
+# --------------------------------------------------------------------------
+
+
+[[item]]
+id = 79
+name = "Jump Drive"
+group = "Equipment"
+mass = 2400
+energy_density = 30
+price = 420000
+[[item]]
+id = 40
+name = "Ship Hull, Solo"
+group = "Constructs"
+mass = 15000
+energy_density = 50
+price = 24000
+
+[[item]]
+id = 41
+name = "Ship Hull, Small"
+group = "Constructs"
+mass = 32000
+energy_density = 49
+price = 30000
+
+[[item]]
+id = 42
+name = "Ship Hull, Compact"
+group = "Constructs"
+mass = 75000
+energy_density = 47
+price = 70000
+
+[[item]]
+id = 43
+name = "Ship Hull, Medium"
+group = "Constructs"
+mass = 102500
+energy_density = 46
+price = 100000
+
+[[item]]
+id = 44
+name = "Ship Hull, Large"
+group = "Constructs"
+mass = 237250
+energy_density = 45
+price = 200000
+
+[[item]]
+id = 45
+name = "Ship Hull, Very Large"
+group = "Constructs"
+mass = 518000
+energy_density = 42
+price = 500000
+
+[[item]]
+id = 46
+name = "Space Station, Small"
+group = "Constructs"
+mass = 1550000
+energy_density = 40
+price = 1000000
+
+# Outpost kits: a station's core, prefabricated, that grows the rest
+# on site. Light enough to carry in a hold (the Space Station, Small
+# is deployed from a hangar in the system instead).
+[[item]]
+id = 69
+name = "Refinery Outpost Kit"
+group = "Constructs"
+mass = 2000
+energy_density = 30
+price = 450000
+
+[[item]]
+id = 70
+name = "Manufacturing Outpost Kit"
+group = "Constructs"
+mass = 2000
+energy_density = 30
+price = 650000
+
+# An unmanned gunship, crated. Launched from an outpost's hangar to guard it
+# or patrol the player's stations (Forces tab).
+[[item]]
+id = 74
+name = "Combat Drone"
+group = "Constructs"
+mass = 900
+energy_density = 30
+price = 52000
+
+# --------------------------------------------------------------------------
+# Waste
+# --------------------------------------------------------------------------
+
+[[item]]
+id = 47
+name = "Waste"
+group = "Waste"
+mass = 1
+energy_density = 1
+price = 5
+
+[[item]]
+id = 48
+name = "Radioactive Waste"
+group = "Waste"
+mass = 10
+energy_density = 2.5
+price = 30
+
+[[item]]
+id = 49
+name = "Anode Sludge"
+group = "Waste"
+mass = 9
+energy_density = 1
+price = 15
+
+# Salvage: what is left of a ship after a fight. Dropped by wrecks
+# (res/data/loot.toml) and recycled at a refinery into basic materials.
+[[item]]
+id = 75
+name = "Hull Scrap"
+group = "Waste"
+mass = 5
+energy_density = 1
+price = 18
+
+[[item]]
+id = 76
+name = "Salvaged Electronics"
+group = "Waste"
+mass = 2
+energy_density = 3
+price = 85
+
+# --------------------------------------------------------------------------
+# Miscellaneous
+# --------------------------------------------------------------------------
+
+[[item]]
+id = 50
+name = "Energy Cell"
+group = "Miscellaneous"
+mass = 1
+energy_density = 1
+price = 20
+
+[[item]]
+id = 51
+name = "Radioactive Isotopes"
+group = "Miscellaneous"
+mass = 13
+energy_density = 50
+price = 600
+
+# The next free item id: 80

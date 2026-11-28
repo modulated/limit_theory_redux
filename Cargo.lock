@@ -1614,7 +1614,7 @@ dependencies = [
 
 [[package]]
 name = "internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
 ]
@@ -1862,7 +1862,7 @@ dependencies = [
 
 [[package]]
 name = "ltr"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "build-time",
  "clap",
@@ -1884,7 +1884,7 @@ dependencies = [
 
 [[package]]
 name = "luajit-ffi-gen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "internal",
  "libc",
@@ -2819,7 +2819,7 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
 name = "phx"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arboard",
  "byteorder",
@@ -2843,6 +2843,7 @@ dependencies = [
  "rapier3d-f64",
  "rayon",
  "regex",
+ "rustc-hash 2.1.1",
  "serde",
  "strum",
  "strum_macros",

@@ -20,6 +20,12 @@ local SystemMapView = require("UI.HmGui.Views.Gameplay.SystemMap")
 Gameplay:addViewToPage(SystemMapView)
 local StationView = require("UI.HmGui.Views.Gameplay.Station")
 Gameplay:addViewToPage(StationView)
+local SaveSlotsView = require("UI.HmGui.Views.Gameplay.SaveSlots")
+Gameplay:addViewToPage(SaveSlotsView)
+-- The main menu's Settings, as the pause menu's Options (its Back returns
+-- to the pause menu: LimitTheoryRedux:openSettings)
+local SettingsView = require("UI.HmGui.Views.MainMenu.Settings")
+Gameplay:addViewToPage(SettingsView)
 
 local deathTextVisible = false
 

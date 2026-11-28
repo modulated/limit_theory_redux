@@ -147,16 +147,25 @@ function ActionBinding:readBind(bind)
         return applyModifiers(raw, bind)
     end
     
+    -- The cursor's position comes from the window system in *physical*
+    -- pixels, while Window:width() is in *logical* ones: on a display with
+    -- scaling (125%, 150%, 200% -- the common Windows laptop settings) the
+    -- two differ by the scale factor, and dividing one by the other put the
+    -- cursor's reported offset up to 2x too far out. For steering, where the
+    -- offset is a turn rate, that meant a cursor resting at the middle of the
+    -- screen asking for a hard turn.
     if t == Enums.ControlType.MouseX then
         local pos = Input:mouse():position()
-        local sx = Window:width()
+        local sx = Window:physicalWidth()
+        if not sx or sx <= 0 then sx = Window:width() end
         local normalized = Math.Clamp(2.0 * pos.x / sx - 1.0, -1.0, 1.0)
         return normalized * (bind.mult or 1.0)
     end
 
     if t == Enums.ControlType.MouseY then
         local pos = Input:mouse():position()
-        local sy = Window:height()
+        local sy = Window:physicalHeight()
+        if not sy or sy <= 0 then sy = Window:height() end
         local normalized = Math.Clamp(2.0 * pos.y / sy - 1.0, -1.0, 1.0)
         return normalized * (bind.mult or 1.0)
     end

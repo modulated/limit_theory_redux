@@ -19,6 +19,8 @@ function AutoPilotSystem:engageEntity(shipEntity, targetEntity, arrivalRange)
     ap:setTargetEntity(targetEntity)
     ap:setTargetPos(nil)
     ap:setArrivalRange(arrivalRange or cfg.arrivalRange or 500)
+    -- A range the caller asked for (docking, deploying) is where it stops
+    ap._requestedArrival = arrivalRange
     ap:setElapsed(0)
     Log.Info("AutoPilot: engaged to %s", tostring(targetEntity))
 end
@@ -39,6 +41,7 @@ function AutoPilotSystem:engagePosition(shipEntity, pos, arrivalRange, parentEnt
     ap:setTargetEntity(nil)
     ap:setTargetPos(pos)
     ap:setArrivalRange(arrivalRange or cfg.arrivalRange or 500)
+    ap._requestedArrival = arrivalRange
     ap:setElapsed(0)
     ap._parentEntity = parentEntity
     ap._localOffsetX = localOffsetX
@@ -275,8 +278,17 @@ function AutoPilotSystem:update(dt, shipEntity)
         end
     end
 
-    -- Safe arrival distance: 1.5x object radius, minimum 50 units
-    local safeRange = math.max(50, targetRadius * 1.5)
+    -- Safe arrival distance: 1.5x object radius, at least `minStandOff`.
+    -- (It was at least 50 units, which at 10 km a unit is 500 km: any ship,
+    -- rock or station nearer than that counted as reached on the first
+    -- frame, and the autopilot let go without moving.)
+    -- ...unless the caller asked to come closer than that: a dock must end
+    -- within docking range, a deploy at its slot
+    local minStandOff = (Config.game.autoPilot or {}).minStandOff or 0.5
+    local safeRange = math.max(minStandOff, targetRadius * 1.5)
+    if ap._requestedArrival and ap._requestedArrival > 0 then
+        safeRange = math.min(safeRange, ap._requestedArrival)
+    end
 
     -- Arrival check
     if dist < safeRange then
@@ -309,14 +321,19 @@ function AutoPilotSystem:update(dt, shipEntity)
     local steerDy = targetPos.y - shipPos.y
     local steerDz = targetPos.z - shipPos.z
     local steerDist = math.sqrt(steerDx*steerDx + steerDy*steerDy + steerDz*steerDz)
-    if steerDist < 1 then steerDist = 1 end
+    -- (Not floored at 1 unit, 10 km: closer in that shrank the direction
+    -- and with it the approach speed)
+    if steerDist < 1e-6 then steerDist = 1e-6 end
     local dirX, dirY, dirZ = steerDx / steerDist, steerDy / steerDist, steerDz / steerDist
 
     -- Desired speed: deceleration curve
     local maxDecel = cfg.thrustForward / rb:getMass()
     local brakingDist = math.max(0, dist - safeRange)
+    -- Braking planned at half what the engines can do: the margin is what
+    -- lets the ship follow the curve down to a slow arrival instead of
+    -- lagging it and crossing the stop line at speed
     local desiredApproachSpeed = math.min(
-        math.sqrt(2.0 * maxDecel * brakingDist),
+        math.sqrt(2.0 * maxDecel * 0.5 * brakingDist),
         dist * 0.5
     )
 
@@ -332,13 +349,41 @@ function AutoPilotSystem:update(dt, shipEntity)
     local errLen = math.sqrt(errX * errX + errY * errY + errZ * errZ)
 
     -- Apply force to correct velocity error
-    if errLen > 0.1 then
-        local corrX = errX / errLen
-        local corrY = errY / errLen
-        local corrZ = errZ / errLen
-        local desiredDecel = math.min(errLen, speed * 0.5)
-        local forceScale = desiredDecel * rb:getMass()
-        rb:applyForce(Vec3f(corrX * forceScale, corrY * forceScale, corrZ * forceScale))
+    local driveCmp = shipEntity:get(ConstructComponents.TravelDrive)
+    local driving = driveCmp and driveCmp:isActive()
+    if driving then
+        -- Under travel drive (which thrusts forward on its own): only nudge,
+        -- as this always has
+        if errLen > 0.1 then
+            local corrX = errX / errLen
+            local corrY = errY / errLen
+            local corrZ = errZ / errLen
+            local desiredDecel = math.min(errLen, speed * 0.5)
+            local forceScale = desiredDecel * rb:getMass()
+            rb:applyForce(Vec3f(corrX * forceScale, corrY * forceScale, corrZ * forceScale))
+        end
+    else
+        -- Under the ship's own engines. The nudge above is proportional to
+        -- the speed the ship already has, so from a standstill it gave no
+        -- force at all, and never enough to beat the drag: the autopilot
+        -- turned the ship toward its target and sat there. Now: close the
+        -- velocity error in about half a second, plus the force that holds
+        -- the wanted velocity against the drag, within what the engines give.
+        local flightCfg = Config.game.shipFlight
+        local ShipFlightSystem = require("Modules.Constructs.Systems.ShipFlightSystem")
+        local mass = rb:getMass()
+        local drag = flightCfg.linearDrag or 0
+        local response = 6.0
+        local fx = mass * (errX * response + drag * desVelX)
+        local fy = mass * (errY * response + drag * desVelY)
+        local fz = mass * (errZ * response + drag * desVelZ)
+        local fLen = math.sqrt(fx * fx + fy * fy + fz * fz)
+        local maxForce = flightCfg.thrustForward * ShipFlightSystem:thrustScale(shipEntity)
+        if fLen > maxForce then
+            local k = maxForce / fLen
+            fx, fy, fz = fx * k, fy * k, fz * k
+        end
+        if fLen > 1e-9 then rb:applyForce(Vec3f(fx, fy, fz)) end
     end
 
     -- Steering: point ship toward desired velocity direction
@@ -355,11 +400,9 @@ function AutoPilotSystem:update(dt, shipEntity)
         local yawError   = Math.Clamp(-(up.x * crossX + up.y * crossY + up.z * crossZ) * 3, -1, 1)
         local pitchError = Math.Clamp((rt.x * crossX + rt.y * crossY + rt.z * crossZ) * 3, -1, 1)
 
-        rb:applyTorque(rot:mulV(Vec3f(
-            pitchError * cfg.torquePitch * 0.3,
-            -yawError * cfg.torqueYaw * 0.3,
-            0
-        )))
+        -- Turned at a rate, like manual flight (ShipFlightSystem: torque
+        -- through a guessed inertia ran away on a long hull)
+        require("Modules.Constructs.Systems.ShipFlightSystem"):steer(shipEntity, pitchError, yawError, dt)
     end
 
     -- Smart travel drive: smooth speed curve based on distance

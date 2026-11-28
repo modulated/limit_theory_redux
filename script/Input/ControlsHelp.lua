@@ -14,6 +14,8 @@ local ControlsHelp = {}
 --- Binding tables shown on the Controls screen. A new binding in one of them
 --- appears automatically; a new table needs a line here.
 local BINDING_TABLES = { ShipActions, CameraActions, GeneralActions, MapActions }
+--- Their names as BindingConflicts gives actions ("Ship.Roll")
+local TABLE_NAMES = { "Ship", "Camera", "General", "Map" }
 
 --- Groups in screen order; any other group follows, "Other" comes last.
 local GROUP_ORDER = { "Flight", "Camera", "Map", "General", "Debug" }
@@ -25,7 +27,8 @@ local LEGACY_KEYS = {
     { label = "Pause",      group = "General", buttons = { ApplicationBindings.Pause } },
     { label = "Toggle HUD", group = "General", buttons = { ApplicationBindings.ToggleHUD } },
     { label = "Screenshot", group = "General", buttons = { ApplicationBindings.Screenshot } },
-    { label = "Fullscreen", group = "General", buttons = { ApplicationBindings.ToggleFullscreen } },
+    { label = "Fullscreen", group = "General", text = "Alt + Enter" },
+    { label = "Physics wireframes", group = "Debug", buttons = { ApplicationBindings.ToggleWireframe } },
     { label = "Quit",       group = "General", text = "Alt + Q" }, -- hard-coded in Application:handleAppInput
 }
 
@@ -157,16 +160,22 @@ end
 ---@return ControlsHelpGroup[]
 function ControlsHelp.groups()
     local entries = {}
-    for _, bindings in ipairs(BINDING_TABLES) do
+    -- A key two actions share is marked, so the clash shows on the screen
+    local clashes = require("Input.BindingConflicts").clashingActions()
+    for tableIndex, bindings in ipairs(BINDING_TABLES) do
         for name, binding in pairs(bindings) do
             local def = binding.deviceBindings
             if def and not def.hidden then
+                local keys = alternativesText(def.keyboard, def.mouse)
+                if clashes[TABLE_NAMES[tableIndex] .. "." .. name] then
+                    keys = keys .. "  (!) also bound to another action"
+                end
                 entries[#entries + 1] = {
                     order = binding.order,
                     group = def.group or "Other",
                     row = {
                         action = def.label or splitName(name),
-                        keys = alternativesText(def.keyboard, def.mouse),
+                        keys = keys,
                         gamepad = alternativesText(def.gamepad),
                     },
                 }

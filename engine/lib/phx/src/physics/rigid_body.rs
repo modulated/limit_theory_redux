@@ -649,6 +649,15 @@ impl RigidBody {
         Vec3::from_na(self.rigid_body.as_ref().angvel())
     }
 
+    /// Set how fast the body turns (world axes, radians a second). Steering
+    /// that asks for a turn rate sets it here directly instead of working
+    /// out a torque, which would need the body's inertia (from its collider's
+    /// shape, and very different about each axis for a long hull).
+    #[bind(name = "SetVelocityA")]
+    pub fn set_angular_velocity(&mut self, velocity: &Vec3) {
+        self.rigid_body.as_mut().set_angvel(velocity.to_na(), true);
+    }
+
     /// When disabled, the object will pass through others without colliding
     /// and will not be returned from ray or shape casts.
     pub fn set_collidable(&mut self, collidable: bool) {

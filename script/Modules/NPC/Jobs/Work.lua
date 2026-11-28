@@ -43,7 +43,8 @@ return function(npc, ctx)
         -- unless another is picked at random (so they spread out)
         local docks = {}
         for _, dock in ipairs(system.places.docks or {}) do
-            if system:canDock(worker, dock) then docks[#docks + 1] = dock end
+            -- Not the player's outposts: they have no crew to join
+            if not dock.outpost and system:canDock(worker, dock) then docks[#docks + 1] = dock end
         end
         if #docks == 0 then return nil end
         local dock = docks[system.rng:getInt(1, #docks)]

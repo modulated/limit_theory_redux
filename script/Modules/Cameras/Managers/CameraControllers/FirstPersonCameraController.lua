@@ -1,5 +1,6 @@
 local CameraController = require("Modules.Cameras.Managers").CameraController
 local PhysicsComponents = require("Modules.Physics.Components")
+local FreeLook = require("Modules.Cameras.FreeLook")
 
 ---@class FirstPersonCameraController : CameraController
 ---@field target Entity|nil The entity to attach to
@@ -124,7 +125,18 @@ function FirstPersonCameraController:updateCameraPosition(dt)
     ))
 
     -- Camera rotation matches ship rotation exactly
-    self:setRotation(targetRot)
+    -- Free look (right button held): the view turns from the ship's nose
+    if FreeLook.active() then
+        local fx, fy, fz = FreeLook.apply(0, 0, 1)
+        local ux, uy, uz = FreeLook.apply(0, 1, 0)
+        local look = Vec3f(rt.x * fx + up.x * fy + fwd.x * fz, rt.y * fx + up.y * fy + fwd.y * fz,
+            rt.z * fx + up.z * fy + fwd.z * fz)
+        local lookUp = Vec3f(rt.x * ux + up.x * uy + fwd.x * uz, rt.y * ux + up.y * uy + fwd.y * uz,
+            rt.z * ux + up.z * uy + fwd.z * uz)
+        self:setRotation(Quat.FromLook(look, lookUp))
+    else
+        self:setRotation(targetRot)
+    end
 end
 
 ---Get current look angles

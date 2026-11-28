@@ -1,7 +1,7 @@
 --- The item registry: every `ItemDefinition` of every `ItemGroup`, reachable
---- by key (`Items.RawMaterials.IronOre`) or by id (`Items:getDefinition(6)`).
+--- by key (`Items.RawMaterials.Siderite`) or by id (`Items:getDefinition(6)`).
 ---
---- Ids are **written in `Shared/Definitions/ItemDefs.lua`, not assigned here**.
+--- Ids are **written in `res/data/items.toml`, not assigned here**.
 --- They are the only part of an item that is allowed to end up in saved games,
 --- so they must never change or be reused: adding an item means giving it the
 --- next free number, and removing one means leaving its number unused. The
@@ -35,12 +35,12 @@ function Items:new(name, itemGroup)
 
     for _, def in ipairs(itemGroup.items) do
         assert(type(def.id) == "number" and def.id > 0 and def.id % 1 == 0,
-            "item '" .. tostring(def.name) .. "' has no id: give it the next free one in ItemDefs.lua")
+            "item '" .. tostring(def.name) .. "' has no id: give it the next free one in res/data/items.toml")
         assert(self[def.id] == nil,
             "item id " .. def.id .. " is used twice ('" .. tostring(def.name)
             .. "' and '" .. tostring(self[def.id] and self[def.id].name) .. "')")
         -- The key and `name` are the plain letters of the name
-        -- (Items.RawMaterials.IronOre); `displayName` keeps the spaces and
+        -- (Items.RawMaterials.Siderite); `displayName` keeps the spaces and
         -- the punctuation, and is what the UI and the logs show.
         def.name = keyOf(def.name)
         def.group = itemGroup.name

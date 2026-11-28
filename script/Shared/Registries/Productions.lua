@@ -1,4 +1,4 @@
---- The production registry: every recipe of `Shared/Definitions/ProductionDefs.lua`,
+--- The production registry: every recipe of `res/data/recipes.toml`,
 --- by key (`Productions.IronRefinery`), by id (`Productions:getDefinition(7)`)
 --- and by class (`Productions:ofClass("Refinery")`).
 ---
@@ -22,7 +22,7 @@ Productions.all = {}
 ---@return ProductionDefinition
 function Productions:add(def)
     assert(type(def.id) == "number" and def.id > 0 and def.id % 1 == 0,
-        "production '" .. tostring(def.name) .. "' has no id: give it the next free one in ProductionDefs.lua")
+        "production '" .. tostring(def.name) .. "' has no id: give it the next free one in res/data/recipes.toml")
     assert(not self.byId[def.id],
         "production id " .. def.id .. " is used twice ('" .. tostring(def.name)
         .. "' and '" .. tostring(self.byId[def.id] and self.byId[def.id].name) .. "')")

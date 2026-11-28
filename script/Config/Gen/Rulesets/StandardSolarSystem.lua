@@ -1,3 +1,4 @@
+local OreData = require("Shared.Data.OreData")
 local Items = require("Shared.Registries.Items")
 
 ---@type Ruleset
@@ -417,22 +418,8 @@ local Ruleset = {
                 type = Enums.Gen.Rule.ByType,
                 parentKey = "ringType",
                 types = {
-                    [Enums.Gen.AsteroidRingTypes.Rocky] = {
-                        { id = Items.RawMaterials.SilicateOre.id,      weight = 0.45 },
-                        { id = Items.RawMaterials.IronOre.id,          weight = 0.28 },
-                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.12 },
-                        { id = Items.RawMaterials.AluminumOre.id,      weight = 0.1 },
-                        { id = Items.RawMaterials.BerylliumOre.id,     weight = 0.05 }
-                    },
-                    [Enums.Gen.AsteroidRingTypes.Icy] = {
-                        { id = Items.Consumables.WaterIce.id,         weight = 0.55 },
-                        { id = Items.RawMaterials.SilicateOre.id,     weight = 0.2 },
-                        { id = Items.Gases.Hydrogen.id,               weight = 0.1 },
-                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.05 },
-                        { id = Items.Gases.Helium.id,                 weight = 0.05 },
-                        { id = Items.Gases.Nitrogen.id,               weight = 0.03 },
-                        { id = Items.Gases.Oxygen.id,                 weight = 0.02 }
-                    }
+                    [Enums.Gen.AsteroidRingTypes.Rocky] = OreData.composition("standard_ring_rocky"),
+                    [Enums.Gen.AsteroidRingTypes.Icy] = OreData.composition("standard_ring_icy")
                 }
             }
         }
@@ -552,19 +539,8 @@ local Ruleset = {
                 type = Enums.Gen.Rule.ByType,
                 parentKey = "beltType",
                 types = {
-                    [Enums.Gen.AsteroidRingTypes.Rocky] = {
-                        { id = Items.RawMaterials.SilicateOre.id,      weight = 0.5 },
-                        { id = Items.RawMaterials.IronOre.id,          weight = 0.4 },
-                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.1 },
-                        --{ id = Items.RawMaterials.NickelOre.id,   weight = 0.1 }
-                    },
-                    [Enums.Gen.AsteroidRingTypes.Icy] = {
-                        { id = Items.Consumables.WaterIce.id,         weight = 0.65 },
-                        { id = Items.Gases.Hydrogen.id,               weight = 0.15 },
-                        { id = Items.Gases.Helium.id,                 weight = 0.1 },
-                        { id = Items.RawMaterials.CarboniferousOre.id, weight = 0.05 },
-                        { id = Items.RawMaterials.SilicateOre.id,     weight = 0.05 }
-                    }
+                    [Enums.Gen.AsteroidRingTypes.Rocky] = OreData.composition("standard_belt_rocky"),
+                    [Enums.Gen.AsteroidRingTypes.Icy] = OreData.composition("standard_belt_icy")
                 }
             }
         }

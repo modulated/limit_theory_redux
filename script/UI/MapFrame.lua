@@ -16,13 +16,27 @@ local BAR = Color(0.03, 0.05, 0.08, 0.92)
 
 --- The maps in M's order: tab name and each map's own controls.
 local MAPS = {
-    { tab = "2D",     controls = "Left click: select  ·  N: autopilot to it  ·  Wheel: zoom  ·  Right drag: pan" },
+    { tab = "2D",     controls = "Left click: select  ·  N: autopilot to it  ·  Wheel: zoom  ·  Right drag: pan  ·  Amber: unidentified signatures" },
     { tab = "3D",     controls = "Left click: select  ·  N: autopilot to it  ·  WASD: move  ·  Right drag: rotate  ·  Wheel: zoom" },
     { tab = "GALAXY", controls = "Left click: plot a route  ·  N: set course  ·  Wheel: zoom  ·  Right drag: pan" },
 }
 
 --- Height of the top bar: what a map keeps clear at the top of its area.
 MapFrame.barHeight = BAR_HEIGHT
+
+--- Where each tab was last drawn, for clicks: { mode, x, y, w, h }.
+local tabRects = {}
+
+--- The map whose tab is under a screen position, or nil.
+---@param px number
+---@param py number
+---@return integer|nil mode
+function MapFrame.tabAt(px, py)
+    for _, t in ipairs(tabRects) do
+        if px >= t.x and px <= t.x + t.w and py >= t.y and py <= t.y + t.h then return t.mode end
+    end
+    return nil
+end
 
 ---@param mode integer 1 = 2D, 2 = 3D, 3 = galaxy
 ---@param mapCount integer how many maps M cycles through (no galaxy map without a galaxy)
@@ -48,12 +62,19 @@ function MapFrame.draw(mode, mapCount, x, y, w, h)
     local tx = x + 14
     DrawEx.TextAlpha(FONT, "MAP", 16, tx, y + 6, 60, 22, 0.6, 0.7, 0.8, 0.9, 0.0, 0.5)
     tx = tx + 60
+    tabRects = {}
+    local mouse = Input:mouse():position()
     for i = 1, mapCount do
         local lit = i == mode
         local label = MAPS[i].tab
         local tw = Cache.Font(FONT, 16):getSize(label).z
+        local rect = { mode = i, x = tx - 8, y = y + 4, w = tw + 16, h = 28 }
+        tabRects[#tabRects + 1] = rect
+        local hover = mouse.x >= rect.x and mouse.x <= rect.x + rect.w and mouse.y >= rect.y and mouse.y <= rect.y + rect.h
         if lit then
             DrawEx.SimpleRect(tx - 8, y + 6, tw + 16, 24, Color(0.35, 0.75, 1.0, 0.25))
+        elseif hover then
+            DrawEx.SimpleRect(tx - 8, y + 6, tw + 16, 24, Color(0.35, 0.75, 1.0, 0.12))
         end
         local c = lit and 1.0 or 0.5
         DrawEx.TextAlpha(FONT, label, 16, tx, y + 6, tw, 24, c, c, c, 1.0, 0.0, 0.5)
@@ -61,7 +82,7 @@ function MapFrame.draw(mode, mapCount, x, y, w, h)
     end
 
     -- How to leave, on the right
-    DrawEx.TextAlpha(FONT, "M: next map  ·  Esc: close", 13, x + w - 314, y + 8, 300, 20,
+    DrawEx.TextAlpha(FONT, "Click a tab or M: switch map  ·  Esc: close", 13, x + w - 414, y + 8, 400, 20,
         0.85, 0.85, 0.85, 0.9, 1.0, 0.5)
 
     -- The map's controls, and why the ship doesn't respond

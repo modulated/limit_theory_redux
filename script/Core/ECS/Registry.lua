@@ -14,6 +14,22 @@ local Entity            = Class("Entity", function(self, id)
     self.id = id
 end)
 
+-- One handle per entity: `Entity(id)` gives back the handle already made for
+-- that id while anything still holds it. Handles used to be made fresh each
+-- time the registry was walked, so `==` between two handles of one ship was
+-- false and a table keyed by a handle (NPC records, the combat log) never
+-- found the entity a projectile hit. Keyed like the registry's own tables
+-- (by the id value it hands out); weak, so a handle nothing holds goes.
+local handles = setmetatable({}, { __mode = "v" })
+local newHandle = Entity.new
+function Entity.new(id)
+    local handle = handles[id]
+    if handle then return handle end
+    handle = newHandle(id)
+    handles[id] = handle
+    return handle
+end
+
 ---@class ComponentStorage
 ---@field sparse table<EntityId, Component>
 ---@field dense  Component[]
@@ -82,6 +98,16 @@ end
 
 function Entity:isValid()
     return Registry.Instance:hasEntity(self)
+end
+
+--- Whether a value is an entity handle (valid or not): the one way to ask.
+--- Not `type(v) == ...` and not duck-typing on its methods: a position, a
+--- plain table or an entity of another kind must not pass, and must not be
+--- indexed to find out (a cdata Position errors on a missing field).
+---@param v any
+---@return boolean
+function Entity.is(v)
+    return isInstance(v, Entity)
 end
 
 function Registry:clear()
@@ -280,7 +306,16 @@ end
 ---@return T|nil
 function Registry:add(entity, component)
     local entityId = entity.id
-    local archetype = component:getArchetype()
+    -- A component class given where an instance belongs (`add(Empty)` for
+    -- `add(Empty())`): made into one, as was meant
+    if rawtype(component) == "table" and rawget(component, "__type") == component then
+        component = component()
+    end
+    local archetype = classOf(component)
+    if not archetype then
+        error(string.format("Registry:add: %s is not a component (an instance of a component class)",
+            typeName(component)), 2)
+    end
 
     local entityComponentIndex = self.entities[entityId]
     if not entityComponentIndex then return nil end
