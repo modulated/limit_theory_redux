@@ -141,10 +141,23 @@ function Parser:basicString(multiline)
                 local digits = e == "u" and 4 or 8
                 local hex = sub(self.text, self.pos + 1, self.pos + digits)
                 if not hex:match("^%x+$") or #hex ~= digits then self:fail("bad \\%s escape", e) end
-                parts[#parts + 1] = utf8(tonumber(hex, 16))
+                local code = tonumber(hex, 16)
+                -- A Unicode scalar value: no surrogates, nothing past U+10FFFF
+                if code > 0x10FFFF or (code >= 0xD800 and code <= 0xDFFF) then
+                    self:fail("bad \\%s escape: %s is not a Unicode character", e, hex)
+                end
+                parts[#parts + 1] = utf8(code)
                 self:advance(1 + digits)
             elseif multiline and (e == "\n" or e == " " or e == "\t" or e == "\r") then
-                -- A line-ending backslash: the newline and the blanks after it go
+                -- A line-ending backslash: the newline and the blanks after
+                -- it go. Only at a line's end: blanks after the backslash
+                -- must run to a newline, or it is an escape TOML has not got
+                local look = self.pos
+                while sub(self.text, look, look):match("^[ \t]$") do look = look + 1 end
+                local after = sub(self.text, look, look)
+                if after ~= "\n" and sub(self.text, look, look + 1) ~= "\r\n" then
+                    self:fail("unknown escape \\%s", e == "\t" and "t (a tab)" or "(a space)")
+                end
                 while not self:atEnd() and self:peek():match("[ \t\r\n]") do self:advance() end
             else
                 self:fail("unknown escape \\%s", e)
