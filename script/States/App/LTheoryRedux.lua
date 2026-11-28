@@ -94,6 +94,7 @@ local Fittings = require('Shared.Registries.Fittings')
 local ArmedShipBuilder = require('Modules.Constructs.Managers.ArmedShipBuilder')
 local WeaponBattery = require('Modules.Constructs.Systems.WeaponBattery')
 local DrawEx = require('UI.DrawEx')
+local LoadingScreen = require('UI.LoadingScreen')
 local MapFrame = require('UI.MapFrame')
 local UniverseScaleConfig = require('Config.Gen.UniverseScaleConfig')
 local WeaponCombatSystem = require('Modules.Constructs.Systems.WeaponCombatSystem')
@@ -168,7 +169,7 @@ function LimitTheoryRedux:onInit()
     -- Two actions on one key: said once, at start-up (Input/BindingConflicts)
     require("Input.BindingConflicts").report()
     -- Expose the scene builder to the main menu (New Game button)
-    GameState.startGame = function(seed, scenario) self:startGame(seed, scenario) end
+    GameState.startGame = function(seed, scenario) self:requestNewGame(seed, scenario) end
 
     -- Presentation: borderless fullscreen with VSync off, unless user.ini says
     -- otherwise (exclusive mode forces a mode switch that lowers frame rates).
@@ -492,6 +493,13 @@ function LimitTheoryRedux:loadGame(slot)
     if self._simTunnel then self:endGame() end
     self:cleanupMenuBackground()
     if GameState.paused then GameState:Unpause() end
+    LoadingScreen.show({
+        kind = "load",
+        title = "Loading",
+        subtitle = SaveGame.SLOT_NAMES[slot] or slot,
+        minTime = 1.2,
+        steps = { "Reading the save", "Rebuilding the star system", "Restoring your ship and holdings" },
+    })
     self.pendingLoad = {
         state = state,
         seed = SaveGame.unpackSeed(state.game.seed),
@@ -503,6 +511,21 @@ function LimitTheoryRedux:loadGame(slot)
     return true
 end
 
+--- A new game from the menu: the loading screen goes up, and the game is
+--- built behind it once it has been seen (`pendingStart`, onInput).
+---@param seed any
+---@param scenario table|nil
+function LimitTheoryRedux:requestNewGame(seed, scenario)
+    LoadingScreen.show({
+        kind = "new",
+        title = "New game",
+        subtitle = scenario and scenario.name and ("Scenario: " .. scenario.name) or nil,
+        minTime = 1.4,
+        steps = { "Charting the galaxy", "Forming the star system", "Building stations", "Fuelling your ship" },
+    })
+    self.pendingStart = { seed = seed, scenario = scenario, frames = REBUILD_DELAY_FRAMES }
+end
+
 --- The second half of a load: build the saved game.
 function LimitTheoryRedux:finishLoadGame()
     local pending = self.pendingLoad
@@ -510,6 +533,7 @@ function LimitTheoryRedux:finishLoadGame()
     self.loading = true
     self:startGame(pending.seed, pending.scenario, pending.state)
     self.loading = false
+    LoadingScreen.finish()
     local name = SaveGame.SLOT_NAMES[pending.slot] or pending.slot
     self:notify(string.format("Loaded: %s%s", name,
         pending.fromBackup and " (its last save was damaged: the one before it was loaded)" or ""),
@@ -4282,6 +4306,17 @@ function LimitTheoryRedux:startJump(gate, drive)
     -- with the scene (destroyScene runs its teardown), and from the next
     -- system on it is plain travel (finishJump).
     self.jump = { from = from, to = to, name = gate.destination.name, frames = REBUILD_DELAY_FRAMES, drive = drive }
+    local destination = self.galaxy.systems[to]
+    local levels = Config.game.hostility.levels
+    local level = destination and levels[destination.hostility] or levels[1]
+    LoadingScreen.show({
+        kind = "jump",
+        title = (drive and "Jump drive: " or "Jumping to ") .. gate.destination.name,
+        subtitle = level and (level.name:upper() .. " SPACE" .. (level.description and ("  ·  " .. level.description) or "")) or nil,
+        color = level and level.color or nil,
+        minTime = 1.6,
+        steps = { "Entering the gate's field", "Crossing", "Forming " .. gate.destination.name, "Arriving" },
+    })
     self:destroyScene(true)
     if self.skybox then
         Registry:destroyEntity(self.skybox, Enums.Registry.EntityDestroyMode.DestroyChildren)
@@ -4330,7 +4365,7 @@ function LimitTheoryRedux:finishJump()
     self:collectSceneSystems()
 
     self.jump = nil
-    self.jumpFade = Config.game.jumpGates.fadeTime
+    self.jumpFade = nil -- the loading screen fades out over the arrival
     self.systemBanner = SYSTEM_BANNER_TIME
     if jump.arrival then
         self:dockFromSave(jump.arrival)
@@ -4434,6 +4469,8 @@ function LimitTheoryRedux:drawNavigation()
     local levels = Config.game.hostility.levels
     local font = 'Unageo-Medium'
 
+    -- The loading screen covers the jump itself
+    if self.jump and LoadingScreen.active() then return end
     if self.jump or (self.jumpFade and self.jumpFade > 0) then
         local alpha = self.jump and 1.0 or math.min(1.0, self.jumpFade / Config.game.jumpGates.fadeTime)
         DrawEx.SimpleRect(0, 0, w, h, Color(0, 0, 0, alpha))
@@ -4607,6 +4644,7 @@ function LimitTheoryRedux:onRender(data)
         end
         self:immediateUI(function()
             Gui:draw()
+            LoadingScreen.draw()
         end)
         return
     end
@@ -4639,6 +4677,7 @@ function LimitTheoryRedux:onRender(data)
             Gui:draw()
             SystemMap3D:renderOverlay(self.map3DState, 0, 0, Window:width(), Window:height())
             self:drawMapFrame()
+            LoadingScreen.draw()
         end)
     else
         RenderCoreSystem:render(data)
@@ -4701,6 +4740,7 @@ function LimitTheoryRedux:onRender(data)
                 SystemMap:draw(self.mapState, 0, 0, Window:width(), Window:height())
             end
             self:drawMapFrame()
+            LoadingScreen.draw()
         end)
     end
 end
@@ -4711,7 +4751,18 @@ function LimitTheoryRedux:onInput(data)
     -- being built (loadGame); nothing else happens meanwhile
     if self.pendingLoad then
         self.pendingLoad.frames = self.pendingLoad.frames - 1
-        if self.pendingLoad.frames <= 0 then self:finishLoadGame() end
+        if self.pendingLoad.frames <= 0 and LoadingScreen.ready() then self:finishLoadGame() end
+        return
+    end
+    -- A new game from the menu: built once its loading screen has been seen
+    if self.pendingStart then
+        self.pendingStart.frames = self.pendingStart.frames - 1
+        if self.pendingStart.frames <= 0 and LoadingScreen.ready() then
+            local pending = self.pendingStart
+            self.pendingStart = nil
+            self:startGame(pending.seed, pending.scenario)
+            LoadingScreen.finish()
+        end
         return
     end
 
@@ -4728,8 +4779,9 @@ function LimitTheoryRedux:onInput(data)
 
     if self.jump then
         self.jump.frames = self.jump.frames - 1
-        if self.jump.frames <= 0 then
+        if self.jump.frames <= 0 and LoadingScreen.ready() then
             self:finishJump()
+            LoadingScreen.finish()
         end
         return
     end
