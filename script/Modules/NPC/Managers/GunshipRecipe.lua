@@ -22,6 +22,58 @@ local LASER_BY_FACTION = {
     pirate   = { key = ProceduralKey.BurstLaser,      base = Weapon.Type.Laser },
 }
 
+--- Whether a hull has sockets bigger than M (the heavy and capital guns).
+local function hasHeavySockets(hull)
+    for _, socket in ipairs(hull and hull.sockets or {}) do
+        local size = socket.mountSizeClass
+        if size == MountSizeClass.L or size == MountSizeClass.XL
+            or socket.mountRole == MountRole.Heavy or socket.mountRole == MountRole.CapitalHeavy then
+            return true
+        end
+    end
+    return false
+end
+
+--- The weapons and the capacitor bank of those sockets: plasma on L, the
+--- long-charge laser on XL (the policy's rules pick them by size and role).
+local function addHeavyArmament(recipe)
+    local weapons = recipe.proceduralWeapons
+    for _, weapon in ipairs({
+        {
+            key = ProceduralKey.FastPlasma,
+            args = {
+                family = Weapon.Family.Plasma,
+                variant = Weapon.Variant.FastSmall,
+                baseWeaponId = Weapon.Type.Plasma,
+                mountSizeClass = MountSizeClass.L,
+            },
+        },
+        {
+            key = ProceduralKey.LongChargeXL,
+            args = {
+                family = Weapon.Family.Laser,
+                variant = Weapon.Variant.LongCharge,
+                baseWeaponId = Weapon.Type.XLLongChargeLaser,
+                mountSizeClass = MountSizeClass.XL,
+                fireMode = Weapon.FireMode.Volley,
+                laserProfileId = Weapon.LaserProfile.Violet,
+                duration = 1.10,
+            },
+        },
+    }) do
+        weapons[#weapons + 1] = weapon
+    end
+    local banks = recipe.capacitors.banks
+    banks[#banks + 1] = {
+        id = "plasma_heavy",
+        groupId = Weapon.CapacitorGroup.Plasma,
+        supportedSizeClasses = { MountSizeClass.SM, MountSizeClass.M,
+                                 MountSizeClass.L, MountSizeClass.XL },
+        maxCharge = 24.0,
+        chargeRate = 6.0,
+    }
+end
+
 --- An ArmedShipBuilder recipe for a gunship of `faction`.
 ---
 --- With a `hull` (`Shared/Definitions/HullDefs.lua`) the recipe takes that
@@ -35,7 +87,7 @@ local LASER_BY_FACTION = {
 ---@return table recipe
 function GunshipRecipe.build(seed, faction, stats, hull)
     local laser = LASER_BY_FACTION[faction] or LASER_BY_FACTION.pirate
-    return {
+    local recipe = {
         seed = seed,
         defaultWeapon = { generatedKey = laser.key },
         ship = {
@@ -160,9 +212,31 @@ function GunshipRecipe.build(seed, faction, stats, hull)
                     when = { mountRole = MountRole.Line },
                     entry = { generatedKey = laser.key },
                 },
+                -- Heavy sockets: the XL long-charge laser on an XL socket,
+                -- plasma on the rest; a capital socket the same
+                {
+                    when = { mountSizeClass = MountSizeClass.XL },
+                    entry = { generatedKey = ProceduralKey.LongChargeXL },
+                },
+                {
+                    when = { mountRole = MountRole.Heavy },
+                    entry = { generatedKey = ProceduralKey.FastPlasma },
+                },
+                {
+                    when = { mountRole = MountRole.CapitalHeavy },
+                    entry = { generatedKey = ProceduralKey.FastPlasma },
+                },
+                {
+                    when = { mountRole = MountRole.Missile },
+                    entry = { generatedKey = laser.key },
+                },
             },
         },
     }
+    if hasHeavySockets(hull) then
+        addHeavyArmament(recipe)
+    end
+    return recipe
 end
 
 return GunshipRecipe
