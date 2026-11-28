@@ -413,6 +413,10 @@ end
 
 --- Tear down the gameplay scene and return to the main menu.
 function LimitTheoryRedux:returnToMainMenu()
+    if self.playerDead then
+        self.hudHidden = self.playerDead.hudWasHidden or false
+        self.playerDead = nil
+    end
     self:endGame()
     -- The menu needs a free cursor (closePauseMenu re-applied the gameplay
     -- capture); release it before switching back to the menu.
@@ -585,6 +589,11 @@ end
 ---@param load table|nil a saved game's state (SaveGame): the game is the
 ---  saved one, made again from its seed and put back as it was
 function LimitTheoryRedux:startGame(seed, scenario, load)
+    -- A death is over with the old game (its controller and ship go with it)
+    if self.playerDead then
+        self.hudHidden = self.playerDead.hudWasHidden or false
+        self.playerDead = nil
+    end
     setGameScale()
     GameState:SetState(Enums.GameStates.InGame)
 
@@ -4751,6 +4760,102 @@ function LimitTheoryRedux:placeShipAtArrival(fromId)
     JumpGateSystem:reset(self.gateWatch)
 end
 
+------------------------------------------------------------------------------
+-- The ship lost
+--
+-- When the hull reaches zero the ship blows up (WeaponCombatSystem's death
+-- explosion) and is gone: hidden, frozen where it died, out of the fight,
+-- its guns silent. Nothing flies any more; the camera goes to the orbit view
+-- round the wreck so the player can swing it about (right mouse) and see
+-- what happened, while the screen fades down (DeathPanel) and offers the
+-- last save or the main menu. Escape and the pause menu still work.
+
+--- Once a frame: has the ship just been lost? And the death's clock.
+---@param dt number
+function LimitTheoryRedux:checkPlayerDeath(dt)
+    if self.playerDead then
+        self.playerDead.time = self.playerDead.time + dt
+        return
+    end
+    if self.docked or self.debugGod or not self:isTravelGame() then return end
+    local ship = self.playerShip
+    local health = ship and ship:isValid() and ship:get(CoreComponentsAll.Health)
+    if health and health:isDestroyed() then self:enterDeath() end
+end
+
+--- The ship is lost: take it out of the world and the player out of it.
+function LimitTheoryRedux:enterDeath()
+    local ship = self.playerShip
+    local attacker = CombatLog:getLastAttacker(ship)
+    self.playerDead = {
+        time = 0,
+        killer = attacker and self:contactName(attacker) or nil,
+        canLoad = SaveGame.latest() ~= nil,
+        hudWasHidden = self.hudHidden,
+    }
+    Log.Info("The player's ship was destroyed%s", attacker and (" by " .. self.playerDead.killer) or "")
+
+    -- What it was doing stops
+    AutoPilotSystem:disengage(ship)
+    require("Modules.Constructs.Systems.TravelDriveSystem"):reset(ship)
+    if self.miningJob then self:stopMining() end
+    MiningBeam:stop()
+    if self.cloak then self.cloak.active = false end
+    self.course = nil
+    self.driveJump = nil
+    self.debugMenuOpen = false
+    self:dismissOpenUI()
+
+    -- Gone: unseen, untouchable, out of the fight, its guns silent
+    local render = ship:get(RenderComponent)
+    if render then render:setVisible(false) end
+    for _, mount in pairs(self.playerMounts or {}) do
+        local turretRender = mount.entity and mount.entity:isValid() and mount.entity:get(RenderComponent)
+        if turretRender then turretRender:setVisible(false) end
+    end
+    local targetable = ship:get(ConstructComponents.Targetable)
+    if targetable then targetable:setEnabled(false) end
+    local rb = ship:get(PhysicsComponents.RigidBody)
+    rb = rb and rb:getRigidBody()
+    if rb then
+        rb:setCollidable(false)
+        rb:setKinematic(true) -- held where it died
+    end
+    if self.playerBattery then
+        self.weaponCombat:removeBattery(self.playerBattery)
+        self.playerBattery = nil
+    end
+
+    -- The player only looks: the orbit camera round the wreck, no flying
+    self.player.dead = true
+    self.player:setOrbitTarget(nil)
+    self.player:setMode(Enums.CameraMode.Orbit)
+    self.hudHidden = true
+end
+
+--- A ship again (loading a game builds a new one; the debug menu's fly-a-
+--- hull too): the controls come back.
+function LimitTheoryRedux:leaveDeath()
+    local dead = self.playerDead
+    if not dead then return end
+    self.playerDead = nil
+    self.hudHidden = dead.hudWasHidden or false
+    if self.player then
+        self.player.dead = false
+        self.player:setMode(Enums.CameraMode.Chase)
+    end
+end
+
+--- The death screen's Load Last Save: the most recent save of any slot.
+function LimitTheoryRedux:loadLastSave()
+    local slot = SaveGame.latest()
+    if not slot then
+        self:notify("No save to load.", { 1.0, 0.4, 0.3 })
+        return
+    end
+    self:loadGame(slot)
+end
+
 --- Replace the player's ship with a new one of the same kind (at rest,
 --- whole) at `position`, facing `facing` (nil: as built).
 ---@param position Position
@@ -4771,6 +4876,8 @@ function LimitTheoryRedux:respawnPlayerShip(position, facing)
         self.playerShip:get(PhysicsComponents.RigidBody):getRigidBody():setRot(Quat.FromLookUp(facing, up))
     end
     if self.cloak then self.cloak.active = false end
+    -- A new ship is a live one (the debug menu's fly-a-hull after a death)
+    if self.playerDead then self:leaveDeath() end
     -- The controls, the camera, the NPCs and the HUD follow the new ship:
     -- left on the old (destroyed) one, nothing the player pressed moved it
     self.player:setShip(self.playerShip)
@@ -4865,8 +4972,8 @@ function LimitTheoryRedux:drawNavigation()
     end
 
     if self.mapMode ~= 0 or self.hudHidden or self.pauseMenuOpen then return end
+    -- (The system and its hostility are top left: StatusPanel)
     local lines = {}
-    table.insert(lines, { text = string.format("%s  ·  %s", name, level.name), color = c })
     -- The locked target, under the system line: who, how far, how hurt
     -- The target and the notifications go nearer the middle of the screen
     -- (below the reticle), the standing lines above the action bar
@@ -4949,10 +5056,11 @@ function LimitTheoryRedux:drawNavigation()
     for _, message in ipairs(self.messages or {}) do
         table.insert(centre, { text = message.text, color = message.color, alpha = math.min(1, message.time) })
     end
-    -- Above the action bar (bottom centre: its slots and margin, at the
-    -- HUD's scale), growing upward
+    -- Above the action bar and the weapon bar over it (bottom centre: their
+    -- slots and margins, at the HUD's scale), growing upward
     local hudScale = math.max(0.7, math.min(1.3, h / 1080)) * GameState.ui.hudScale
-    local bottom = h - (26 + 64 + 18) * hudScale
+    local weaponBar = self.playerBattery and self.playerBattery.mountIds and #self.playerBattery.mountIds > 0
+    local bottom = h - (26 + 64 + 18 + (weaponBar and 72 or 0)) * hudScale
     local top = bottom - #lines * 20
     for i, line in ipairs(lines) do
         DrawEx.TextAlpha(font, line.text, 14, 0, top + (i - 1) * 20, w, 18,
@@ -5185,6 +5293,8 @@ function LimitTheoryRedux:onInput(data)
     if Gui:hasActiveInput() then return end
     -- ~: the debug menu
     if Input:isPressed(Button.KeyboardBackquote) then self:toggleDebugMenu() end
+    -- The ship lost: nothing but the camera (and the death screen's buttons)
+    if self.playerDead then return end
 
     GeneralActions.CycleMapMode:update(dt)
     GeneralActions.AutoPilotToggle:update(dt)
@@ -5385,12 +5495,13 @@ function LimitTheoryRedux:onStateSim(data)
     MemoryReporter:update(dt)
 
     Profiler.Begin('Sim.Player')
+    self:checkPlayerDeath(dt)
     self.player:update(dt)
     self:updateCloak(dt)
     self:syncActionBar()
     self:updateSensors(dt)
     self:updateMining(dt)
-    AbilitySystem:update(self.playerShip, dt)
+    if not self.playerDead then AbilitySystem:update(self.playerShip, dt) end
     -- A ship the refit screen asked for: the rebuild happens here, not inside
     -- the screen's own draw
     self:processShipChange()
@@ -5401,7 +5512,7 @@ function LimitTheoryRedux:onStateSim(data)
     GalaxyEconomy:update(dt, self.simTime, self.currentSystemId or 1)
     -- The player's shields recharge (DefenseComponent:update had no caller)
     local playerDefense = self.playerShip:get(ConstructComponents.Defense)
-    if playerDefense and not self.docked then playerDefense:update(dt) end
+    if playerDefense and not self.docked and not self.playerDead then playerDefense:update(dt) end
     -- Debug: nothing hurts the ship
     if self.debugGod then self:debugRepair() end
     Profiler.End()

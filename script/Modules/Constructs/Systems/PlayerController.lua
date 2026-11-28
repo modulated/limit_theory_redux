@@ -256,6 +256,8 @@ end
 --- Update the player controller (call each frame from onSim)
 ---@param dt number Delta time
 function PlayerController:update(dt)
+    -- The ship is lost: the camera only (its controller reads its own input)
+    if self.dead then return end
     -- Travel drive always updates (even with map open — ship keeps moving)
     local ShipActions = require("Input.ActionBindings.ShipActions")
     for _, binding in pairs(ShipActions) do
