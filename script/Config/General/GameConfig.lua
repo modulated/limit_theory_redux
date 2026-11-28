@@ -666,6 +666,16 @@ Config.game = {
         strength    = { { 0.25, "Faint" }, { 0.5, "Moderate" }, { 0.8, "Strong" }, { 9, "Loud" } },
     },
 
+    -- Testing aids. revealShips: every NPC ship is identified whatever the
+    -- sensors say, hostiles are drawn big and red on the maps, listed first
+    -- in the overview, and marked at the screen's edge; and a census of the
+    -- NPCs is logged every `censusInterval` seconds (how many there are, how
+    -- many the maps list, the nearest hostile). Off for normal play.
+    debug = {
+        revealShips    = true,
+        censusInterval = 10,
+    },
+
     -- The stations' bounty board (Modules/Economy/Managers/BountyBoard.lua):
     -- named pirates in the system, at this many times their usual bounty
     bounties = {

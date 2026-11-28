@@ -320,6 +320,19 @@ function SystemMap:collectEntities(state, rootEntity, shipEntity, npcEntries)
         if body then
             entry.label = npc.label
             entry.color = npc.color
+            -- Testing (debug.revealShips): hostiles big, red, always named
+            local game = LimitTheoryRedux
+            local hostile = not npc.signature and game and game.isHostileFaction and game:isHostileFaction(npc.faction)
+            if Config.game.debug and Config.game.debug.revealShips and hostile then
+                entry.color = { 1.0, 0.25, 0.2 }
+                entry.size = 10
+                entry.labelPriority = 90
+                entry.alwaysLabel = true
+            else
+                entry.size = 4
+                entry.labelPriority = 30
+                entry.alwaysLabel = nil
+            end
             entry.pos = body:getPos()
             -- A signature is drawn where the sensors put it, not where it is
             if npc.offset then
@@ -879,7 +892,7 @@ function SystemMap:draw(state, x, y, sx, sy)
             MapLabels.add(labels, {
                 text = entry.label, x = screenX, y = screenY, anchor = ps / 2 + (isSelected and 6 or 0),
                 priority = entry.labelPriority or MapLabels.priorityOf(entry.entity),
-                always = isSelected,
+                always = isSelected or entry.alwaysLabel == true,
                 color = { c[1], c[2], c[3], 0.9 },
             })
         end

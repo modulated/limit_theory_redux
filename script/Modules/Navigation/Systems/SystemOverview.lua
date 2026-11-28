@@ -379,7 +379,7 @@ function SystemOverview:refresh(game)
                 signature = true }, pos)
         else
             local hostile = npc.faction and Factions.isHostile(npc.faction, Factions.Player) or false
-            add({ entity = npc.entity, name = npc.label or "Ship", kind = "Ship",
+            add({ entity = npc.entity, name = npc.label or "Ship", kind = hostile and "HOSTILE" or "Ship",
                 category = "ship", radius = radius, color = npc.color, hostile = hostile,
                 faction = npc.faction }, pos)
         end
@@ -429,7 +429,16 @@ function SystemOverview:visible()
             shown[#shown + 1] = entry
         end
     end
-    table.sort(shown, comparator(self.sortKey or "distance", self.sortDescending == true))
+    local compare = comparator(self.sortKey or "distance", self.sortDescending == true)
+    -- Testing (debug.revealShips): hostiles at the top, whatever the sort
+    if Config.game.debug and Config.game.debug.revealShips then
+        local base = compare
+        compare = function(a, b)
+            if (a.hostile == true) ~= (b.hostile == true) then return a.hostile == true end
+            return base(a, b)
+        end
+    end
+    table.sort(shown, compare)
     return shown
 end
 

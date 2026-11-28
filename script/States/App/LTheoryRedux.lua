@@ -2550,7 +2550,8 @@ function LimitTheoryRedux:mapNpcs()
         local contract = BountyBoard:contractOn(record)
         local identifyAt = cfg.range * scan * (0.6 + 0.8 * loud)
         local detectAt = cfg.detectRange * scan * reach * (0.25 + loud)
-        if npc.faction == Factions.Player or d <= identifyAt then
+        local reveal = Config.game.debug and Config.game.debug.revealShips
+        if reveal or npc.faction == Factions.Player or d <= identifyAt then
             if contract then
                 -- Identified: named for the contract, in gold
                 npc = {
@@ -2623,15 +2624,17 @@ function LimitTheoryRedux:drawSignatureMarkers(w, h, font)
         end
     end
     table.sort(list, function(a, b)
-        if a.c.bounty ~= b.c.bounty then return a.c.bounty == true end
+        local ap, bp = a.c.bounty or a.c.hostile, b.c.bounty or b.c.hostile
+        if ap ~= bp then return ap == true end
         return a.d < b.d
     end)
 
     local margin = 46
     local cx, cy = w / 2, h / 2
     for i, m in ipairs(list) do
-        if i > Config.game.sensors.markers and not m.c.bounty then break end
-        local color = m.c.bounty and { r = 1.0, g = 0.82, b = 0.3, a = 0.95 } or { r = 0.9, g = 0.78, b = 0.45, a = 0.8 }
+        if i > Config.game.sensors.markers and not (m.c.bounty or m.c.hostile) then break end
+        local color = (m.c.hostile and { r = 1.0, g = 0.25, b = 0.2, a = 1.0 })
+            or (m.c.bounty and { r = 1.0, g = 0.82, b = 0.3, a = 0.95 }) or { r = 0.9, g = 0.78, b = 0.45, a = 0.8 }
         local rx, ry, rz = m.x - cam.x, m.y - cam.y, m.z - cam.z
         local depth = rx * fwd.x + ry * fwd.y + rz * fwd.z
         local sx = (rx * rt.x + ry * rt.y + rz * rt.z)
@@ -2668,6 +2671,45 @@ function LimitTheoryRedux:drawSignatureMarkers(w, h, font)
                 color.r, color.g, color.b, color.a, 0.5, 0.5)
         end
     end
+end
+
+--- Every `debug.censusInterval` seconds, a line in the log: how many NPC
+--- ships there are and in what state, how many reach the maps and the
+--- overview, and the nearest hostile. Where ships go missing shows here.
+---@param dt number
+function LimitTheoryRedux:npcCensus(dt)
+    local cfg = Config.game.debug
+    if not (cfg and cfg.censusInterval and cfg.censusInterval > 0) then return end
+    self.censusTimer = (self.censusTimer or 0) - dt
+    if self.censusTimer > 0 then return end
+    self.censusTimer = cfg.censusInterval
+    local records = self.npcs and self.npcs.records or {}
+    local alive, docked, dead, invalid = 0, 0, 0, 0
+    for _, r in ipairs(records) do
+        if r.dead then dead = dead + 1
+        elseif not r.entity:isValid() then invalid = invalid + 1
+        elseif r.pilot.docked then docked = docked + 1
+        else alive = alive + 1 end
+    end
+    local listed, identified, hostile, nearest = 0, 0, 0, math.huge
+    local here = self:shipPosition()
+    for _, entry in ipairs(self:mapNpcs()) do
+        listed = listed + 1
+        if not entry.signature then identified = identified + 1 end
+        if not entry.signature and self:isHostileFaction(entry.faction) then
+            hostile = hostile + 1
+            local rbCmp = entry.entity:get(PhysicsComponents.RigidBody)
+            local p = rbCmp and rbCmp:getRigidBody() and rbCmp:getRigidBody():getPos()
+            if p and here then
+                nearest = math.min(nearest, math.sqrt((p.x - here.x) ^ 2 + (p.y - here.y) ^ 2 + (p.z - here.z) ^ 2))
+            end
+        end
+    end
+    Log.Info("NPC census: %d records (%d flying, %d docked, %d wrecks, %d invalid)  ·  maps list %d "
+        .. "(%d identified, %d hostile)  ·  nearest hostile %s  ·  ship at %s",
+        #records, alive, docked, dead, invalid, listed, identified, hostile,
+        nearest < math.huge and UniverseScaleConfig:formatDistance(nearest) or "none",
+        here and string.format("(%.0f, %.0f, %.0f)", here.x, here.y, here.z) or "nowhere")
 end
 
 --- Where a ship was last seen, in words, for the bounty board.
@@ -2727,7 +2769,21 @@ function LimitTheoryRedux:updateSensors(dt)
             identified[entry.entity.id] = true
         end
     end
+    -- Testing (debug.revealShips): every hostile is marked like a contact,
+    -- in red, wherever it is
+    local reveal = Config.game.debug and Config.game.debug.revealShips
+    if reveal then
+        for _, entry in ipairs(self:mapNpcs()) do
+            if not entry.signature and self:isHostileFaction(entry.faction) then
+                contacts[#contacts + 1] = {
+                    entity = entry.entity, label = entry.label or "Hostile", hostile = true,
+                    offset = { x = 0, y = 0, z = 0 },
+                }
+            end
+        end
+    end
     self.sensorContacts = contacts
+    self:npcCensus(0.25)
     for _, npc in ipairs(self.npcs:mapEntries()) do
         local entry = npc.record and npc.record.labelEntry
         if entry then
