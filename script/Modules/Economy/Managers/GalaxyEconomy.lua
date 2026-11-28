@@ -24,7 +24,12 @@ local Productions = require("Shared.Registries.Productions")
 --- systems are doing now, within the datalink's reach. And a station the
 --- player comes back to opens with the ledger's shelves, not fresh ones.
 ---
---- Systems never visited have no stations to keep yet.
+--- Systems never visited have no stations yet (a system's stations are built
+--- with its planets). They get provisional ones instead (`seedGalaxy`), made
+--- from the system's seed by the same rules -- what each makes, what it keeps
+--- on its shelves, some of the local ore -- and kept going the same way. On
+--- the first visit the real stations take the provisional shelves over for
+--- every good they deal in too, so the prices carry on.
 ---@class GalaxyEconomy
 local GalaxyEconomy = {
     ---@type table<string, table> station key -> ledger
@@ -76,6 +81,74 @@ function GalaxyEconomy:record(key, systemId, label, station, now)
     self.stations[key] = ledger
 end
 
+--- A station that is not in any scene: enough of an entity for the station
+--- rules (ProductionSystem:assign, StationTradeSystem:stock) to work on.
+---@return table
+local function virtualStation()
+    local e = { comps = {} }
+    function e:add(c) self.comps[getmetatable(c)] = c; return c end
+    function e:get(t) return self.comps[t] end
+    function e:isValid() return true end
+    return e
+end
+
+--- Provisional stations for every system that has none kept (never
+--- visited), but the one the player is in.
+---@param galaxy table|nil
+---@param currentSystemId integer
+---@param now number
+function GalaxyEconomy:seedGalaxy(galaxy, currentSystemId, now)
+    if not galaxy or not galaxy.systems then return end
+    local kept = {}
+    for _, ledger in pairs(self.stations) do kept[ledger.systemId] = true end
+    local Economy = require("Modules.Economy.Components")
+    local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
+    local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
+    local ores = require("Shared.Data.OreData").fallback()
+    for _, system in ipairs(galaxy.systems) do
+        if system.id ~= currentSystemId and not kept[system.id] then
+            local rng = RNG.Create((tonumber(system.seed) or system.id) + 7177)
+            -- The local ore: a few of the known ores, by their weights
+            local oreIds, picked = {}, {}
+            local total = 0
+            for _, ore in ipairs(ores) do total = total + ore.weight end
+            for _ = 1, rng:getInt(2, 4) do
+                local roll, acc = rng:getUniform() * total, 0
+                for _, ore in ipairs(ores) do
+                    acc = acc + ore.weight
+                    if roll <= acc then
+                        if not picked[ore.id] then picked[ore.id] = true; oreIds[#oreIds + 1] = ore.id end
+                        break
+                    end
+                end
+            end
+            for i = 1, rng:getInt(1, cfg().provisionalStations or 3) do
+                local station = virtualStation()
+                station:add(Economy.Stock())
+                ProductionSystem:assign(station, rng, i == 1, oreIds)
+                StationTradeSystem:stock(station, rng, oreIds)
+                local key = string.format("%d:%d", system.id, i)
+                self:record(key, system.id, "Station " .. i, station, now)
+                self.stations[key].provisional = true
+            end
+        end
+    end
+end
+
+--- The player is in a system: its live stations have taken their ledgers
+--- (`restore`); provisional ones with no real station to match are dropped,
+--- and so are their market notes.
+---@param systemId integer
+function GalaxyEconomy:dropSystem(systemId)
+    local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
+    for key, ledger in pairs(self.stations) do
+        if ledger.systemId == systemId then
+            self.stations[key] = nil
+            if ledger.provisional then MarketIntel.stations[key] = nil end
+        end
+    end
+end
+
 --- A station built again (the player is back): it takes the ledger's
 --- shelves, moved on to now. Returns whether there was a ledger.
 ---@param key string
@@ -89,9 +162,20 @@ function GalaxyEconomy:restore(key, station, now)
     local stockCmp = station:get(Economy.Stock)
     if not stockCmp then return false end
     self:advance(ledger, now)
-    stockCmp.units = {}
-    for itemId, units in pairs(ledger.stock) do
-        stockCmp.units[itemId] = math.floor(units)
+    if ledger.provisional then
+        -- The real station deals in its own goods: it takes the provisional
+        -- shelves of those it shares, and keeps its own of the rest
+        local StationTradeSystem = require("Modules.Economy.Systems.StationTradeSystem")
+        for itemId, units in pairs(ledger.stock) do
+            if StationTradeSystem:trades(station, itemId) then
+                stockCmp.units[itemId] = math.floor(units)
+            end
+        end
+    else
+        stockCmp.units = {}
+        for itemId, units in pairs(ledger.stock) do
+            stockCmp.units[itemId] = math.floor(units)
+        end
     end
     require("Modules.Economy.Systems.StationTradeSystem"):invalidate(station)
     -- The station is live again: the ledger goes until it leaves

@@ -2764,6 +2764,11 @@ function LimitTheoryRedux:populateSystem()
         if dock then table.insert(places.stations, dock.position) end
     end
     places.belts = self.beltEntities or {}
+    -- The background economy: this system's live now (its stations took
+    -- their ledgers above), every other system has stations to keep going,
+    -- visited or not
+    GalaxyEconomy:dropSystem(self.currentSystemId or 1)
+    GalaxyEconomy:seedGalaxy(self.galaxy, self.currentSystemId or 1, self.simTime or 0)
     self.npcs:setPlaces(places)
     self.npcs:setPlayer(self.playerShip)
     self:updatePlayerVisibility()

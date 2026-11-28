@@ -454,6 +454,8 @@ Config.game = {
         noise          = 0.15,
         maxCatchUp     = 6 * 3600,
         maxRunsPerStep = 200,
+        -- A system never visited has 1..this many provisional stations
+        provisionalStations = 3,
     },
 
     economy = {
