@@ -33,7 +33,7 @@ local function defaulttostring(self)
         local valueStr = tostring(value)
         table.insert(result, keyStr .. ": " .. valueStr)
     end
-    return tostring(type(self)) .. "{" .. table.concat(result, ", ") .. "}"
+    return typeName(self) .. "{" .. table.concat(result, ", ") .. "}"
 end
 
 function Class(name, ctor)
@@ -70,6 +70,7 @@ function Subclass(name, base, ctor)
     local cls = {}
     cls.__index = cls
     cls.__type = cls
+    cls.__base = base -- for isInstance
     cls.__tostring = base.__tostring or defaulttostring
 
     -- Define the default constructor.
@@ -93,3 +94,43 @@ function Subclass(name, base, ctor)
     })
     return cls
 end
+
+--------------------------------------------------------------------------------
+-- Asking what a value is
+--
+-- `type` is Lua's own: a class instance is a "table", as it is. What class it
+-- is, is asked with these -- never by comparing `type` to something else, and
+-- never by duck-typing (`x.isValid ~= nil`), which a plain table can pass and
+-- a position can crash on.
+--------------------------------------------------------------------------------
+
+--- The class a value is an instance of, or nil (a plain table, or not a table).
+---@param v any
+---@return table|nil
+function classOf(v)
+    if rawtype(v) ~= "table" then return nil end
+    local mt = getmetatable(v)
+    return mt and rawtype(mt) == "table" and rawget(mt, "__type") or nil
+end
+
+--- Whether a value is an instance of `cls` or of a subclass of it.
+---@param v any
+---@param cls table a class made by Class or Subclass
+---@return boolean
+function isInstance(v, cls)
+    local c = classOf(v)
+    while c do
+        if c == cls then return true end
+        c = rawget(c, "__base")
+    end
+    return false
+end
+
+--- Whether a value is a plain table: data, not an object. What walks into
+--- tables (copies, merges, savers, writers) walks only into these.
+---@param v any
+---@return boolean
+function isPlainTable(v)
+    return rawtype(v) == "table" and classOf(v) == nil
+end
+

@@ -69,10 +69,9 @@ function NpcSystem:setPlayer(entity)
     self.player = entity and { entity = entity, faction = Factions.Player } or nil
 end
 
-local function isEntity(target)
-    -- rawtype: the global type() names a class instance by its class ("Entity")
-    return rawtype(target) == "table" and target.isValid ~= nil
-end
+--- A ship (an entity), as opposed to a place {x, y, z}: Entity.is, never a
+--- test of type() or of the methods it has (see Core/Structures/Class.lua).
+local isEntity = require("Core.ECS.Entity").is
 
 --- Where a target is: a position {x, y, z} as it is, a ship's body
 --- position; nil for a ship that is gone.
@@ -682,12 +681,12 @@ function NpcSystem:update(dt)
                 if Config.game.debug and Config.game.debug.traceNpcLoss then
                     -- Every part of isAlive's verdict, and the verdict again
                     local e = record.entity
-                    local valid = rawtype(e) == "table" and e.isValid ~= nil and e:isValid()
+                    local valid = isEntity(e) and e:isValid()
                     local health = valid and e:get(CoreComponents.Health)
-                    Log.Info("NPC lost: %s (%s): type %s, has isValid %s, valid %s, health %s (%s of %s, "
+                    Log.Info("NPC lost: %s (%s): type %s, is an entity %s, valid %s, health %s (%s of %s, "
                         .. "isDestroyed %s), isAlive again %s",
-                        tostring(record.label), tostring(record.role), type(e),
-                        tostring(rawtype(e) == "table" and e.isValid ~= nil), tostring(valid),
+                        tostring(record.label), tostring(record.role), typeName(e),
+                        tostring(isEntity(e)), tostring(valid),
                         tostring(health), tostring(health and health:getCurrentHealth()),
                         tostring(health and health:getMaxHealth()),
                         tostring(health and health:isDestroyed()), tostring(self:isAlive(e)))

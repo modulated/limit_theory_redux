@@ -121,7 +121,7 @@ end
 local function copyTable(source)
     local result = {}
     for key, value in pairs(source or {}) do
-        if type(value) == "table" then
+        if isPlainTable(value) then
             result[key] = copyTable(value)
         else
             result[key] = value

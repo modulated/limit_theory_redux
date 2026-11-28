@@ -128,11 +128,11 @@ local SCALED_LOOK_PARAMS = { coreWidth = true, glowWidth = true, haloWidth = tru
 --- `base` with `own`'s values on top, section by section (a Color is a value,
 --- a plain table a section).
 local function merged(base, own)
-    if type(own) ~= "table" then return base end
+    if not isPlainTable(own) then return base end
     local result = {}
     for key, value in pairs(base) do result[key] = value end
     for key, value in pairs(own) do
-        if type(value) == "table" and type(base[key]) == "table" then
+        if isPlainTable(value) and isPlainTable(base[key]) then
             result[key] = merged(base[key], value)
         else
             result[key] = value

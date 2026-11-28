@@ -67,7 +67,9 @@ SaveGame.MANUAL_SLOTS = { "slot1", "slot2", "slot3", "slot4", "slot5" }
 ---@return any
 local function copy(value, path)
     local kind = type(value)
-    if kind ~= "table" then
+    -- An object (a class instance) is not data: it goes through as it is,
+    -- and SaveCodec refuses it by name
+    if kind ~= "table" or not isPlainTable(value) then
         if kind == "function" or kind == "userdata" or kind == "cdata" or kind == "thread" then
             Log.Warn("SaveGame: %s is a %s; not saved", path or "value", kind)
             return nil

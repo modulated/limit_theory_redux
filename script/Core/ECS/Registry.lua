@@ -84,6 +84,16 @@ function Entity:isValid()
     return Registry.Instance:hasEntity(self)
 end
 
+--- Whether a value is an entity handle (valid or not): the one way to ask.
+--- Not `type(v) == ...` and not duck-typing on its methods: a position, a
+--- plain table or an entity of another kind must not pass, and must not be
+--- indexed to find out (a cdata Position errors on a missing field).
+---@param v any
+---@return boolean
+function Entity.is(v)
+    return isInstance(v, Entity)
+end
+
 function Registry:clear()
     self.entities = {}
     SetLengthMetamethod(self.entities)

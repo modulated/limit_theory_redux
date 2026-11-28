@@ -10,7 +10,7 @@ function Converter.ToValuePtr(value, type)
 end
 
 function Converter.TableToString(tbl, indent)
-    if type(tbl) ~= "table" then
+    if not isPlainTable(tbl) then
         return tostring(tbl)
     end
     if not indent then indent = 0 end
@@ -27,7 +27,7 @@ function Converter.TableToString(tbl, indent)
             toprint = toprint .. v .. "/number,\r\n"
         elseif (type(v) == "string") then
             toprint = toprint .. v .. "/string,\r\n"
-        elseif (type(v) == "table") then
+        elseif isPlainTable(v) then
             toprint = toprint .. Converter.TableToString(v, indent + 2) .. ",\r\n"
         elseif (type(v) == "boolean") then
             toprint = toprint .. tostring(v) .. "/boolean,\r\n"

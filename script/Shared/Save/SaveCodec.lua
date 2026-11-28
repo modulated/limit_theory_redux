@@ -108,6 +108,15 @@ local function writeValue(out, value, strings, seen, path)
             out[#out + 1] = value
         end
     elseif kind == "table" then
+        -- An object is not data: saved, it would come back a plain table
+        -- without its methods
+        -- (asked here directly: the codec runs in the tools too, without
+        -- the game's class library)
+        local mt = getmetatable(value)
+        local cls = type(mt) == "table" and rawget(mt, "__type") or nil
+        if cls then
+            error(string.format("SaveCodec: %s is a %s object, which cannot be saved", path, tostring(cls)), 0)
+        end
         if seen[value] then
             error(string.format("SaveCodec: %s contains itself", path), 0)
         end

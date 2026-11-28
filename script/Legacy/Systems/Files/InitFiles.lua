@@ -124,9 +124,9 @@ function InitFiles:readUserInits()
         sectionName = name
         local found = GameState
         for part in string.gmatch(name, "[^%.]+") do
-            found = type(found) == "table" and found[part] or nil
+            found = isPlainTable(found) and found[part] or nil
         end
-        if type(found) == "table" then
+        if isPlainTable(found) then
             section = found
         else
             section = nil
@@ -250,7 +250,8 @@ function InitFiles:writeUserInits()
     local noFunctions = {}
 
     for l_Index, l_Value in pairs(GameState) do
-        if type(l_Value) == "table" then
+        -- Sections are plain tables; objects kept in GameState are not settings
+        if isPlainTable(l_Value) then
             noFunctions[l_Index] = l_Value
         end
     end
@@ -355,7 +356,7 @@ function InitFiles:writeUserInits()
                     --Log.Debug("writing %s: %s", l_Variable, l_Value)
                     io.write(format("%s=%s", tostring(l_Variable), tostring(l_Value)), "\n")
                 end
-            elseif pass and type(l_Value) == "table" and not string.match(l_Variable, "humanPlayer") then
+            elseif pass and isPlainTable(l_Value) and not string.match(l_Variable, "humanPlayer") then
                 cacheSubCat = l_Category
                 cacheSubCatVar = l_Variable
                 cacheSubCatVal = l_Value
