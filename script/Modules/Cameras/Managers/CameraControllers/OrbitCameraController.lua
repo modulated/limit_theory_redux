@@ -4,6 +4,7 @@ local UIMouse = require("Input.UIMouse")
 local CameraActions     = require("Input.ActionBindings.CameraActions")
 local CursorManager     = require("Input.CursorManager")
 local UserSettings      = require("Shared.UserSettings")
+local ShipFraming       = require("Modules.Cameras.ShipFraming")
 
 ---@class OrbitCameraController : CameraController
 ---@overload fun(entity: Entity, config?: table): OrbitCameraController
@@ -134,7 +135,8 @@ function OrbitCameraController:onInput(dt)
         else
             distance = self.distance - zoom * self.zoomSpeed
         end
-        self.distance = Math.Clamp(distance, self.minDistance, self.maxDistance)
+        self.distance = Math.Clamp(distance,
+            math.max(self.minDistance, ShipFraming.minDistance(self.target)), self.maxDistance)
     end
 end
 
@@ -150,8 +152,16 @@ function OrbitCameraController:updateCameraPosition(dt)
     -- rather than read the missing body as the system's origin
     if not self.target or not self.target:isValid() then return end
 
+    -- Never inside the target: a zoom range set for a fighter would put
+    -- the camera inside a capital hull. The distance is held outside it,
+    -- and the zoom reaches out at least as far as it would for a small ship
+    local floor = ShipFraming.minDistance(self.target)
+    if self.distance < floor then self.distance = floor end
+    if self.maxDistance < floor * 40 then self.maxDistance = floor * 40 end
+
     local zoomLerp = math.min(1.0, 4.0 * dt)
     self.currentDistance = self.currentDistance + (self.distance - self.currentDistance) * zoomLerp
+    if not (self.currentDistance >= floor) then self.currentDistance = floor end
 
     -- The target's rigid body, or its Transform when it has no body (an
     -- empty anchor, an effect)

@@ -15,6 +15,7 @@ local TravelDriveSystem       = require("Modules.Constructs.Systems.TravelDriveS
 local AutoPilotSystem         = require("Modules.Constructs.Systems.AutoPilotSystem")
 local CursorManager           = require("Input.CursorManager")
 local GeneralActions           = require("Input.ActionBindings.GeneralActions")
+local ShipFraming             = require("Modules.Cameras.ShipFraming")
 
 ---@class PlayerController
 ---@overload fun(shipEntity: Entity, config?: table): PlayerController
@@ -97,6 +98,7 @@ function PlayerController:_createCameras(config)
     self.cameraEntities[Enums.CameraMode.Orbit] = camOrbit
     -- The ship's zoom range, restored when the orbit camera goes back to it
     self.shipOrbitDistances = self.controllers[Enums.CameraMode.Orbit]:getDistances()
+    self.controllers[Enums.CameraMode.Orbit]:setDistances(self:shipOrbitRange())
 
     -- Free camera (detached)
     local camFree = CameraEntity()
@@ -146,7 +148,7 @@ function PlayerController:setMode(mode)
     local newController = self.controllers[mode]
 
     if oldController and newController and mode == Enums.CameraMode.Free then
-        newController:setPosition(oldController:getPosition())
+        newController:setPosition(self:outsideShip(oldController:getPosition()))
         newController:setRotation(oldController:getRotation())
     end
 
@@ -176,6 +178,28 @@ function PlayerController:setMode(mode)
     end
 
     Log.Info("Camera mode: %s", Enums.CameraModeNames[mode])
+end
+
+--- A camera position moved out of the ship if it is inside it (the first
+--- person eye, an orbit zoomed in on a big hull): pushed out along the line
+--- from the ship's centre, or behind the ship from its very centre.
+---@param pos Position
+---@return Position
+function PlayerController:outsideShip(pos)
+    local rbCmp = self.ship and self.ship:get(PhysicsComponents.RigidBody)
+    local rb = rbCmp and rbCmp:getRigidBody()
+    if not rb or not pos then return pos end
+    local floor = ShipFraming.minDistance(self.ship)
+    local c = rb:getPos()
+    local dx, dy, dz = pos.x - c.x, pos.y - c.y, pos.z - c.z
+    local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if d >= floor then return pos end
+    if d < 1e-9 then
+        local back = rb:getRot():getForward()
+        dx, dy, dz, d = -back.x, -back.y, -back.z, 1
+    end
+    local k = floor / d
+    return Position(c.x + dx * k, c.y + dy * k, c.z + dz * k)
 end
 
 --- Get the current camera mode
@@ -289,7 +313,16 @@ function PlayerController:setShip(shipEntity)
 
     -- The orbit camera follows the ship unless it was given something else
     local orbit = self.controllers[Enums.CameraMode.Orbit]
-    if orbit and not self.orbitTarget then orbit:setTarget(shipEntity) end
+    if orbit and not self.orbitTarget then
+        orbit:setDistances(self:shipOrbitRange())
+        orbit:setTarget(shipEntity)
+    end
+
+    -- The new hull is hidden from inside in first person, as the old was:
+    -- a ship rebuilt while the player looked out of it (a swap, a dock)
+    -- was drawn round the camera
+    local renderCmp = shipEntity and shipEntity:get(RenderComp)
+    if renderCmp then renderCmp:setVisible(self.mode ~= Enums.CameraMode.FirstPerson) end
 end
 
 --- Point the orbit camera at something other than the ship (a scenario's
@@ -304,9 +337,24 @@ function PlayerController:setOrbitTarget(entity, distances)
         if distances then orbit:setDistances(distances) end
         orbit:setTarget(entity)
     else
-        orbit:setDistances(self.shipOrbitDistances)
+        orbit:setDistances(self:shipOrbitRange())
         orbit:setTarget(self.ship)
     end
+end
+
+--- The orbit camera's zoom range on the player's ship: the configured one,
+--- grown for a hull too big for it (it frames a fighter; a capital is many
+--- times that).
+---@return table distances, as OrbitCameraController:setDistances takes them
+function PlayerController:shipOrbitRange()
+    local base = self.shipOrbitDistances
+    local r = ShipFraming.radius(self.ship)
+    local range = {}
+    for k, v in pairs(base) do range[k] = v end
+    range.minDistance = math.max(base.minDistance, r * ShipFraming.CLEARANCE)
+    range.distance = math.max(base.distance, r * 3.0)
+    range.maxDistance = math.max(base.maxDistance, r * 60.0)
+    return range
 end
 
 --- Turn the orbit camera to these angles around its target.

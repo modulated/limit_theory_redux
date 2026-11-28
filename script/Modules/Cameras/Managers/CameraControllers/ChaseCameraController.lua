@@ -4,6 +4,7 @@ local PhysicsComponents = require("Modules.Physics.Components")
 local UIMouse = require("Input.UIMouse")
 local FreeLook = require("Modules.Cameras.FreeLook")
 local ConstructComponents = require("Modules.Constructs.Components")
+local ShipFraming = require("Modules.Cameras.ShipFraming")
 --- NaN is the only value that is not equal to itself; infinities compare
 --- out of range.
 ---@param v number
@@ -114,7 +115,7 @@ function ChaseCameraController:onPreRender(dt)
     -- so a 50m fighter and a 500m cruiser both sit at the same multiple
     -- of their own size. A floor of 1 GU would treat every small ship as
     -- a 1 GU object and push the camera hundreds of ship-lengths away.
-    local shipRadius = math.max(rb:getBoundingRadius(), 1e-4)
+    local shipRadius = math.max(ShipFraming.bodyRadius(rb), 1e-4)
     -- In travel, the camera draws back a little as the drive winds up (a
     -- stretch, with the ship held in the middle of the warp), and comes
     -- back in as it winds down
@@ -129,6 +130,11 @@ function ChaseCameraController:onPreRender(dt)
     -- Free look (right button held) swings the camera round the ship
     local prx, pry, prz = FreeLook.apply(self.posRel.x, self.posRel.y, self.posRel.z)
     local pr = { x = prx, y = pry, z = prz }
+    -- Zoomed all the way in, still outside the hull
+    local prLen = math.sqrt(prx * prx + pry * pry + prz * prz)
+    if prLen > 1e-6 then
+        scale = math.max(scale, ShipFraming.CLEARANCE * shipRadius / prLen)
+    end
 
     -- Transform posRel from ship-local to world space (matches legacy toWorld)
     self.posT = Position(
