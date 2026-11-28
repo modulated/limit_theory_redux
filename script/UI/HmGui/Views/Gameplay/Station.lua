@@ -379,7 +379,7 @@ local function orderPanel(station, s)
                             held, order.units, PlayerWallet.format(fee),
                             owned and 0 or math.floor(cfg.salesTax * 100)),
                         "Unageo-Regular", size, can and GREY or GOLD),
-                    wideButton("Place", s, can, false, function()
+                    wideButton("Place", s, 120, can, false, function()
                         local result = MarketSystem:placeOrder(station, key, order.side,
                             order.itemId, order.units, order.price)
                         if result.filled > 0 and result.resting then
@@ -398,7 +398,7 @@ local function orderPanel(station, s)
                                 { 1.0, 0.4, 0.3 })
                         end
                     end),
-                    wideButton("Close", s, true, false, function()
+                    wideButton("Close", s, 110, true, false, function()
                         Station.order = { itemId = nil, side = "buy", units = order.units }
                     end),
                 }
@@ -441,7 +441,7 @@ local function myOrders(station, s)
                     and string.format("  %s held", PlayerWallet.format(order.escrowCredits or 0))
                     or string.format("  %d units held", order.escrowUnits or 0),
                     "Unageo-Regular", size, DIM),
-                wideButton("Cancel", s, true, false, function()
+                wideButton("Cancel", s, 110, true, false, function()
                     MarketSystem:cancel(station, key, order)
                     LimitTheoryRedux:notify("Order cancelled; the broker keeps the fee.",
                         { 0.6, 0.9, 1.0 })
