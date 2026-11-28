@@ -48,7 +48,7 @@ end
 ---@generic T: Component
 ---@return T
 function Component:getArchetype()
-    return type(self)
+    return classOf(self)
 end
 
 ---@param entityId integer

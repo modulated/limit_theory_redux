@@ -11,6 +11,9 @@
   * Duck-typing an entity: `x.isValid ~= nil` and the like. A plain table can
     pass it, and a cdata Position errors on the missing field. Use Entity.is.
   * Comparing `type(...)` with a class name ("Entity", ...): never true.
+  * `type(self)` taken for an object's class (it is "table"): use classOf.
+    Component:getArchetype did this, and every component of an entity
+    landed in one slot when type() went back to Lua's own.
   * Reading `__type` outside the class library: use classOf.
 
   Prints each finding as file:line and exits 1 when there is any (0 when
@@ -49,6 +52,10 @@ local RULES = {
     {
         pattern = "type%b()%s*[~=]=%s*[\"'][A-Z]",
         message = "compares type(...) with a class name, which is never true: use isInstance / Entity.is",
+    },
+    {
+        pattern = "type%(self%)",
+        message = "type(self) is \"table\" for any object: its class is classOf(self)",
     },
     {
         pattern = "__type",
