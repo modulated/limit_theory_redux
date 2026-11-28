@@ -1,8 +1,11 @@
 --- Engine plumes: the jets out of a ship's stern while it accelerates.
 ---
---- Every ship gets nozzles at its stern, more for bigger hulls (by its
---- Targetable size class): one for a small ship, up to four for a capital,
---- side by side across the hull. Each nozzle draws, additively:
+--- The nozzles are where the hull's generator put its engines (ShipData's
+--- generated engines: CapitalHullGenerator's stern cap and stern pods), put
+--- into the world as the turrets are, and sized by each nozzle. A hull
+--- without them gets an estimate: nozzles at its stern, more for bigger
+--- hulls (by its Targetable size class), one for a small ship up to four
+--- for a capital, side by side across it. Each nozzle draws, additively:
 ---   * a glow at the nozzle (the projectile's pulse head shader), and
 ---   * the jet (effect/thrusterplume_draw): a white-hot core going over to
 ---     the engine's colour, narrowing to its tip, flickering, with shock
@@ -44,6 +47,9 @@ local CFG = {
     fullLength = 2.4,     -- at full throttle (boost goes past it)
     travelLength = 7.0,   -- under the travel drive
     idleAlpha = 0.12,
+    -- With the hull's own engine positions (ShipData), in nozzle radii:
+    nozzleHead = 1.6,     -- the nozzle glow
+    nozzleLength = 8.0,   -- the jet, times the length share above
     refAccel = 0.08,      -- game units/s^2 along the heading that reads as full throttle
     ease = 7.0,           -- how fast the throttle follows (per second)
 }
@@ -125,35 +131,63 @@ function EnginePlumeSystem:update(dt, ships)
                 if travel then target = 1.0 end
                 st.throttle = st.throttle + (target - st.throttle) * ease
 
-                -- The nozzles at the stern
+                -- The nozzles: where the hull's generator put its engines
+                -- (ShipData), else estimated from the ship's size, at its stern
                 local radius = math.max(rb:getBoundingRadius(), 1e-4)
-                local targetable = entity:get(ConstructComponents.Targetable)
-                local n = NOZZLES[targetable and targetable:getSizeClass() or "small"] or 1
-                local right = rot:getRight()
                 local color = COLORS[s.team or ""] or DEFAULT_COLOR
                 local th = st.throttle
-                local length = travel and CFG.travelLength
+                local lengthShare = travel and CFG.travelLength
                     or (CFG.idleLength + (CFG.fullLength - CFG.idleLength) * th)
                 local alpha = travel and 1.0 or (CFG.idleAlpha + (1 - CFG.idleAlpha) * math.min(1, th))
-                for i = 1, n do
-                    local side = (i - (n + 1) / 2) * CFG.spread * radius
+                local headShare = 0.45 + 0.55 * math.min(1, th)
+                local widthShare = travel and 1.3 or (0.6 + 0.4 * math.min(1, th))
+
+                local function add(i, x, y, z, head, width, length)
                     count = count + 1
                     local p = plumes[count]
                     if not p then
                         p = {}
                         plumes[count] = p
                     end
-                    p.x = pos.x - fwd.x * CFG.stern * radius + right.x * side
-                    p.y = pos.y - fwd.y * CFG.stern * radius + right.y * side
-                    p.z = pos.z - fwd.z * CFG.stern * radius + right.z * side
+                    p.x, p.y, p.z = x, y, z
                     p.fx, p.fy, p.fz = fwd.x, fwd.y, fwd.z
                     p.r, p.g, p.b = color[1], color[2], color[3]
                     p.alpha = alpha
                     p.throttle = travel and 1.5 or th
-                    p.head = CFG.headSize * radius * (0.45 + 0.55 * math.min(1, th))
-                    p.width = CFG.width * radius * (travel and 1.3 or (0.6 + 0.4 * math.min(1, th)))
-                    p.length = length * radius
+                    p.head, p.width, p.length = head, width, length
                     p.seed = (i * 7.31 + (tonumber(entity.id) or 0) % 97) % 31
+                end
+
+                local shipData = entity:get(ConstructComponents.ShipData)
+                local engines = shipData and shipData:getGeneratedEngines()
+                if engines and #engines > 0 then
+                    -- The hull's own space to the world, as the turrets go
+                    -- (RigidBodyComponent:toWorldScaled)
+                    local scale = rbCmp:getScale()
+                    for i, e in ipairs(engines) do
+                        local w = rbCmp:toWorldScaled(Vec3f(e.x, e.y, e.z))
+                        local nozzle = e.radius * scale
+                        -- The jet's length goes with the nozzle's size, in the
+                        -- same proportion to the hull as the estimate's
+                        add(i, w.x, w.y, w.z,
+                            nozzle * CFG.nozzleHead * headShare,
+                            nozzle * widthShare,
+                            nozzle * CFG.nozzleLength * lengthShare)
+                    end
+                else
+                    local targetable = entity:get(ConstructComponents.Targetable)
+                    local n = NOZZLES[targetable and targetable:getSizeClass() or "small"] or 1
+                    local right = rot:getRight()
+                    for i = 1, n do
+                        local side = (i - (n + 1) / 2) * CFG.spread * radius
+                        add(i,
+                            pos.x - fwd.x * CFG.stern * radius + right.x * side,
+                            pos.y - fwd.y * CFG.stern * radius + right.y * side,
+                            pos.z - fwd.z * CFG.stern * radius + right.z * side,
+                            CFG.headSize * radius * headShare,
+                            CFG.width * radius * widthShare,
+                            lengthShare * radius)
+                    end
                 end
             end
         end

@@ -98,6 +98,7 @@ local function applyGeneratedShipData(entity, shipType, config, generated, mesh)
     shipData:setRes(config and config.res)
     if type(generated) == "table" then
         shipData:setGeneratedMountSockets(generated.sockets)
+        shipData:setGeneratedEngines(generated.engines)
         shipData:setGenerationMetadata(generated.generator)
     end
 end

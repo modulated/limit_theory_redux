@@ -26,6 +26,9 @@ local ShipDataComponent = Subclass("ShipDataComponent", Component, function(
     self._class = nil         -- Ship class (e.g., "Interceptor")
     self._generatedMesh = nil -- Generated hull geometry in local coordinates
     self._generatedMountSockets = {}
+    -- The engines' nozzles, in the hull's own space: { x, y, z, radius }
+    -- (fore is +z, they fire toward -z). Empty when the generator gave none.
+    self._generatedEngines = {}
     self._generationMetadata = nil
 end)
 
@@ -38,6 +41,7 @@ function ShipDataComponent:getClass() return self._class end
 function ShipDataComponent:getGeneratedMesh() return self._generatedMesh end
 function ShipDataComponent:getGeneratedMountSockets() return self._generatedMountSockets end
 function ShipDataComponent:getGenerationMetadata() return self._generationMetadata end
+function ShipDataComponent:getGeneratedEngines() return self._generatedEngines end
 
 -- SETTERS
 function ShipDataComponent:setShipType(v) self._shipType = v end
@@ -48,5 +52,6 @@ function ShipDataComponent:setClass(v) self._class = v end
 function ShipDataComponent:setGeneratedMesh(v) self._generatedMesh = v end
 function ShipDataComponent:setGeneratedMountSockets(v) self._generatedMountSockets = v or {} end
 function ShipDataComponent:setGenerationMetadata(v) self._generationMetadata = v end
+function ShipDataComponent:setGeneratedEngines(v) self._generatedEngines = v or {} end
 
 return ShipDataComponent

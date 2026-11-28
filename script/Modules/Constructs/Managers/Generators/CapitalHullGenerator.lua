@@ -436,9 +436,54 @@ local function addLayeredStructure(mesh, dimensions, layers, rng)
     end
 end
 
+--- Where the engines are, in the hull's own space (fore is +z, so they fire
+--- toward -z): a nozzle at the middle of the core hull's aft cap, and one in
+--- the aft face of each of the two stern pods addLayeredStructure builds (at
+--- x +-0.40 beam, y -0.13 height, their faces at z -0.49 length). Each is
+--- { x, y, z, radius }, the radius what the face it sits in leaves room for.
+---
+--- A recipe can place them itself, `engines = { { x, y, z, radius } }`, in
+--- shares of the hull's beam (x, radius), height (y) and length (z): for
+--- a hull shaped otherwise.
+---@param dimensions table
+---@param frame table
+---@param recipe table
+---@return table[]
+local function engineNozzles(dimensions, frame, recipe)
+    local length, beam, height = dimensions.length, dimensions.beam, dimensions.height
+    local engines = {}
+    if type(recipe.engines) == "table" and #recipe.engines > 0 then
+        for _, e in ipairs(recipe.engines) do
+            engines[#engines + 1] = {
+                x = (e.x or 0) * beam,
+                y = (e.y or 0) * height,
+                z = (e.z or -0.5) * length,
+                radius = (e.radius or 0.08) * beam,
+            }
+        end
+        return engines
+    end
+    -- The core hull's stern ring (the profile at its aft end)
+    local aftBeam, aftHeight = sampleProfile(frame.profile or DEFAULT_PROFILE, 0)
+    engines[1] = {
+        x = 0, y = 0, z = -0.5 * length,
+        radius = 0.9 * math.min(0.5 * aftBeam * beam, 0.5 * aftHeight * height),
+    }
+    -- The stern pods' aft faces (their boxes' half sizes times the aft taper)
+    for _, sideSign in ipairs({ -1, 1 }) do
+        engines[#engines + 1] = {
+            x = sideSign * beam * 0.40,
+            y = -height * 0.13,
+            z = -length * (0.36 + 0.13),
+            radius = 0.85 * math.min(beam * 0.10 * 0.82, height * 0.15 * 0.82),
+        }
+    end
+    return engines
+end
+
 ---@param seed integer
 ---@param recipe table|nil
----@return table {mesh, generator, sockets}
+---@return table {mesh, generator, sockets, engines}
 function CapitalHullGenerator:generate(seed, recipe)
     assert(seed ~= nil, "capital hull generation requires a seed")
     recipe = recipe or {}
@@ -487,6 +532,7 @@ function CapitalHullGenerator:generate(seed, recipe)
             socketCount = #sockets,
         },
         sockets = sockets,
+        engines = engineNozzles(dimensions, frame, recipe),
     }
 end
 
