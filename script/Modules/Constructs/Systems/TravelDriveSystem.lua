@@ -83,6 +83,19 @@ local function setPhased(drive, rb, phased)
     rb:setCollidable(not phased)
 end
 
+--- The drive off at once, the ship solid again (docking: the drive cannot
+--- be left engaged, or passing through things, inside a station).
+---@param shipEntity Entity|nil
+function TravelDriveSystem:reset(shipEntity)
+    local drive = shipEntity and shipEntity:isValid() and shipEntity:get(ConstructComponents.TravelDrive)
+    if not drive then return end
+    drive:setState("idle")
+    drive:setCurrentMult(1.0)
+    local rbCmp = shipEntity:get(PhysicsComponents.RigidBody)
+    local rb = rbCmp and rbCmp:getRigidBody()
+    if rb then setPhased(drive, rb, false) end
+end
+
 --- Update the travel drive for a ship entity
 ---@param dt number Delta time
 ---@param shipEntity Entity

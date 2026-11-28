@@ -1290,6 +1290,9 @@ end
 ---@param dock table
 function LimitTheoryRedux:dockPlayer(dock)
     if not self.flow:to(Phase.Docked, dock.label) then return end
+    -- The travel drive cannot stay engaged (nor the ship passing through
+    -- things) inside a station
+    require("Modules.Constructs.Systems.TravelDriveSystem"):reset(self.playerShip)
     if self.cloak.active then self:setCloak(false) end
     AutoPilotSystem:disengage(self.playerShip)
     self.course = nil
@@ -3040,6 +3043,11 @@ function LimitTheoryRedux:destroyScene(keepShip)
     require('Modules.Rendering.Systems.SpeedFeelSystem'):disable()
     -- The overview's list and anything it set going belong to this system
     SystemOverview:invalidate()
+    -- What the ship was doing goes with the scene: the laser's rock and its
+    -- beam, a jump drive's charge
+    if self.miningJob then self:stopMining() end
+    MiningBeam:stop()
+    self.driveJump = nil
     self.lookingAt, self.arrivalAction = nil, nil
     self:clearAllTargets()
     self.confirmation = nil
