@@ -437,8 +437,14 @@ end
 
 --- Remove an NPC ship now (its battery goes with it on the next weapons step).
 ---@param record table
-function NpcSystem:remove(record)
+---@param why string|nil for the log (testing: debug.traceNpcLoss)
+function NpcSystem:remove(record, why)
     record.removed = true
+    if Config.game.debug and Config.game.debug.traceNpcLoss then
+        Log.Info("NPC removed: %s (%s) -- %s", tostring(record.label), tostring(record.role), why or "?")
+    end
+    -- What NpcSystem destroys itself is not a loss to trace
+    record.removing = true
     self.byEntity[record.entity] = nil
     for i, r in ipairs(self.records) do
         if r == record then table.remove(self.records, i) break end
@@ -514,7 +520,7 @@ end
 --- Remove every NPC (the scene is going).
 function NpcSystem:clear()
     for i = #self.records, 1, -1 do
-        self:remove(self.records[i])
+        self:remove(self.records[i], "the scene was cleared")
     end
     self.records = {}
     self.player = nil
@@ -672,6 +678,14 @@ function NpcSystem:update(dt)
             if defense and not record.dead then defense:update(dt) end
 
             if not self:isAlive(record.entity) then
+                if Config.game.debug and Config.game.debug.traceNpcLoss then
+                    local valid = record.entity:isValid()
+                    local health = valid and record.entity:get(CoreComponents.Health)
+                    Log.Info("NPC lost: %s (%s): %s", tostring(record.label), tostring(record.role),
+                        not valid and "its entity was destroyed (by someone else)"
+                        or string.format("hull %s of %s", tostring(health and health:getCurrentHealth()),
+                            tostring(health and health:getMaxHealth())))
+                end
                 -- Destroyed: the weapon system explodes it; the wreck goes later
                 record.dead = Config.game.npc.wreckTime
                 -- What it leaves behind (LimitTheoryRedux: a cargo canister)
@@ -710,13 +724,13 @@ function NpcSystem:update(dt)
         local record = self.records[i]
         if record.dead then
             record.dead = record.dead - dt
-            if record.dead <= 0 then self:remove(record) end
+            if record.dead <= 0 then self:remove(record, "wreck cleared") end
         elseif record.pilot.leaving then
             -- Its guards jump out with it
             for _, guard in ipairs(record.guards or {}) do
                 if not guard.dead and not guard.removed then guard.pilot.leaving = true end
             end
-            self:remove(record)
+            self:remove(record, "left through a gate")
         end
     end
 

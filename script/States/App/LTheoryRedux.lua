@@ -172,6 +172,7 @@ function LimitTheoryRedux:onInit()
     require("Input.BindingConflicts").report()
     -- Where the game is in its life: one state, checked moves (GameFlow)
     self.flow = GameFlow.new()
+    self:traceNpcLoss()
     -- Expose the scene builder to the main menu (New Game button)
     GameState.startGame = function(seed, scenario) self:requestNewGame(seed, scenario) end
 
@@ -2673,6 +2674,29 @@ function LimitTheoryRedux:drawSignatureMarkers(w, h, font)
     end
 end
 
+--- Testing (debug.traceNpcLoss): anything other than NpcSystem that
+--- destroys an NPC ship's entity is logged with its call stack.
+function LimitTheoryRedux:traceNpcLoss()
+    if not (Config.game.debug and Config.game.debug.traceNpcLoss) or self.npcLossHooked then return end
+    self.npcLossHooked = true
+    local Reg = require("Core.ECS.Registry")
+    local original = Reg.destroyEntity
+    local game = self
+    Reg.destroyEntity = function(registry, entity, mode)
+        local npcs = game.npcs
+        if npcs and entity and entity.id then
+            for _, record in ipairs(npcs.records or {}) do
+                if record.entity and record.entity.id == entity.id and not record.removing then
+                    Log.Warn("NPC ship destroyed from outside NpcSystem: %s (%s)\n%s",
+                        tostring(record.label), tostring(record.role), debug.traceback("", 2))
+                    break
+                end
+            end
+        end
+        return original(registry, entity, mode)
+    end
+end
+
 --- Every `debug.censusInterval` seconds, a line in the log: how many NPC
 --- ships there are and in what state, how many reach the maps and the
 --- overview, and the nearest hostile. Where ships go missing shows here.
@@ -3785,7 +3809,7 @@ function LimitTheoryRedux:updatePlayerForces(dt)
         for _, event in ipairs(events) do self:notify(event.text, { 1.0, 0.6, 0.3 }) end
         for _, id in ipairs(left) do
             local record = self.forceRecords and self.forceRecords[id]
-            if record and not record.removed then self.npcs:remove(record) end
+            if record and not record.removed then self.npcs:remove(record, "wages unpaid") end
             if self.forceRecords then self.forceRecords[id] = nil end
         end
     end
@@ -3948,7 +3972,7 @@ function LimitTheoryRedux:releaseUnit(unit)
         self:notify(unit.name .. " paid off and gone.", { 0.6, 0.9, 1.0 })
     end
     PlayerForces:remove(unit.id)
-    if record and not record.removed then self.npcs:remove(record) end
+    if record and not record.removed then self.npcs:remove(record, "recalled or paid off") end
     if self.forceRecords then self.forceRecords[unit.id] = nil end
 end
 
