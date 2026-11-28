@@ -142,7 +142,7 @@ local function wideButton(label, s, width, enabled, active, callback)
 end
 
 --- Which item the order panel is working on, and what it is set to.
-Station.order = { itemId = nil, side = "buy", price = nil, units = 10 }
+Station.order = { itemId = nil, side = "buy", price = nil, units = 1 }
 
 --- Point the order panel at an item, starting from the market's own price.
 ---@param station Entity
@@ -156,7 +156,7 @@ local function selectOrder(station, itemId, side)
         itemId = itemId,
         side = side,
         price = math.max(1, math.floor(start or 10)),
-        units = Station.order.units or 10,
+        units = Station.order.units or 1,
     }
 end
 
@@ -251,6 +251,46 @@ end
 ---@param station Entity
 ---@param s number
 ---@return UILayoutGrid|nil
+--- The order's units, typed: an editable field holding the number. It is
+--- made again when a button changes the units (and keeps what is typed
+--- otherwise); anything typed that is a whole number of 1 or more is the
+--- order's units.
+local unitsView, unitsViewValue = nil, nil
+
+---@param order table
+---@param s number
+---@return UIComponentTextView
+local function unitsField(order, s)
+    if unitsView and unitsViewValue ~= order.units then unitsView = nil end
+    if not unitsView then
+        unitsView = UIComponent.TextView {
+            text = tostring(order.units),
+            editable = true,
+            multiline = false,
+            style = {
+                font = { size = math.floor(15 * s), family = "Unageo" },
+                brush = WHITE,
+                selectionBrush = BUTTON_HI,
+                cursorBrush = WHITE,
+            },
+            width = math.floor(80 * s),
+            backgroundColor = BUTTON_BG,
+            align = { AlignHorizontal.Right, AlignVertical.Center },
+            -- with a callback, the view copies what is typed into its text data
+            callback = function() end,
+        }
+        unitsViewValue = order.units
+    end
+    -- What is typed, when it is a natural number
+    local ok, typed = pcall(function() return require("ffi").string(unitsView.state.textData():text()) end)
+    local n = ok and tonumber((typed or ""):match("^%s*(%d+)%s*$"))
+    if n and n >= 1 and n ~= order.units then
+        order.units = math.min(n, 1000000000)
+        unitsViewValue = order.units
+    end
+    return unitsView
+end
+
 local function orderPanel(station, s)
     local order = Station.order
     if not order.itemId then return nil end
@@ -320,11 +360,11 @@ local function orderPanel(station, s)
                     step("+1%", 0.01, "price", 1),
                     step("+10%", 0.1, "price", 1),
                     text("        units", "Unageo-Regular", size, DIM),
-                    text(tostring(order.units), "Unageo-Medium", size, WHITE, AlignHorizontal.Right),
-                    step("-100", -100, "units", 1),
+                    unitsField(order, s),
                     step("-10", -10, "units", 1),
+                    step("-1", -1, "units", 1),
+                    step("+1", 1, "units", 1),
                     step("+10", 10, "units", 1),
-                    step("+100", 100, "units", 1),
                 }
             },
             Grid {

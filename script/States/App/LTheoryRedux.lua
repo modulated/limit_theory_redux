@@ -4740,6 +4740,8 @@ function LimitTheoryRedux:onInput(data)
         end
     end
     if self.pauseMenuOpen then return end
+    -- Typing in a field (an order's units): the keys are the field's
+    if Gui:hasActiveInput() then return end
 
     GeneralActions.CycleMapMode:update(dt)
     GeneralActions.AutoPilotToggle:update(dt)
