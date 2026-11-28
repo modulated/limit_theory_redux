@@ -290,6 +290,8 @@ function PlayerFleet:restore(entity, turrets, spare)
         loadout = entity:add(ConstructComponents.Loadout(moduleSlots))
     end
     loadout:setModuleSlots(moduleSlots)
+    -- What size of module the hull takes (S, M, L, C)
+    loadout.hullClass = hull and hull.class or nil
     ShipFittingSystem:setMounts(entity, turrets)
     if not ship then
         ShipFittingSystem:apply(entity)
@@ -350,7 +352,7 @@ function PlayerFleet:restore(entity, turrets, spare)
     end
     for slot, id in pairs(ship.modules) do
         local def = Fittings:get(id)
-        if def and slot <= moduleSlots then
+        if def and slot <= moduleSlots and ShipFittingSystem:moduleFits(def, loadout.hullClass) then
             loadout:setModule(slot, def)
         elseif def then
             handBack(def)

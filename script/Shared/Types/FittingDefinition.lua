@@ -26,6 +26,7 @@
 ---@field description string one line, for the refit screen
 ---@field slot string "weapon" or "module"
 ---@field sizeClass string|nil for a weapon: the smallest mount it fits (Enums.Weapon.MountSizeClass)
+---@field moduleClass string|nil for a module: "S", "M", "L" or "C", the smallest hull class it fits
 ---@field itemName string the item that *is* this fitting, by registry key
 ---@field weaponId integer|nil the weapon it mounts (Enums.Weapon.Type)
 ---@field effects table|nil { add = { stat = number }, scale = { stat = number } }
@@ -55,6 +56,7 @@ FittingDefinition.Stat = {
     MarketReach = "marketReach", -- add: jumps away whose order books can be read
     SignatureRange = "signatureRange",       -- scale: how far off a ship's signature shows (sensors)
     SignatureAccuracy = "signatureAccuracy", -- scale: how closely a signature is placed (sensors)
+    JumpRange = "jumpRange", -- add: how far the jump drive reaches, in shares of the galaxy's radius
 }
 
 ---@param args table
@@ -70,6 +72,7 @@ function FittingDefinition.new(args)
     self.description = args.description or ""
     self.slot = args.slot
     self.sizeClass = args.sizeClass
+    self.moduleClass = args.moduleClass
     self.itemName = args.itemName
     self.weaponId = args.weaponId
     self.effects = args.effects

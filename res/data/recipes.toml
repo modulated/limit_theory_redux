@@ -938,4 +938,71 @@ outputs = [
     { item = "Waste", count = 2 },
 ]
 
-# The next free recipe id: 57
+[[recipe]]
+id = 57
+name = "Large Ship Hull Drydock"
+class = "Drydock"
+duration = 21600
+inputs = [
+    { item = "Energy Cell", count = 40 },
+    { item = "Glassiron", count = 180 },
+    { item = "Transparent Aluminum", count = 32 },
+    { item = "Steel", count = 70 },
+    { item = "Gold", count = 6 },
+    { item = "Platinum", count = 6 },
+    { item = "Infolytic Chip", count = 12 },
+    { item = "Thorium", count = 10 },
+    { item = "Ship Sensor", count = 3 },
+    { item = "Ship Computer", count = 3 },
+    { item = "Ship Engine, Thruster", count = 6 },
+]
+outputs = [
+    { item = "Ship Hull, Large", count = 1 },
+    { item = "Waste", count = 6400 },
+]
+
+[[recipe]]
+id = 58
+name = "Capital Ship Hull Drydock"
+class = "Drydock"
+duration = 43200
+inputs = [
+    { item = "Energy Cell", count = 90 },
+    { item = "Glassiron", count = 420 },
+    { item = "Transparent Aluminum", count = 80 },
+    { item = "Steel", count = 180 },
+    { item = "Gold", count = 14 },
+    { item = "Platinum", count = 14 },
+    { item = "Iridium", count = 20 },
+    { item = "Infolytic Chip", count = 30 },
+    { item = "Thorium", count = 24 },
+    { item = "Ship Sensor", count = 6 },
+    { item = "Ship Computer", count = 6 },
+    { item = "Ship Engine, Impeller", count = 6 },
+]
+outputs = [
+    { item = "Ship Hull, Very Large", count = 1 },
+    { item = "Waste", count = 14000 },
+]
+
+[[recipe]]
+id = 59
+name = "Jump Drive Factory"
+class = "Factory"
+duration = 28800
+inputs = [
+    { item = "Iridium", count = 40 },
+    { item = "Platinum", count = 20 },
+    { item = "Thorium", count = 30 },
+    { item = "Radioactive Isotopes", count = 60 },
+    { item = "Infolytic Chip", count = 40 },
+    { item = "Transparent Aluminum", count = 30 },
+    { item = "Drone Control Core", count = 2 },
+    { item = "Ship Computer", count = 4 },
+]
+outputs = [
+    { item = "Jump Drive", count = 1 },
+    { item = "Radioactive Waste", count = 20 },
+]
+
+# The next free recipe id: 60

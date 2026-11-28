@@ -12,6 +12,10 @@
 #                fitting per item.
 #   slot         "weapon" (a mount) or "module" (a slot)
 #   description  one line for the refit screen
+#   class        modules only: the size class, "S" (default), "M", "L" or "C".
+#                A module fits a hull of its class or bigger (HullDefs.lua:
+#                Solo and Small are S, Compact and Medium M, Large L, Capital
+#                C); a C module only a capital.
 #
 # Weapons (and tools, which go on a mount but are not guns):
 #   weapon       the weapon it mounts, by its name in Enums.Weapon.Type:
@@ -29,7 +33,9 @@
 #                  Stats: maxShield, shieldRegen, armor, maxHealth, cargoMass,
 #                  thrust, turn, scanRange, miningRate, marketReach,
 #                  signatureRange, signatureAccuracy (hunting: how far off a
-#                  ship's signature shows, and how closely it is placed)
+#                  ship's signature shows, and how closely it is placed),
+#                  jumpRange (add: the jump drive's reach, in shares of the
+#                  galaxy's radius)
 #   ability        an active module, on the number keys:
 #                  { key = "<ability>", cooldown = <s>, duration = <s>,
 #                    magnitude = <how much> }; key is one of shieldBoost,
@@ -143,6 +149,7 @@ effects.scale = { thrust = 1.25 }
 [[module]]
 id = 13
 name = "Impeller Engine"
+class = "M"
 item = "Ship Engine, Impeller"
 slot = "module"
 description = "A heavy drive: a lot more push, at the cost of turning."
@@ -168,6 +175,7 @@ ability = { key = "afterburner", cooldown = 18, duration = 6, magnitude = 2.2 }
 [[module]]
 id = 16
 name = "Hull Repair Pulse"
+class = "M"
 item = "Hull Repair Pulse"
 slot = "module"
 description = "Welds the hull back together, once in a while, for free."
@@ -207,6 +215,7 @@ effects.add = { marketReach = 2 }
 [[module]]
 id = 20
 name = "Deep-Space Sensor Array"
+class = "M"
 item = "Deep-Space Sensor Array"
 slot = "module"
 description = "Hears ships further off: signatures show at half as far again."
@@ -215,9 +224,19 @@ effects.scale = { signatureRange = 1.5, scanRange = 1.1 }
 [[module]]
 id = 21
 name = "Signal Triangulator"
+class = "M"
 item = "Signal Triangulator"
 slot = "module"
 description = "Pins a signature down: it is placed twice as closely."
 effects.scale = { signatureAccuracy = 2 }
 
-# The next free module id: 22
+[[module]]
+id = 22
+name = "Jump Drive"
+class = "C"
+item = "Jump Drive"
+slot = "module"
+description = "Folds space to another star system within reach, no gate needed. Burns Radioactive Isotopes."
+effects.add = { jumpRange = 0.55 }
+
+# The next free module id: 23

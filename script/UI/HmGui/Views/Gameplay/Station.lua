@@ -890,7 +890,8 @@ local function refit(s)
         local list = {}
         for _, row in ipairs(ShipFittingSystem:fittableFrom(ship, hangar)) do
             if row.fitting.slot == slotKind
-                and (slotKind ~= "weapon" or ShipFittingSystem:weaponFits(row.fitting, sizeClass)) then
+                and (slotKind ~= "weapon" or ShipFittingSystem:weaponFits(row.fitting, sizeClass))
+                and (slotKind ~= "module" or ShipFittingSystem:moduleFits(row.fitting, loadout.hullClass)) then
                 list[#list + 1] = row
             end
         end
@@ -1033,7 +1034,8 @@ local function refit(s)
     end
 
     -- The slots
-    rows[#rows + 1] = text("MODULE SLOTS        active ones go on the action bar (keys 1-8)",
+    rows[#rows + 1] = text(string.format("MODULE SLOTS        %s-class hull: takes modules of class %s   ·   active ones go on the action bar (keys 1-8)",
+            loadout.hullClass or "?", ({ S = "S", M = "S and M", L = "S, M and L", C = "any" })[loadout.hullClass or "C"] or "any"),
         "Unageo-Medium", math.floor(13 * s), ACCENT)
     for slot = 1, loadout:getModuleSlots() do
         local fitted = loadout:getModule(slot)
@@ -1041,7 +1043,8 @@ local function refit(s)
         for _, row in ipairs(available("module")) do
             if not fitted or fitted.id ~= row.fitting.id then
                 buttons[#buttons + 1] = wideButton(
-                    string.format("%s (%d)", row.fitting.displayName, row.units), s, 200, true, false,
+                    string.format("[%s] %s (%d)", row.fitting.moduleClass or "S", row.fitting.displayName, row.units),
+                    s, 200, true, false,
                     function()
                         local ok, reason = ShipFittingSystem:fitModule(ship, hangar, slot, row.fitting)
                         LimitTheoryRedux:notify(ok
@@ -1067,8 +1070,8 @@ local function refit(s)
         local cells = { Grid.Fixed(90 * s), Grid.Fixed(230 * s), Grid.Fixed(360 * s) }
         local contents = {
             text(string.format("slot %d", slot), "Unageo-Regular", size, GREY),
-            text(fitted and fitted.displayName or "empty", "Unageo-Regular", size,
-                fitted and WHITE or DIM),
+            text(fitted and string.format("[%s] %s", fitted.moduleClass or "S", fitted.displayName) or "empty",
+                "Unageo-Regular", size, fitted and WHITE or DIM),
             text(fitted and fitted:describeEffects() or "", "Unageo-Regular", size, DIM),
         }
         for _, button in ipairs(buttons) do

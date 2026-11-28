@@ -208,6 +208,21 @@ Config.game = {
         },
     },
 
+    -- The jump drive (a capital's C module, res/data/modules.toml): from the
+    -- galaxy map, to any system within its reach (the fit's jumpRange, in
+    -- shares of the galaxy's radius), gate or no gate. It charges for
+    -- `spoolTime` seconds (docking calls it off), burns `fuelPerRadius` of
+    -- the fuel item per galaxy radius jumped (at least `minFuel`) from the
+    -- hold, and needs `cooldown` seconds before it can jump again. The ship
+    -- arrives in the system's open space, not at a gate.
+    jumpDrive = {
+        spoolTime     = 10,
+        cooldown      = 120,
+        fuelItem      = "Radioactive Isotopes",
+        fuelPerRadius = 120,
+        minFuel       = 10,
+    },
+
     -- Jump gates in the played system, one per link of its node.
     jumpGates = {
         -- How many of the system's points of interest (planets, asteroid

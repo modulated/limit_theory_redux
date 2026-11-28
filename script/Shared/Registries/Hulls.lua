@@ -22,6 +22,7 @@ Hulls.all = {}
 ---@field item ItemDefinition the hull itself, as a good
 ---@field itemId integer
 ---@field moduleSlots integer
+---@field class string size class: "S", "M", "L" or "C" (what modules it takes)
 ---@field scale number how big the generated hull is
 ---@field stats table { maxHealth, maxShield, shieldRegen }
 ---@field capacitor table { maxCharge, chargeRate }
@@ -37,6 +38,8 @@ function Hulls:add(def)
     assert(def.item, "hull '" .. tostring(def.name) .. "' names no item")
     assert(def.sockets and #def.sockets > 0,
         "hull '" .. tostring(def.name) .. "' has no weapon sockets")
+    assert(({ S = true, M = true, L = true, C = true })[def.class],
+        "hull '" .. tostring(def.name) .. "' needs a class: S, M, L or C")
     def.displayName = def.displayName or def.name
     def.name = (def.name:gsub("[^%w]", ""))
     def.itemId = def.item.id
@@ -92,8 +95,8 @@ function Hulls.describe(def)
     for _, size in ipairs({ "XL", "L", "M", "SM" }) do
         if sizes[size] then parts[#parts + 1] = string.format("%dx%s", sizes[size], size) end
     end
-    return string.format("%s mounts, %d module slots, %d hull, %d shield",
-        table.concat(parts, " "), def.moduleSlots, def.stats.maxHealth, def.stats.maxShield)
+    return string.format("%s-class  ·  %s mounts, %d module slots, %d hull, %d shield",
+        def.class or "?", table.concat(parts, " "), def.moduleSlots, def.stats.maxHealth, def.stats.maxShield)
 end
 
 setmetatable(Hulls, {

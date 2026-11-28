@@ -26,7 +26,10 @@ local Stat = FittingDefinition.Stat
 local Weapon = Enums.Weapon
 local Size = Weapon.MountSizeClass
 
-local FIELDS = { "id", "name", "item", "slot", "description", "weapon", "size", "effects", "ability", "tool" }
+local FIELDS = { "id", "name", "item", "slot", "description", "weapon", "size", "class", "effects", "ability", "tool" }
+-- A module's size class (EVE's S/M/L/capital): it fits a hull of that class
+-- or bigger (Shared/Definitions/HullDefs.lua); a C module only a capital
+local CLASSES = { S = true, M = true, L = true, C = true }
 local TOOL_KINDS = { mining = true }
 local ABILITY_FIELDS = { key = true, cooldown = true, duration = true, magnitude = true }
 
@@ -105,6 +108,7 @@ for _, entry in ipairs(file.module) do
         end
     else
         if entry.weapon or entry.size or entry.tool then f:fail("only a mount fitting has `weapon`, `tool` and `size`") end
+        def.moduleClass = f:oneOf("class", CLASSES, true) or "S"
         local effects = f:tbl("effects", true)
         if effects then
             for k in pairs(effects) do

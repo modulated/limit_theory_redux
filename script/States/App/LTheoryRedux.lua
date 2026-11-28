@@ -4124,11 +4124,127 @@ function LimitTheoryRedux:gateInRange()
     return nil
 end
 
+------------------------------------------------------------------------------
+-- The jump drive (Config.game.jumpDrive): a capital's way between systems
+-- without a gate
+------------------------------------------------------------------------------
+
+--- How far the fitted jump drive reaches, in shares of the galaxy's radius
+--- (0: no drive).
+---@return number
+function LimitTheoryRedux:jumpDriveReach()
+    return self:fitStat("jumpRange", 0) or 0
+end
+
+--- How far a system is from this one, in shares of the galaxy's radius.
+---@param targetId integer
+---@return number|nil
+function LimitTheoryRedux:galaxyDistance(targetId)
+    local galaxy = self.galaxy
+    local here = galaxy and galaxy.systems[self.currentSystemId]
+    local there = galaxy and galaxy.systems[targetId]
+    if not here or not there or not galaxy.radius or galaxy.radius <= 0 then return nil end
+    local a, b = here.position, there.position
+    return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2 + (a.z - b.z) ^ 2) / galaxy.radius
+end
+
+--- The fuel a jump to a system takes.
+---@param targetId integer
+---@return integer units, ItemDefinition|nil fuel
+function LimitTheoryRedux:jumpDriveFuel(targetId)
+    local cfg = Config.game.jumpDrive
+    local fuel = Items:getByName(cfg.fuelItem)
+    local d = self:galaxyDistance(targetId) or 0
+    return math.max(cfg.minFuel or 0, math.ceil(d * cfg.fuelPerRadius)), fuel
+end
+
+--- Whether the drive can jump to a system now, and if not, why.
+---@param targetId integer|nil
+---@return boolean, string|nil reason
+function LimitTheoryRedux:canDriveJump(targetId)
+    local reach = self:jumpDriveReach()
+    if reach <= 0 then return false, "no jump drive fitted (a capital's C module)" end
+    if not targetId or targetId == self.currentSystemId then return false, "you are in that system" end
+    if self.docked then return false, "undock first" end
+    if self.jump then return false, "already jumping" end
+    local d = self:galaxyDistance(targetId)
+    if not d then return false, "no such system" end
+    if d > reach then
+        return false, string.format("out of reach (%.0f%% of the drive's range)", 100 * d / reach)
+    end
+    local left = (self.jumpDriveReady or 0) - (self.simTime or 0)
+    if left > 0 then return false, string.format("the drive is cooling down: %ds", math.ceil(left)) end
+    local units, fuel = self:jumpDriveFuel(targetId)
+    if not fuel or PlayerCargo:get():count(fuel.id) < units then
+        return false, string.format("needs %d %s in the hold", units, Config.game.jumpDrive.fuelItem)
+    end
+    return true
+end
+
+--- What the galaxy map says about jumping to a system with the drive.
+---@param targetId integer
+---@return string|nil text, table|nil color
+function LimitTheoryRedux:jumpDriveLine(targetId)
+    if self:jumpDriveReach() <= 0 or targetId == self.currentSystemId then return nil end
+    if self.driveJump then
+        return string.format("Jump drive charging: %ds", math.ceil(self.driveJump.time)), { 0.6, 0.9, 1.0 }
+    end
+    local ok, reason = self:canDriveJump(targetId)
+    if ok then
+        local units = self:jumpDriveFuel(targetId)
+        return string.format("J: jump drive (%d %s)", units, Config.game.jumpDrive.fuelItem), { 0.4, 1.0, 0.6 }
+    end
+    return "Jump drive: " .. reason, { 1.0, 0.6, 0.4 }
+end
+
+--- Start the drive's charge toward a system.
+---@param targetId integer
+function LimitTheoryRedux:engageJumpDrive(targetId)
+    if self.driveJump then
+        self.driveJump = nil
+        self:notify("Jump drive charge cancelled.", { 0.75, 0.8, 0.85 })
+        return
+    end
+    local ok, reason = self:canDriveJump(targetId)
+    if not ok then
+        self:notify("Jump drive: " .. reason, { 1.0, 0.6, 0.4 })
+        return
+    end
+    self.driveJump = { to = targetId, time = Config.game.jumpDrive.spoolTime }
+    self:notify(string.format("Jump drive charging for %s: %ds", self.galaxy.systems[targetId].name,
+        Config.game.jumpDrive.spoolTime), { 0.6, 0.9, 1.0 })
+end
+
+--- Each frame: the charge runs down, and at its end the ship jumps.
+---@param dt number
+function LimitTheoryRedux:updateJumpDrive(dt)
+    local charge = self.driveJump
+    if not charge then return end
+    if self.docked or self.jump or not self.playerShip then
+        self.driveJump = nil
+        return
+    end
+    charge.time = charge.time - dt
+    if charge.time > 0 then return end
+    self.driveJump = nil
+    -- Checked again: the hold or the fit may have changed while it charged
+    local ok, reason = self:canDriveJump(charge.to)
+    if not ok then
+        self:notify("Jump drive: " .. reason, { 1.0, 0.6, 0.4 })
+        return
+    end
+    local units, fuel = self:jumpDriveFuel(charge.to)
+    PlayerCargo:get():remove(fuel.id, units)
+    self.jumpDriveReady = (self.simTime or 0) + Config.game.jumpDrive.cooldown
+    self:startJump({ destination = self.galaxy.systems[charge.to] }, true)
+end
+
 --- Jump through a gate: the screen goes dark, this star system goes, and a
 --- few frames later (the GPU frees the old system's memory meanwhile) the
 --- destination is built and the ship arrives at its gate back.
----@param gate JumpGatePlacement
-function LimitTheoryRedux:startJump(gate)
+---@param gate JumpGatePlacement|{ destination: table } (the jump drive: no gate)
+---@param drive boolean|nil by the jump drive: the ship arrives in open space
+function LimitTheoryRedux:startJump(gate, drive)
     local from = self.currentSystemId
     local to = gate.destination.id
     Log.Info("Jump: %s -> %s", self.galaxy.systems[from].name, gate.destination.name)
@@ -4147,7 +4263,7 @@ function LimitTheoryRedux:startJump(gate)
     -- Leaving the scenario's own system ends the scenario: its things go
     -- with the scene (destroyScene runs its teardown), and from the next
     -- system on it is plain travel (finishJump).
-    self.jump = { from = from, to = to, name = gate.destination.name, frames = REBUILD_DELAY_FRAMES }
+    self.jump = { from = from, to = to, name = gate.destination.name, frames = REBUILD_DELAY_FRAMES, drive = drive }
     self:destroyScene(true)
     if self.skybox then
         Registry:destroyEntity(self.skybox, Enums.Registry.EntityDestroyMode.DestroyChildren)
@@ -4184,6 +4300,9 @@ function LimitTheoryRedux:finishJump()
         -- A loaded game arriving where it was saved
         self:placeShipFromSave(jump.arrival)
         if not jump.arrival.position then self:placeShipAtArrival(nil) end
+    elseif jump.drive then
+        -- The jump drive: in the system's open space, no gate
+        self:placeShipAtArrival(nil)
     else
         self:placeShipAtArrival(jump.from)
     end
@@ -4346,6 +4465,10 @@ function LimitTheoryRedux:drawNavigation()
         local dock = self:dockInRange()
         if dock then
             table.insert(lines, { text = "F: dock", color = { 0.6, 0.9, 1.0 } })
+        end
+        if self.driveJump and self.galaxy then
+            table.insert(lines, { text = string.format("JUMP DRIVE  ·  %s in %ds  ·  J on the galaxy map cancels",
+                self.galaxy.systems[self.driveJump.to].name, math.ceil(self.driveJump.time)), color = { 0.6, 0.9, 1.0 } })
         end
         -- Mining: the laser's cycle, or what is in reach of it
         local job = self.miningJob
@@ -4657,6 +4780,9 @@ function LimitTheoryRedux:onInput(data)
         self.player:setMode(self.player:getMode())
     end
 
+    -- The jump drive charges with a map open too (it is set from the galaxy map)
+    self:updateJumpDrive(dt)
+
     if self.mapMode > 0 then
         local ctrl = self.player:getActiveController()
         if ctrl and ctrl:isEnabled() then ctrl:disable() end
@@ -4665,6 +4791,10 @@ function LimitTheoryRedux:onInput(data)
         if self.mapMode == 3 then
             GalaxyMap:updateInput(self.galaxyMapState, dt)
 
+            -- J: the jump drive to the selected system
+            if GeneralActions.Jump:isPressed() and self.galaxyMapState.selectedId then
+                self:engageJumpDrive(self.galaxyMapState.selectedId)
+            end
             local route = self.galaxyMapState.route
             if GeneralActions.AutoPilotToggle:isPressed() and route and #route > 0 then
                 self:setCourse(route)
@@ -4712,7 +4842,7 @@ function LimitTheoryRedux:onInput(data)
         end
     end
 
-    if GeneralActions.Jump:isPressed() and not self.docked then
+    if GeneralActions.Jump:isPressed() and not self.docked and self.mapMode == 0 then
         local gate = self:gateInRange()
         if gate then self:startJump(gate) end
     end

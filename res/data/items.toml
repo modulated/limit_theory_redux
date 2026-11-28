@@ -560,6 +560,14 @@ price = 3800
 # Constructs
 # --------------------------------------------------------------------------
 
+
+[[item]]
+id = 79
+name = "Jump Drive"
+group = "Equipment"
+mass = 2400
+energy_density = 30
+price = 420000
 [[item]]
 id = 40
 name = "Ship Hull, Solo"
@@ -711,4 +719,4 @@ mass = 13
 energy_density = 50
 price = 600
 
-# The next free item id: 79
+# The next free item id: 80

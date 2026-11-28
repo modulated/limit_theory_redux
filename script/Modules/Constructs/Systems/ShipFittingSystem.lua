@@ -14,7 +14,9 @@ local CoreComponents = require("Modules.Core.Components")
 ---    not fit a medium mount; a pulse turret in a large one is a waste but
 ---    allowed). The mount's turret then resolves that weapon every frame, so
 ---    the gun *is* what was fitted.
----  * A module goes in any free slot; the hull decides how many there are.
+---  * A module goes in any free slot (the hull decides how many there are)
+---    of a hull its size class or bigger: S, M, L, C, as EVE has them. A C
+---    module (the jump drive) goes only in a capital.
 ---  * `apply` works the stats out from the hull's base and the fit, every
 ---    time either changes: `add` effects summed, `scale` effects multiplied,
 ---    then written to the ship's components. Nothing else writes those, so a
@@ -27,6 +29,10 @@ local Stat = FittingDefinition.Stat
 --- How big a mount is, in order, so a weapon can be put in anything at least
 --- as large.
 local SIZE_ORDER = { sm = 1, m = 2, l = 3, xl = 4 }
+
+--- Hull and module size classes, smallest first.
+local CLASS_ORDER = { S = 1, M = 2, L = 3, C = 4 }
+ShipFittingSystem.CLASS_NAMES = { S = "small", M = "medium", L = "large", C = "capital" }
 
 --- The base stats a ship starts from, before anything is fitted. Kept on the
 --- loadout the first time `apply` runs, so taking a module off puts the ship
@@ -72,6 +78,8 @@ function ShipFittingSystem:computeStats(ship)
         -- Hunting: how far off signatures show, and how closely they are placed
         [Stat.SignatureRange] = 1,
         [Stat.SignatureAccuracy] = 1,
+        -- No jump drive, no reach
+        [Stat.JumpRange] = 0,
     }
 
     -- Every fitting's adds first, then every scale, so the order modules were
@@ -214,6 +222,16 @@ function ShipFittingSystem:unfitWeapon(ship, store, mountId)
     return true
 end
 
+--- Whether a module can go on a hull of this class: its own class or bigger.
+---@param def FittingDefinition
+---@param hullClass string|nil nil: no class known (fits)
+---@return boolean
+function ShipFittingSystem:moduleFits(def, hullClass)
+    if not def or def:isWeapon() then return false end
+    if not hullClass then return true end
+    return (CLASS_ORDER[hullClass] or 0) >= (CLASS_ORDER[def.moduleClass or "S"] or 1)
+end
+
 --- Fit a module into a slot, out of `store`.
 ---@param ship Entity
 ---@param store StockComponent
@@ -225,6 +243,10 @@ function ShipFittingSystem:fitModule(ship, store, slot, def)
     if not loadout then return false, "this ship cannot be refitted" end
     if def:isWeapon() then return false, "that goes in a weapon mount" end
     if slot < 1 or slot > loadout:getModuleSlots() then return false, "no such slot" end
+    if not self:moduleFits(def, loadout.hullClass) then
+        return false, string.format("a %s module needs a %s hull or bigger",
+            def.moduleClass or "S", self.CLASS_NAMES[def.moduleClass or "S"] or "bigger")
+    end
     if not store or store:count(def.itemId) < 1 then return false, "none in the hangar" end
     if store:remove(def.itemId, 1) < 1 then return false, "none in the hangar" end
 

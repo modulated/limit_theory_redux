@@ -17,6 +17,11 @@ local Hulls = require("Shared.Registries.Hulls")
 -- mirrored pair, so two mounts: `z` is how far forward along the hull and
 -- `xFactor` how far out to the side.
 --
+-- `class` is the hull's size class, as EVE has them: S (frigates), M
+-- (cruisers), L (battleships), C (capitals). A module fits a hull of its own
+-- class or bigger (res/data/modules.toml `class`); a C module, such as the
+-- jump drive, only a capital.
+--
 -- Ids are permanent: a saved game records which hull is being flown.
 
 local Weapon = Enums.Weapon
@@ -29,6 +34,7 @@ local Role = Weapon.MountRole
 Hulls:add({
     id = 1,
     name = "Solo Hull",
+    class = "S",
     description = "A single-seat frame: quick, cheap, and thin everywhere.",
     item = Items.Constructs.ShipHullSolo,
     moduleSlots = 3,
@@ -50,6 +56,7 @@ Hulls:add({
 Hulls:add({
     id = 2,
     name = "Small Hull",
+    class = "S",
     description = "The gunship: three pairs of mounts and room to carry something.",
     item = Items.Constructs.ShipHullSmall,
     moduleSlots = 4,
@@ -75,6 +82,7 @@ Hulls:add({
 Hulls:add({
     id = 3,
     name = "Compact Hull",
+    class = "M",
     description = "Heavier, slower, and the first hull that takes a bay weapon.",
     item = Items.Constructs.ShipHullCompact,
     moduleSlots = 5,
@@ -104,6 +112,7 @@ Hulls:add({
 Hulls:add({
     id = 4,
     name = "Medium Hull",
+    class = "M",
     description = "A warship's frame: two bays, four guns, and the turning of a barge.",
     item = Items.Constructs.ShipHullMedium,
     moduleSlots = 6,
@@ -134,6 +143,73 @@ Hulls:add({
     },
 })
 
+Hulls:add({
+    id = 5,
+    name = "Large Hull",
+    class = "L",
+    description = "A battleship: heavy bays fore and aft, and armour to stand in a fight.",
+    item = Items.Constructs.ShipHullLarge,
+    moduleSlots = 7,
+    scale = 0.034,
+    stats = { maxHealth = 4200, maxShield = 1100, shieldRegen = 22 },
+    capacitor = { maxCharge = 105.0, chargeRate = 52.0 },
+    sockets = {
+        {
+            pairId = Pair.ForeHeavy, zone = Zone.Fore, surfaceBand = Band.Top,
+            mountSizeClass = Size.L, mountRole = Role.Heavy, z = 0.9, xFactor = 0.5,
+        },
+        {
+            pairId = Pair.MidHeavy, zone = Zone.Mid, surfaceBand = Band.Top,
+            mountSizeClass = Size.L, mountRole = Role.Heavy, z = 0.2, xFactor = 0.62,
+        },
+        {
+            pairId = Pair.ForeOuter, zone = Zone.Fore, surfaceBand = Band.Top,
+            mountSizeClass = Size.M, mountRole = Role.Line, z = 0.96, xFactor = 0.86,
+        },
+        {
+            pairId = Pair.MidOuter, zone = Zone.Mid, surfaceBand = Band.Top,
+            mountSizeClass = Size.M, mountRole = Role.Line, z = 0.12, xFactor = 0.92,
+        },
+        {
+            pairId = Pair.MidPd, zone = Zone.Mid, surfaceBand = Band.Top,
+            mountSizeClass = Size.SM, mountRole = Role.PointDefense, z = 0.0, xFactor = 0.82,
+        },
+    },
+})
+Hulls:add({
+    id = 6,
+    name = "Capital Hull",
+    class = "C",
+    description = "A capital ship: a spinal-mount bay, a station's worth of shields, room for a jump drive.",
+    item = Items.Constructs.ShipHullVeryLarge,
+    moduleSlots = 8,
+    scale = 0.05,
+    stats = { maxHealth = 9500, maxShield = 2600, shieldRegen = 40 },
+    capacitor = { maxCharge = 170.0, chargeRate = 80.0 },
+    sockets = {
+        {
+            pairId = Pair.ForeHeavy, zone = Zone.Fore, surfaceBand = Band.Top,
+            mountSizeClass = Size.XL, mountRole = Role.Heavy, z = 0.9, xFactor = 0.45,
+        },
+        {
+            pairId = Pair.MidHeavy, zone = Zone.Mid, surfaceBand = Band.Top,
+            mountSizeClass = Size.L, mountRole = Role.Heavy, z = 0.2, xFactor = 0.62,
+        },
+        {
+            pairId = Pair.ForeOuter, zone = Zone.Fore, surfaceBand = Band.Top,
+            mountSizeClass = Size.L, mountRole = Role.Heavy, z = 0.96, xFactor = 0.86,
+        },
+        {
+            pairId = Pair.MidOuter, zone = Zone.Mid, surfaceBand = Band.Top,
+            mountSizeClass = Size.M, mountRole = Role.Line, z = 0.12, xFactor = 0.92,
+        },
+        {
+            pairId = Pair.MidPd, zone = Zone.Mid, surfaceBand = Band.Top,
+            mountSizeClass = Size.SM, mountRole = Role.PointDefense, z = 0.0, xFactor = 0.82,
+        },
+    },
+})
+
 return Hulls
 
--- The next free hull id: 5
+-- The next free hull id: 7
