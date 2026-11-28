@@ -442,6 +442,20 @@ Config.game = {
     -- Credits (Modules/Economy/Managers/PlayerWallet.lua): bounties and repairs.
     -- A bounty is paid for the killing blow on a ship whose faction the
     -- `bountyIssuer` is hostile to (an outlaw), by the ship's role.
+    -- The economies of the systems the player is not in, kept going cheaply
+    -- (Modules/Economy/Managers/GalaxyEconomy.lua): every `interval` seconds
+    -- each station of a visited system runs its lines off its own stock,
+    -- takes in imports, and has its shelves drift toward their targets over
+    -- `settleTime` seconds (+-`noise` of the target, so prices wander). At
+    -- most `maxCatchUp` seconds are made up at a time.
+    galaxyEconomy = {
+        interval       = 60,
+        settleTime     = 3600,
+        noise          = 0.15,
+        maxCatchUp     = 6 * 3600,
+        maxRunsPerStep = 200,
+    },
+
     economy = {
         startingCredits = 1000,
         hullRepairCost  = 2.0,   -- credits per point of hull; shields recharge free

@@ -76,6 +76,7 @@ local PlayerWallet = require('Modules.Economy.Managers.PlayerWallet')
 local PlayerCargo = require('Modules.Economy.Managers.PlayerCargo')
 local PlayerFactories = require('Modules.Economy.Managers.PlayerFactories')
 local MarketSystem = require('Modules.Economy.Systems.MarketSystem')
+local GalaxyEconomy = require('Modules.Economy.Managers.GalaxyEconomy')
 local MarketIntel = require('Modules.Economy.Managers.MarketIntel')
 local StationTradeSystem = require('Modules.Economy.Systems.StationTradeSystem')
 local ProductionSystem = require('Modules.Economy.Systems.ProductionSystem')
@@ -2747,6 +2748,9 @@ function LimitTheoryRedux:populateSystem()
             -- The orders the player left here, back in the book, and (loading)
             -- the stock the save had
             MarketSystem:unpark(station, key)
+            -- Back in a system: the shelves as the background economy left
+            -- them (a save's, for the system it was saved in, win)
+            GalaxyEconomy:restore(key, station, self.simTime or 0)
             self:applySavedStationStock(station, key)
             -- What the player's lines made here while they were away
             for _, event in ipairs(PlayerFactories:catchUp(station, key, self.simTime or 0)) do
@@ -2793,6 +2797,7 @@ function LimitTheoryRedux:resetGalaxy()
     PlayerStations:reset()
     PlayerForces:reset()
     MarketIntel:reset()
+    GalaxyEconomy:reset()
     self:connectMarket()
     -- A new galaxy's rocks are all unread
     self.surveyedRocks = {}
@@ -4257,6 +4262,14 @@ function LimitTheoryRedux:startJump(gate, drive)
     end
     AutoPilotSystem:disengage(self.playerShip)
 
+    -- The stations left behind go on in the background (GalaxyEconomy)
+    local places = self.npcs and self.npcs.places
+    for _, dock in ipairs(places and places.docks or {}) do
+        if dock.key and dock.entity:isValid() and not PlayerStations.isOwnedKey(dock.key) then
+            GalaxyEconomy:record(dock.key, from, dock.label, dock.entity, self.simTime or 0)
+        end
+    end
+
     -- Close any map (a course can jump while one is open)
     self:closeMap()
 
@@ -4954,6 +4967,8 @@ function LimitTheoryRedux:onStateSim(data)
     -- The overview: its list, the cursor it holds, and what it set going
     self:updateOverview(dt)
     self.simTime = (self.simTime or 0) + dt
+    -- The other systems' markets, in the background
+    GalaxyEconomy:update(dt, self.simTime, self.currentSystemId or 1)
     -- The player's shields recharge (DefenseComponent:update had no caller)
     local playerDefense = self.playerShip:get(ConstructComponents.Defense)
     if playerDefense and not self.docked then playerDefense:update(dt) end

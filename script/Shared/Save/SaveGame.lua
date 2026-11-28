@@ -5,6 +5,7 @@ local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local PlayerCargo = require("Modules.Economy.Managers.PlayerCargo")
 local PlayerFactories = require("Modules.Economy.Managers.PlayerFactories")
 local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
+local GalaxyEconomy = require("Modules.Economy.Managers.GalaxyEconomy")
 local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
 local PlayerFleet = require("Modules.Constructs.Managers.PlayerFleet")
 local StockComponent = require("Modules.Economy.Components.StockComponent")
@@ -223,6 +224,7 @@ function SaveGame.capture(game)
         factories = factories,
         orders = ordersOut(game),
         intel = copy(MarketIntel.stations, "intel"),
+        galaxyEconomy = copy(GalaxyEconomy:snapshot(), "galaxyEconomy"),
         stations = stationsOut(game),
         structures = PlayerStations:snapshot(),
         forces = PlayerForces:snapshot(),
@@ -307,6 +309,7 @@ function SaveGame.restoreManagers(game, state)
     end
     MarketSystem.parked = copy(state.orders) or {}
     MarketIntel.stations = copy(state.intel) or {}
+    GalaxyEconomy:restoreState(copy(state.galaxyEconomy))
     -- The stations of the saved system get their stock back as they are
     -- built (LimitTheoryRedux:applySavedStationStock)
     game.savedStationStock = copy(state.stations) or {}
