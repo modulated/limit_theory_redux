@@ -216,10 +216,7 @@ impl ApplicationHandler for MainLoop {
                 // focus (on Windows the clip goes): take it again, or the
                 // cursor wanders onto other windows and monitors in flight
                 if focused && engine.window.cursor.grab_mode != CursorGrabMode::None {
-                    attempt_grab(
-                        engine.winit_window.window(),
-                        engine.window.cursor.grab_mode,
-                    );
+                    attempt_grab(engine.winit_window.window(), engine.window.cursor.grab_mode);
                 }
             }
             WindowEvent::DroppedFile(file) => {

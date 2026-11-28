@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use cli_table::{Cell, Style, Table};
@@ -73,6 +73,30 @@ pub static PROFILER: LazyLock<Mutex<Profiler>> = LazyLock::new(Default::default)
 /// profiler was disabled; this atomic makes the disabled path lock-free.
 static PROFILER_ENABLED: AtomicBool = AtomicBool::new(false);
 
+/// Scopes `disable` closed early (it was called from inside them): their own
+/// `end` calls are still to come, and must not pop anything. While the
+/// profiler is off each one just counts this down; once it is on again (a
+/// quick Stop and Start), an `end` that finds only the root open is one of
+/// them, since anything begun since was begun inside them and has ended.
+static STALE_ENDS: AtomicUsize = AtomicUsize::new(0);
+
+/// Count one stale `end` off, if there is one owed.
+fn take_stale_end() -> bool {
+    let mut n = STALE_ENDS.load(AtomicOrdering::Acquire);
+    while n > 0 {
+        match STALE_ENDS.compare_exchange_weak(
+            n,
+            n - 1,
+            AtomicOrdering::AcqRel,
+            AtomicOrdering::Acquire,
+        ) {
+            Ok(_) => return true,
+            Err(current) => n = current,
+        }
+    }
+    false
+}
+
 /// Set by the stats dashboard (HTTP thread) when the user clicks the
 /// profile toggle. The main thread picks it up at the next safe point
 /// (Application:onPreRender, same spot as the F10 binding) and calls
@@ -139,13 +163,14 @@ impl Profiler {
         // Stopped from inside a profiled section (every Lua event handler is
         // one while profiling, including the onPreRender that answers the
         // dashboard's Stop): close the sections still open, as if they ended
-        // now. Their own `end` calls come after this and find the profiler
-        // off, so they do nothing.
+        // now. Their own `end` calls come after this: they are counted off
+        // (STALE_ENDS), whether the profiler is still off or on again.
         if profiler.stack.len() > 1 {
             info!(
                 "Profiler::disable: closing open scope(s) {:?}",
                 &profiler.stack[1..]
             );
+            STALE_ENDS.fetch_add(profiler.stack.len() - 1, AtomicOrdering::AcqRel);
             while profiler.stack.len() > 1 {
                 Self::end_intern(&mut profiler, false);
             }
@@ -259,9 +284,16 @@ impl Profiler {
     /// Ends the current profiling scope
     pub fn end() {
         if !PROFILER_ENABLED.load(AtomicOrdering::Acquire) {
+            if STALE_ENDS.load(AtomicOrdering::Acquire) > 0 {
+                take_stale_end();
+            }
             return;
         }
         let mut profiler = PROFILER.lock().expect("Cannot lock profiler");
+        // The end of a scope closed by an earlier `disable`: not this one's
+        if profiler.stack.len() <= 1 && take_stale_end() {
+            return;
+        }
         Self::end_intern(&mut profiler, false);
     }
 

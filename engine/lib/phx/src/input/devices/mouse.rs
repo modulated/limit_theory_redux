@@ -63,6 +63,9 @@ pub struct MouseState {
     /// movement, so it is ignored and the cursor's own movement is used
     /// instead. See [`MouseState::update_raw_delta`].
     raw_motion_is_absolute: bool,
+    /// Oversized raw packets in a row: a fast flick sends one or two, an
+    /// absolute stream nothing else (see `RAW_ABSOLUTE_STREAK`).
+    oversized_streak: u8,
     /// A position has been reported, so there is something to measure
     /// movement against.
     has_position: bool,
@@ -82,6 +85,12 @@ pub struct MouseState {
 /// the polling rate, often 1000 Hz, so even a fast flick is a few hundred
 /// pixels at most). A "delta" this large is an absolute coordinate.
 const RAW_MOTION_SANITY_LIMIT: f32 = 2000.0;
+
+/// So many oversized packets in a row and the stream is taken to be
+/// absolute. One alone is a flick (a 16000 DPI mouse polled at 125 Hz moves
+/// thousands of counts a packet when flung); an absolute stream is oversized
+/// packet after packet.
+const RAW_ABSOLUTE_STREAK: u8 = 3;
 
 /// A cursor reported this much further along than the last report did not
 /// travel: it was put there (see [`MouseState::update_position`]). Generous,
@@ -175,12 +184,6 @@ impl MouseState {
         self.control_state.update()
     }
 
-    /// The window lost or regained focus: the cursor may be somewhere else
-    /// entirely when it comes back, and that is not movement either.
-    pub fn forget_position_delta(&mut self) {
-        self.skip_next_delta = true;
-    }
-
     /// The window lost or regained focus. While it is away, the mouse's
     /// movement is not the game's (alt-tab, then moving over another window
     /// or monitor used to swing the camera right round), and whatever this
@@ -188,6 +191,12 @@ impl MouseState {
     /// else: a jump, not movement.
     pub fn set_focused(&mut self, focused: bool) {
         self.unfocused = !focused;
+        // Whether the raw stream is absolute is judged afresh: a remote
+        // session that ended, a mouse plugged in meanwhile
+        if focused {
+            self.raw_motion_is_absolute = false;
+            self.oversized_streak = 0;
+        }
         self.skip_next_delta = true;
         self.axis_state.zero(MouseControl::DeltaX as _);
         self.axis_state.zero(MouseControl::DeltaY as _);
@@ -208,7 +217,9 @@ impl MouseState {
     /// anything steering by mouse movement -- the first-person and orbit
     /// cameras, first-person flight -- spinning.
     ///
-    /// A packet beyond any real mouse's reach says the stream is absolute.
+    /// Packets beyond any real mouse's reach, several in a row, say the
+    /// stream is absolute (one alone is a hard flick: it is dropped). Judged
+    /// afresh each time the window regains focus.
     /// From then on it is ignored and the cursor's own movement
     /// ([`MouseState::update_position`]) is the mouse's movement, which the
     /// window system reports correctly in those sessions.
@@ -217,6 +228,11 @@ impl MouseState {
             return false;
         }
         if dx.abs() > RAW_MOTION_SANITY_LIMIT || dy.abs() > RAW_MOTION_SANITY_LIMIT {
+            // Not movement this frame either way; absolute only if it goes on
+            self.oversized_streak = self.oversized_streak.saturating_add(1);
+            if self.oversized_streak < RAW_ABSOLUTE_STREAK {
+                return false;
+            }
             warn!(
                 "Raw mouse motion of ({dx}, {dy}) is an absolute position, not movement \
                  (a remote desktop session or a virtual pointer): using the cursor's \
@@ -229,6 +245,7 @@ impl MouseState {
             self.axis_state.zero(MouseControl::DeltaY as _);
             return false;
         }
+        self.oversized_streak = 0;
         self.has_raw_motion = true;
         // The device moves whether or not the game has it: only movement
         // while the window has focus and the cursor is in it counts
