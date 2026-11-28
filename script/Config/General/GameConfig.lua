@@ -676,7 +676,7 @@ Config.game = {
         censusInterval = 10,
         -- Log every NPC removal and why, and the call stack of anything
         -- else that destroys an NPC ship's entity
-        traceNpcLoss   = true,
+        traceNpcLoss   = false,
     },
 
     -- The stations' bounty board (Modules/Economy/Managers/BountyBoard.lua):

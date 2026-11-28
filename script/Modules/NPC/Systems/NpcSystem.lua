@@ -70,7 +70,8 @@ function NpcSystem:setPlayer(entity)
 end
 
 local function isEntity(target)
-    return type(target) == "table" and target.isValid ~= nil
+    -- rawtype: the global type() names a class instance by its class ("Entity")
+    return rawtype(target) == "table" and target.isValid ~= nil
 end
 
 --- Where a target is: a position {x, y, z} as it is, a ship's body
@@ -681,12 +682,12 @@ function NpcSystem:update(dt)
                 if Config.game.debug and Config.game.debug.traceNpcLoss then
                     -- Every part of isAlive's verdict, and the verdict again
                     local e = record.entity
-                    local valid = type(e) == "table" and e.isValid ~= nil and e:isValid()
+                    local valid = rawtype(e) == "table" and e.isValid ~= nil and e:isValid()
                     local health = valid and e:get(CoreComponents.Health)
                     Log.Info("NPC lost: %s (%s): type %s, has isValid %s, valid %s, health %s (%s of %s, "
                         .. "isDestroyed %s), isAlive again %s",
                         tostring(record.label), tostring(record.role), type(e),
-                        tostring(type(e) == "table" and e.isValid ~= nil), tostring(valid),
+                        tostring(rawtype(e) == "table" and e.isValid ~= nil), tostring(valid),
                         tostring(health), tostring(health and health:getCurrentHealth()),
                         tostring(health and health:getMaxHealth()),
                         tostring(health and health:isDestroyed()), tostring(self:isAlive(e)))
