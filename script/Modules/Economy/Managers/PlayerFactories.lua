@@ -132,15 +132,32 @@ function PlayerFactories:offered(station, key)
     return offers
 end
 
---- Rent a line to run `recipeId`.
+--- Rent a line to run `recipeId`: `runs` times (a job, which ends when they
+--- are done), or over and over until it is given back (nil).
 ---@param key string
 ---@param recipeId integer
+---@param runs integer|nil
 ---@return boolean leased, string|nil reason
-function PlayerFactories:lease(key, recipeId)
+function PlayerFactories:lease(key, recipeId, runs)
     if not Productions:getDefinition(recipeId) then return false, "no such recipe" end
     if self:freeLines(key) <= 0 then return false, "this station has no line free" end
-    table.insert(self:leases(key), { id = recipeId, progress = 0, running = false })
+    if runs ~= nil and runs < 1 then return false, "no runs" end
+    table.insert(self:leases(key), { id = recipeId, progress = 0, running = false, runs = runs })
     return true
+end
+
+--- How many runs of a recipe the hangar holds the inputs for.
+---@param key string
+---@param recipe ProductionDefinition
+---@return integer
+function PlayerFactories:runsPossible(key, recipe)
+    local hangar = self:hangar(key)
+    local runs = math.huge
+    for _, entry in ipairs(recipe.inputs) do
+        runs = math.min(runs, math.floor(hangar:count(entry.item.id) / entry.count))
+    end
+    if runs == math.huge then return 0 end
+    return runs
 end
 
 --- Give a line back. Whatever a run in progress had taken is lost, as it
@@ -268,6 +285,18 @@ function PlayerFactories:update(station, key, dt)
                                 }
                             end
                         end
+                        -- A job of so many runs ends with its last
+                        if lease.runs then
+                            lease.runs = lease.runs - 1
+                            if lease.runs <= 0 then
+                                table.remove(record.leases, index)
+                                released = true
+                                events[#events + 1] = {
+                                    text = string.format("Job done: %s", recipe.displayName),
+                                }
+                                break
+                            end
+                        end
                     else
                         for _, entry in ipairs(recipe.outputs) do
                             StationTradeSystem:deliver(station, entry.item.id, entry.count)
@@ -338,6 +367,7 @@ function PlayerFactories:status(key)
                 crewed = lease.crewed ~= false,
                 fee = self:feeFor(recipe, key),
                 waiting = not lease.running and not hasInputs(hangar, recipe),
+                runs = lease.runs, -- left to make (nil: until stopped)
                 hangarFull = not lease.running and not hasRoomForOutputs(hangar, recipe),
             }
         end

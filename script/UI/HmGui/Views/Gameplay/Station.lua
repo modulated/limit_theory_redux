@@ -9,7 +9,6 @@ local PlayerWallet = require("Modules.Economy.Managers.PlayerWallet")
 local PlayerCargo = require("Modules.Economy.Managers.PlayerCargo")
 local MarketSystem = require("Modules.Economy.Systems.MarketSystem")
 local MarketIntel = require("Modules.Economy.Managers.MarketIntel")
-local ProductionSystem = require("Modules.Economy.Systems.ProductionSystem")
 local PlayerStations = require("Modules.Economy.Managers.PlayerStations")
 local PlayerForces = require("Modules.Economy.Managers.PlayerForces")
 local BountyBoard = require("Modules.Economy.Managers.BountyBoard")
@@ -511,177 +510,307 @@ local function market(station, s)
     }
 end
 
---- What the station is making, one line per production line.
----@param station Entity
+------------------------------------------------------------------------------
+-- The factory: industry, as EVE lays it out. Blueprints on the left (what
+-- can be run here, what can be made now first, each with how many runs the
+-- hangar holds the materials for); the chosen one on the right, its
+-- materials against what is in the hangar, what it makes, and a job of so
+-- many runs to start; the jobs running underneath. What the station's own
+-- lines are busy with is not the player's business, and is not shown.
+------------------------------------------------------------------------------
+
+local RED = Color(1.00, 0.42, 0.36, 1.00)
+
+--- The blueprint chosen, the runs asked for, and whether the list shows
+--- only what can be made now.
+Station.industry = { recipeId = nil, runs = 1, onlyMakeable = false }
+
+--- The outpost's own block over the factory: what it is, its takings, and
+--- its defences.
+---@param key string
 ---@param s number
----@return UILayoutGrid|nil
-local function production(station, s)
-    local status = ProductionSystem:status(station)
-    if #status == 0 then return nil end
+---@return table[] rows
+local function outpostHeader(key, s)
+    local rows = {}
     local size = math.floor(14 * s)
-    -- The hands: the station's standing crew plus the workers docked here,
-    -- and what its lines are using of them
-    local workforce = station:get(EconomyComponents.Workforce)
-    local crewLine = workforce
-        and string.format("PRODUCTION          crew %s on shift", workforce:describe())
-        or "PRODUCTION"
-    local rows = {
-        text(crewLine, "Unageo-Medium", math.floor(13 * s), DIM),
-        UIComponent.Divider { color = RULE },
-    }
-    for _, line in ipairs(status) do
-        local state = line.running
-            and string.format("%d%%", math.floor(line.progress * 100))
-            or (not line.crewed and "no crew"
-                or (line.full and "store full" or "waiting for stock"))
+    local outpost = PlayerStations:byKey(key)
+    if not outpost then return rows end
+    local kindCfg = PlayerStations.kindOf(outpost.kind)
+    local income = outpost.income
+    rows[#rows + 1] = text(string.format("YOUR %s   ·   market: %s sold, %s bought, %s in taxes",
+            string.upper(kindCfg.name), PlayerWallet.format(income.sales or 0),
+            PlayerWallet.format(income.purchases or 0), PlayerWallet.format(income.taxes or 0)),
+        "Unageo-Medium", math.floor(13 * s), ACCENT)
+    local quote = LimitTheoryRedux:outpostDefenseQuote(key)
+    if quote then
+        local state = quote.destroyed and "Defences destroyed"
+            or string.format("Defences: hull %d/%d  ·  shields %d/%d",
+                math.floor(quote.hull), math.floor(quote.maxHull),
+                math.floor(quote.shield), math.floor(quote.maxShield))
         rows[#rows + 1] = Grid {
-            fixedHeight = math.floor(22 * s),
-            cells = { Grid.Fixed(640 * s), Grid.Fixed(160 * s) },
+            fixedHeight = math.floor(30 * s),
+            cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
             contents = {
-                text(line.recipe:describe(), "Unageo-Regular", size, GREY),
-                text(state, "Unageo-Regular", size,
-                    line.running and ACCENT or (not line.crewed and GOLD or DIM), AlignHorizontal.Right),
+                text(state, "Unageo-Regular", size, quote.destroyed and GOLD or DIM),
+                text(quote.cost > 0 and PlayerWallet.format(quote.cost) or "",
+                    "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+                wideButton(quote.destroyed and "Rebuild" or "Repair", s, 110,
+                    quote.cost > 0 and PlayerWallet:has(quote.cost), false, function()
+                        LimitTheoryRedux:repairOutpostDefense(key)
+                    end),
             }
         }
     end
-    return Grid {
-        layoutType = GuiLayoutType.Vertical,
-        spacing = math.floor(2 * s),
-        cells = Grid.Fit(),
-        contents = rows
-    }
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    return rows
 end
 
---- The player's own floor here: the lines rented, and what the station will
---- rent out. A rented line eats from the hangar and fills it back up, and the
---- station takes its cut of each run.
+--- The blueprint list: one row each, the makeable ones first.
+---@param key string
+---@param recipes ProductionDefinition[]
+---@param s number
+---@return UILayoutGrid
+local function blueprintList(key, recipes, s)
+    local sel = Station.industry
+    local size = math.floor(13 * s)
+    local rows = {
+        Grid {
+            fixedHeight = math.floor(30 * s),
+            cells = { Grid.Fixed(250 * s), Grid.Fixed(200 * s) },
+            contents = {
+                text("BLUEPRINTS", "Unageo-Medium", math.floor(13 * s), DIM),
+                wideButton(sel.onlyMakeable and "Showing: can make" or "Showing: all", s, 190, true,
+                    sel.onlyMakeable, function() sel.onlyMakeable = not sel.onlyMakeable end),
+            }
+        },
+        UIComponent.Divider { color = RULE },
+    }
+    local list = {}
+    for _, recipe in ipairs(recipes) do
+        local runs = PlayerFactories:runsPossible(key, recipe)
+        if runs > 0 or not sel.onlyMakeable then list[#list + 1] = { recipe = recipe, runs = runs } end
+    end
+    table.sort(list, function(a, b)
+        if (a.runs > 0) ~= (b.runs > 0) then return a.runs > 0 end
+        return a.recipe.displayName < b.recipe.displayName
+    end)
+    if #list == 0 then
+        rows[#rows + 1] = text(sel.onlyMakeable and "Nothing here can be made from your hangar yet."
+            or "This station runs nothing for you.", "Unageo-Regular", size, DIM)
+    end
+    for _, row in ipairs(list) do
+        local recipe = row.recipe
+        local chosen = sel.recipeId == recipe.id
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(30 * s),
+            cells = { Grid.Fixed(330 * s), Grid.Fixed(120 * s) },
+            contents = {
+                wideButton(recipe.displayName, s, 320, true, chosen, function()
+                    sel.recipeId = recipe.id
+                    sel.runs = math.max(1, math.min(sel.runs or 1, math.max(1, row.runs)))
+                end),
+                text(row.runs > 0 and string.format("can make %d", row.runs) or "missing materials",
+                    "Unageo-Regular", size, row.runs > 0 and GREEN or DIM, AlignHorizontal.Right),
+            }
+        }
+    end
+    return Grid { layoutType = GuiLayoutType.Vertical, spacing = math.floor(2 * s), cells = Grid.Fit(), contents = rows }
+end
+
+--- The chosen blueprint: materials against the hangar, what it makes, and
+--- the job to start.
+---@param key string
+---@param recipe ProductionDefinition|nil
+---@param outpost boolean
+---@param s number
+---@return UILayoutGrid
+local function blueprintDetail(key, recipe, outpost, s)
+    local sel = Station.industry
+    local size = math.floor(14 * s)
+    local rows = {}
+    if not recipe then
+        rows[#rows + 1] = text("Choose a blueprint on the left.", "Unageo-Regular", size, DIM)
+        return Grid { layoutType = GuiLayoutType.Vertical, cells = Grid.Fit(), contents = rows }
+    end
+    local hangar = PlayerFactories:hangar(key)
+    local possible = PlayerFactories:runsPossible(key, recipe)
+    local runs = math.max(1, sel.runs or 1)
+    local fee = PlayerFactories:feeFor(recipe, key)
+    local minutes = recipe.duration / Config.game.production.timeScale / 60
+
+    rows[#rows + 1] = text(recipe.displayName, "Unageo-Medium", math.floor(17 * s), WHITE)
+    rows[#rows + 1] = text(string.format("%s  ·  %.1f min a run%s", recipe.class, minutes,
+            outpost and "" or string.format("  ·  station fee %s a run", PlayerWallet.format(fee))),
+        "Unageo-Regular", math.floor(13 * s), DIM)
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+
+    -- Materials, for the runs asked for
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(22 * s),
+        cells = { Grid.Fixed(250 * s), Grid.Fixed(100 * s), Grid.Fixed(100 * s) },
+        contents = {
+            text(string.format("MATERIALS  x%d", runs), "Unageo-Medium", math.floor(12 * s), DIM),
+            text("needed", "Unageo-Medium", math.floor(12 * s), DIM, AlignHorizontal.Right),
+            text("in hangar", "Unageo-Medium", math.floor(12 * s), DIM, AlignHorizontal.Right),
+        }
+    }
+    for _, entry in ipairs(recipe.inputs) do
+        local need = entry.count * runs
+        local have = hangar:count(entry.item.id)
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(22 * s),
+            cells = { Grid.Fixed(250 * s), Grid.Fixed(100 * s), Grid.Fixed(100 * s) },
+            contents = {
+                text(entry.item.displayName, "Unageo-Regular", size, GREY),
+                text(tostring(need), "Unageo-Regular", size, GREY, AlignHorizontal.Right),
+                text(tostring(have), "Unageo-Regular", size, have >= need and GREEN or RED, AlignHorizontal.Right),
+            }
+        }
+    end
+
+    -- Products
+    rows[#rows + 1] = text(string.format("PRODUCES  x%d", runs), "Unageo-Medium", math.floor(12 * s), DIM)
+    for _, entry in ipairs(recipe.outputs) do
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(22 * s),
+            cells = { Grid.Fixed(250 * s), Grid.Fixed(100 * s) },
+            contents = {
+                text(entry.item.displayName, "Unageo-Regular", size, WHITE),
+                text(tostring(entry.count * runs), "Unageo-Regular", size, WHITE, AlignHorizontal.Right),
+            }
+        }
+    end
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+
+    -- The job: so many runs, on a free line
+    local free = PlayerFactories:freeLines(key)
+    local function setRuns(n) sel.runs = math.max(1, math.min(999, n)) end
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(32 * s),
+        cells = { Grid.Fixed(70 * s), Grid.Fixed(60 * s), Grid.Fixed(60 * s), Grid.Fixed(60 * s),
+                  Grid.Fixed(60 * s), Grid.Fixed(130 * s) },
+        contents = {
+            text("RUNS", "Unageo-Medium", math.floor(12 * s), DIM),
+            smallButton("-10", s, runs > 1, function() setRuns(runs - 10) end),
+            smallButton("-1", s, runs > 1, function() setRuns(runs - 1) end),
+            text(tostring(runs), "Unageo-Medium", size, WHITE, AlignHorizontal.Center),
+            smallButton("+1", s, true, function() setRuns(runs + 1) end),
+            smallButton(string.format("max %d", possible), s, possible > 0, function() setRuns(possible) end),
+        }
+    }
+    local canStart = free > 0 and possible >= runs
+    local why = free <= 0 and (outpost and "every line is busy" or "no line free to rent")
+        or (possible < runs and (possible == 0 and "missing materials" or string.format("materials for %d run(s)", possible)))
+        or nil
+    rows[#rows + 1] = Grid {
+        fixedHeight = math.floor(36 * s),
+        cells = { Grid.Fixed(200 * s), Grid.Fixed(300 * s) },
+        contents = {
+            wideButton(string.format("Start job (%d run%s)", runs, runs == 1 and "" or "s"), s, 190, canStart, true,
+                function()
+                    local ok, reason = PlayerFactories:lease(key, recipe.id, runs)
+                    LimitTheoryRedux:notify(ok
+                        and string.format("Job started: %s x%d", recipe.displayName, runs)
+                        or ("Cannot start: " .. (reason or "no")), ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
+                end),
+            text(why or (outpost and "" or string.format("total fee %s", PlayerWallet.format(fee * runs))),
+                "Unageo-Regular", math.floor(13 * s), why and RED or DIM),
+        }
+    }
+    return Grid { layoutType = GuiLayoutType.Vertical, spacing = math.floor(3 * s), cells = Grid.Fit(), contents = rows }
+end
+
+--- The jobs running here.
+---@param key string
+---@param outpost boolean
+---@param s number
+---@return table[] rows
+local function jobRows(key, outpost, s)
+    local size = math.floor(13 * s)
+    local total = outpost and PlayerStations:lines(key) or Config.game.factory.rentableLines
+    local leases = PlayerFactories:status(key)
+    local rows = {
+        text(string.format("JOBS   %d of %d line(s) in use%s", #leases, total,
+                outpost and "" or string.format("  ·  the station takes %d%% of each run as its fee",
+                    math.floor(Config.game.factory.rentShare * 100))),
+            "Unageo-Medium", math.floor(13 * s), DIM),
+        UIComponent.Divider { color = RULE },
+    }
+    if #leases == 0 then
+        rows[#rows + 1] = text("No jobs running. Choose a blueprint and start one.", "Unageo-Regular", size, DIM)
+    end
+    for _, lease in ipairs(leases) do
+        local state
+        if lease.running then
+            state = string.format("%d%%", math.floor(lease.progress * 100))
+        elseif not lease.crewed then
+            state = "no crew"
+        elseif lease.hangarFull then
+            state = "hangar full"
+        else
+            state = "waiting: " .. (PlayerFactories:missingFor(key, lease.recipe) or "inputs")
+        end
+        local index = lease.index
+        rows[#rows + 1] = Grid {
+            fixedHeight = math.floor(28 * s),
+            cells = { Grid.Fixed(330 * s), Grid.Fixed(140 * s), Grid.Fixed(340 * s), Grid.Fixed(120 * s) },
+            contents = {
+                text(lease.recipe.displayName, "Unageo-Regular", size, WHITE),
+                text(lease.runs and string.format("%d run(s) left", lease.runs) or "repeating",
+                    "Unageo-Regular", size, GREY),
+                text(state, "Unageo-Regular", size,
+                    lease.running and ACCENT or (not lease.crewed and GOLD or DIM)),
+                wideButton("Stop", s, 110, true, false, function()
+                    PlayerFactories:release(key, index)
+                    LimitTheoryRedux:notify("Job stopped.", { 0.6, 0.9, 1.0 })
+                end),
+            }
+        }
+    end
+    return rows
+end
+
+--- The factory tab.
 ---@param station Entity
 ---@param s number
 ---@return UILayoutGrid
 local function factory(station, s)
     local key = stationKey()
-    local size = math.floor(14 * s)
-    local rows = {}
-
-    -- The player's own outpost: every line is theirs, and free
-    local outpost = PlayerStations:byKey(key)
-    local kindCfg = outpost and PlayerStations.kindOf(outpost.kind)
-    if outpost then
-        local income = outpost.income
-        rows[#rows + 1] = text(string.format("YOUR %s", string.upper(kindCfg.name)),
-            "Unageo-Medium", math.floor(13 * s), ACCENT)
-        rows[#rows + 1] = text(kindCfg.description or "", "Unageo-Regular", size, GREY)
-        rows[#rows + 1] = text(string.format("Market: %s sold, %s bought, %s in taxes from NPC trade",
-                PlayerWallet.format(income.sales or 0), PlayerWallet.format(income.purchases or 0),
-                PlayerWallet.format(income.taxes or 0)),
-            "Unageo-Regular", size, DIM)
-        -- Its guns: the station cannot fall, they can
-        local quote = LimitTheoryRedux:outpostDefenseQuote(key)
-        if quote then
-            local state = quote.destroyed and "DEFENCES            destroyed"
-                or string.format("DEFENCES            hull %d/%d  ·  shields %d/%d",
-                    math.floor(quote.hull), math.floor(quote.maxHull),
-                    math.floor(quote.shield), math.floor(quote.maxShield))
-            rows[#rows + 1] = Grid {
-                fixedHeight = math.floor(30 * s),
-                cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
-                contents = {
-                    text(state, "Unageo-Medium", math.floor(13 * s), quote.destroyed and GOLD or DIM),
-                    text(quote.cost > 0 and PlayerWallet.format(quote.cost) or "",
-                        "Unageo-Regular", size, DIM, AlignHorizontal.Right),
-                    wideButton(quote.destroyed and "Rebuild" or "Repair", s, 110,
-                        quote.cost > 0 and PlayerWallet:has(quote.cost), false, function()
-                            LimitTheoryRedux:repairOutpostDefense(key)
-                        end),
-                }
-            }
-        end
-    end
-
-    -- The station's own lines first: what the floor is busy with
-    local own = not outpost and production(station, s)
-    if own then rows[#rows + 1] = own end
-
-    local total = outpost and PlayerStations:lines(key) or Config.game.factory.rentableLines
-    rows[#rows + 1] = text(string.format(outpost and "YOUR LINES          %d of %d running a recipe"
-                or "YOUR LINES          %d of %d rented",
-            key and #PlayerFactories:leases(key) or 0, total),
-        "Unageo-Medium", math.floor(13 * s), DIM)
-    rows[#rows + 1] = UIComponent.Divider { color = RULE }
-
     if not key then
-        rows[#rows + 1] = text("This station does not rent lines.", "Unageo-Regular", size, DIM)
-    else
-        for _, lease in ipairs(PlayerFactories:status(key)) do
-            local state
-            if lease.running then
-                state = string.format("%d%%", math.floor(lease.progress * 100))
-            elseif not lease.crewed then
-                state = "no crew"
-            elseif lease.hangarFull then
-                state = "hangar full"
-            else
-                state = "needs " .. (PlayerFactories:missingFor(key, lease.recipe) or "inputs")
-            end
-            local index = lease.index
-            rows[#rows + 1] = Grid {
-                fixedHeight = math.floor(26 * s),
-                cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
-                contents = {
-                    text(lease.recipe:describe(), "Unageo-Regular", size, GREY),
-                    text(outpost and state or string.format("%s  ·  fee %d", state, lease.fee),
-                        "Unageo-Regular", size,
-                        lease.running and ACCENT or (not lease.crewed and GOLD or DIM),
-                        AlignHorizontal.Right),
-                    wideButton(outpost and "Stop" or "Give back", s, 110, true, false, function()
-                        PlayerFactories:release(key, index)
-                        LimitTheoryRedux:notify(outpost and "The line is idle."
-                            or "The line is the station's again.", { 0.6, 0.9, 1.0 })
-                    end),
-                }
-            }
+        return Grid { cells = Grid.Fit(), contents = {
+            text("This station runs no jobs for you.", "Unageo-Regular", math.floor(14 * s), DIM) } }
+    end
+    local outpost = PlayerStations:byKey(key) ~= nil
+    local recipes = PlayerFactories:offered(station, key)
+    local sel = Station.industry
+    -- A choice from another station, or none: the first that can be made
+    local chosen = nil
+    for _, recipe in ipairs(recipes) do
+        if recipe.id == sel.recipeId then chosen = recipe end
+    end
+    if not chosen then
+        for _, recipe in ipairs(recipes) do
+            if PlayerFactories:runsPossible(key, recipe) > 0 then chosen = recipe break end
         end
-
-        local free = PlayerFactories:freeLines(key)
-        local heading
-        if outpost then
-            heading = total == 0 and "This outpost has no production lines: it is a market and storage."
-                or (free > 0 and string.format("SET UP              %d line(s) idle, no fees", free)
-                    or "SET UP              every line is busy")
-        else
-            heading = free > 0
-                and string.format("TO RENT             %d line(s) free, the station takes %d%% of each run",
-                    free, math.floor(Config.game.factory.rentShare * 100))
-                or "TO RENT             no lines free"
-        end
-        rows[#rows + 1] = text(heading,
-            "Unageo-Medium", math.floor(13 * s), DIM)
-        rows[#rows + 1] = UIComponent.Divider { color = RULE }
-        for _, recipe in ipairs(PlayerFactories:offered(station, key)) do
-            local fee = PlayerFactories:feeFor(recipe, key)
-            rows[#rows + 1] = Grid {
-                fixedHeight = math.floor(26 * s),
-                cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
-                contents = {
-                    text(recipe:describe(), "Unageo-Regular", size, GREY),
-                    text(outpost and string.format("%.0fs a run", recipe.duration)
-                            or string.format("%.0fs a run  ·  fee %d", recipe.duration, fee),
-                        "Unageo-Regular", size, DIM, AlignHorizontal.Right),
-                    wideButton(outpost and "Run" or "Rent", s, 110, free > 0, false, function()
-                        local ok, reason = PlayerFactories:lease(key, recipe.id)
-                        LimitTheoryRedux:notify(ok
-                            and ((outpost and "A line set up for the " or "Rented a line for the ") .. recipe.displayName)
-                            or ((outpost and "Cannot set up: " or "Cannot rent: ") .. (reason or "no")),
-                            ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
-                    end),
-                }
-            }
-        end
+        chosen = chosen or recipes[1]
+        sel.recipeId = chosen and chosen.id or nil
+        sel.runs = 1
     end
 
+    local rows = outpostHeader(key, s)
+    rows[#rows + 1] = Grid {
+        cells = { Grid.Fixed(470 * s), Grid.Fixed(20 * s), Grid.Fixed(510 * s) },
+        contents = {
+            blueprintList(key, recipes, s),
+            text("", "Unageo-Regular", 10, DIM),
+            blueprintDetail(key, chosen, outpost, s),
+        }
+    }
+    rows[#rows + 1] = UIComponent.Divider { color = RULE }
+    for _, row in ipairs(jobRows(key, outpost, s)) do rows[#rows + 1] = row end
     return Grid {
         layoutType = GuiLayoutType.Vertical,
-        spacing = math.floor(2 * s),
+        spacing = math.floor(4 * s),
         cells = Grid.Fit(),
         contents = rows
     }
