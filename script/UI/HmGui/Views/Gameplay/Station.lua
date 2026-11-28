@@ -44,20 +44,22 @@ local Hulls = require("Shared.Registries.Hulls")
 --- hangar and the ship.
 Station.tab = "market"
 
-local WHITE = Color(1.00, 1.00, 1.00, 1.00)
-local GREY = Color(0.75, 0.77, 0.80, 1.00)
-local DIM = Color(0.51, 0.54, 0.59, 1.00)
-local ACCENT = Color(0.10, 0.60, 1.00, 1.00)
-local RULE = Color(0.10, 0.60, 1.00, 0.35)
-local GOLD = Color(1.00, 0.85, 0.35, 1.00)
-local GREEN = Color(0.45, 0.90, 0.55, 1.00)
-local BUTTON_BG = Color(0.06, 0.09, 0.13, 1.00)
-local BUTTON_HI = Color(0.10, 0.30, 0.50, 1.00)
+-- The look is StationFrame's: slate panels, amber for what you act on,
+-- cyan for values
+local StationFrame = require("UI.HmGui.Views.Gameplay.StationFrame")
+local C = StationFrame.C
+local WHITE = C.TEXT
+local GREY = C.SUB
+local DIM = C.DIM
+local ACCENT = C.AMBER
+local RULE = C.RULE
+local GOLD = C.AMBER
+local GREEN = C.GREEN
+local BUTTON_BG = C.BG
+local BUTTON_HI = C.SELECT
 
 --- Column widths at the design size (1500 x 950), scaled to the window.
 local COL_ITEM, COL_NUM, COL_BUTTON = 260, 90, 54
---- The tab's column and the sidebar beside it, at the design size.
-local MAIN_WIDTH, SIDE_WIDTH = 1000, 380
 
 --- The screen grows with the window (it used to stop at 1920 px wide's
 --- size, and sat small in the middle of anything bigger): as big as fits
@@ -109,9 +111,9 @@ local function smallButton(label, s, enabled, callback)
         title = label,
         width = math.floor(COL_BUTTON * s),
         height = math.floor(20 * s),
-        font = { name = "Unageo-Medium", size = math.floor(12 * s) },
+        font = { name = "TitilliumWebSemiBold", size = math.floor(12 * s) },
         color = {
-            text = enabled and WHITE or DIM,
+            text = enabled and GREY or DIM,
             background = BUTTON_BG,
             highlight = enabled and BUTTON_HI or BUTTON_BG,
         },
@@ -131,9 +133,9 @@ local function wideButton(label, s, width, enabled, active, callback)
         title = label,
         width = math.floor(width * s),
         height = math.floor(28 * s),
-        font = { name = "Unageo-Medium", size = math.floor(14 * s) },
+        font = { name = "TitilliumWebSemiBold", size = math.floor(14 * s) },
         color = {
-            text = enabled and WHITE or DIM,
+            text = not enabled and DIM or (active and ACCENT or GREY),
             background = active and BUTTON_HI or BUTTON_BG,
             highlight = enabled and BUTTON_HI or BUTTON_BG,
         },
@@ -223,14 +225,14 @@ local function marketRow(station, row, s)
             Grid.Fixed((COL_BUTTON + 14) * s),
         },
         contents = {
-            text(row.item.displayName, "Unageo-Regular", size, selected and WHITE or GREY),
-            text(row.last and tostring(row.last) or "-", "Unageo-Regular", size,
+            text(row.item.displayName, "TitilliumWeb", size, selected and WHITE or GREY),
+            text(row.last and tostring(row.last) or "-", "TitilliumWeb", size,
                 row.last and WHITE or DIM, AlignHorizontal.Right),
             text(row.bid and string.format("%d (%d)", row.bid, row.bidUnits) or "-",
-                "Unageo-Regular", size, row.bid and GREEN or DIM, AlignHorizontal.Right),
+                "TitilliumWeb", size, row.bid and GREEN or DIM, AlignHorizontal.Right),
             text(row.ask and string.format("%d (%d)", row.ask, row.askUnits) or "-",
-                "Unageo-Regular", size, row.ask and GOLD or DIM, AlignHorizontal.Right),
-            text(held > 0 and tostring(held) or "-", "Unageo-Regular", size,
+                "TitilliumWeb", size, row.ask and GOLD or DIM, AlignHorizontal.Right),
+            text(held > 0 and tostring(held) or "-", "TitilliumWeb", size,
                 held > 0 and WHITE or DIM, AlignHorizontal.Right),
             smallButton("Buy 10", s, row.ask ~= nil, function()
                 buyAtMarket(station, row.item.id, 10)
@@ -334,7 +336,7 @@ local function orderPanel(station, s)
                 cells = { Grid.Fixed(300 * s), Grid.Fixed(150 * s), Grid.Fixed(150 * s),
                           Grid.Fixed(220 * s) },
                 contents = {
-                    text(string.format("ORDER: %s", def.displayName), "Unageo-Medium",
+                    text(string.format("ORDER: %s", def.displayName), "TitilliumWebSemiBold",
                         math.floor(13 * s), ACCENT),
                     wideButton("Buy order", s, 130, true, order.side == "buy",
                         function() order.side = "buy" end),
@@ -343,7 +345,7 @@ local function orderPanel(station, s)
                     text(string.format("market: bid %s / ask %s",
                         quote.bid and tostring(quote.bid) or "-",
                         quote.ask and tostring(quote.ask) or "-"),
-                        "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+                        "TitilliumWeb", size, DIM, AlignHorizontal.Right),
                 }
             },
             Grid {
@@ -353,13 +355,13 @@ local function orderPanel(station, s)
                           Grid.Fixed(130 * s), Grid.Fixed(90 * s), Grid.Fixed(70 * s),
                           Grid.Fixed(70 * s), Grid.Fixed(70 * s), Grid.Fixed(70 * s) },
                 contents = {
-                    text("price", "Unageo-Regular", size, DIM),
-                    text(tostring(order.price), "Unageo-Medium", size, WHITE, AlignHorizontal.Right),
+                    text("price", "TitilliumWeb", size, DIM),
+                    text(tostring(order.price), "TitilliumWebSemiBold", size, WHITE, AlignHorizontal.Right),
                     step("-10%", -0.1, "price", 1),
                     step("-1%", -0.01, "price", 1),
                     step("+1%", 0.01, "price", 1),
                     step("+10%", 0.1, "price", 1),
-                    text("        units", "Unageo-Regular", size, DIM),
+                    text("        units", "TitilliumWeb", size, DIM),
                     unitsField(order, s),
                     step("-10", -10, "units", 1),
                     step("-1", -1, "units", 1),
@@ -378,7 +380,7 @@ local function orderPanel(station, s)
                         or string.format("%d of %d in the hangar, %s broker's fee, %d%% tax on the sale",
                             held, order.units, PlayerWallet.format(fee),
                             owned and 0 or math.floor(cfg.salesTax * 100)),
-                        "Unageo-Regular", size, can and GREY or GOLD),
+                        "TitilliumWeb", size, can and GREY or GOLD),
                     wideButton("Place", s, 120, can, false, function()
                         local result = MarketSystem:placeOrder(station, key, order.side,
                             order.itemId, order.units, order.price)
@@ -417,7 +419,7 @@ local function myOrders(station, s)
     local key = stationKey()
     local size = math.floor(14 * s)
     local rows = {
-        text("YOUR ORDERS", "Unageo-Medium", math.floor(13 * s), DIM),
+        text("YOUR ORDERS", "TitilliumWebSemiBold", math.floor(13 * s), DIM),
         UIComponent.Divider { color = RULE },
     }
     for _, order in ipairs(orders) do
@@ -430,17 +432,17 @@ local function myOrders(station, s)
             cells = { Grid.Fixed(120 * s), Grid.Fixed(COL_ITEM * s), Grid.Fixed(120 * s),
                       Grid.Fixed(100 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
             contents = {
-                text(order.side == "buy" and "BUY" or "SELL", "Unageo-Medium", size,
+                text(order.side == "buy" and "BUY" or "SELL", "TitilliumWebSemiBold", size,
                     order.side == "buy" and GREEN or GOLD),
-                text(def and def.displayName or "?", "Unageo-Regular", size, GREY),
-                text(string.format("%d at %d", order.units, order.price), "Unageo-Regular",
+                text(def and def.displayName or "?", "TitilliumWeb", size, GREY),
+                text(string.format("%d at %d", order.units, order.price), "TitilliumWeb",
                     size, WHITE, AlignHorizontal.Right),
-                text(leading and "best" or "outbid", "Unageo-Regular", size,
+                text(leading and "best" or "outbid", "TitilliumWeb", size,
                     leading and ACCENT or DIM, AlignHorizontal.Right),
                 text(order.side == "buy"
                     and string.format("  %s held", PlayerWallet.format(order.escrowCredits or 0))
                     or string.format("  %d units held", order.escrowUnits or 0),
-                    "Unageo-Regular", size, DIM),
+                    "TitilliumWeb", size, DIM),
                 wideButton("Cancel", s, 110, true, false, function()
                     MarketSystem:cancel(station, key, order)
                     LimitTheoryRedux:notify("Order cancelled; the broker keeps the fee.",
@@ -471,11 +473,11 @@ local function market(station, s)
             Grid.Fixed(COL_NUM * s), Grid.Fixed(COL_NUM * s),
         },
         contents = {
-            text("GOODS", "Unageo-Medium", headerSize, DIM),
-            text("LAST", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-            text("BID (QTY)", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-            text("ASK (QTY)", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
-            text("IN HANGAR", "Unageo-Medium", headerSize, DIM, AlignHorizontal.Right),
+            text("GOODS", "TitilliumWebSemiBold", headerSize, DIM),
+            text("LAST", "TitilliumWebSemiBold", headerSize, DIM, AlignHorizontal.Right),
+            text("BID (QTY)", "TitilliumWebSemiBold", headerSize, DIM, AlignHorizontal.Right),
+            text("ASK (QTY)", "TitilliumWebSemiBold", headerSize, DIM, AlignHorizontal.Right),
+            text("IN HANGAR", "TitilliumWebSemiBold", headerSize, DIM, AlignHorizontal.Right),
         }
     }
 
@@ -485,7 +487,7 @@ local function market(station, s)
         rows[#rows + 1] = marketRow(station, row, s)
     end
     if #listing == 0 then
-        rows[#rows + 1] = text("No orders standing here.", "Unageo-Regular", math.floor(15 * s), DIM)
+        rows[#rows + 1] = text("No orders standing here.", "TitilliumWeb", math.floor(15 * s), DIM)
     end
     local panel = orderPanel(station, s)
     if panel then rows[#rows + 1] = panel end
@@ -511,7 +513,7 @@ local function market(station, s)
     if #ids > 0 then
         rows[#rows + 1] = text(string.format("NOT TRADED HERE     sold only as scrap, at %d%% of base price",
                 math.floor(Config.game.market.scrapFactor * 100)),
-            "Unageo-Medium", headerSize, DIM)
+            "TitilliumWebSemiBold", headerSize, DIM)
         rows[#rows + 1] = UIComponent.Divider { color = RULE }
         local size = math.floor(14 * s)
         for _, id in ipairs(ids) do
@@ -522,12 +524,12 @@ local function market(station, s)
                 cells = { Grid.Fixed(COL_ITEM * s), Grid.Fixed(COL_NUM * 2 * s), Grid.Fixed(COL_NUM * 2 * s),
                           Grid.Fixed((COL_BUTTON + 40) * s) },
                 contents = {
-                    text(u.item.displayName, "Unageo-Regular", size, GREY),
-                    text(string.format("%d held (%d in hangar)", u.units, inHangar), "Unageo-Regular", size, DIM,
+                    text(u.item.displayName, "TitilliumWeb", size, GREY),
+                    text(string.format("%d held (%d in hangar)", u.units, inHangar), "TitilliumWeb", size, DIM,
                         AlignHorizontal.Right),
                     text(string.format("scrap ~%d a unit", math.max(1, math.floor(
                         (u.item.startEquilibriumPrice or 0) * Config.game.market.scrapFactor))),
-                        "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+                        "TitilliumWeb", size, DIM, AlignHorizontal.Right),
                     smallButton("Scrap all", s, inHangar > 0, function()
                         sellAtMarket(station, id, inHangar)
                     end),
@@ -536,7 +538,7 @@ local function market(station, s)
         end
         rows[#rows + 1] = text("A station deals in what its recipes use and make, and the ores of its system. "
             .. "Move goods to the hangar to sell them; better prices are where they are made or used (Nearby tab).",
-            "Unageo-Regular", math.floor(12 * s), DIM)
+            "TitilliumWeb", math.floor(12 * s), DIM)
     end
 
     local mine = myOrders(station, s)
@@ -559,7 +561,7 @@ end
 -- lines are busy with is not the player's business, and is not shown.
 ------------------------------------------------------------------------------
 
-local RED = Color(1.00, 0.42, 0.36, 1.00)
+local RED = C.RED
 
 --- The blueprint chosen, the runs asked for, and whether the list shows
 --- only what can be made now.
@@ -580,7 +582,7 @@ local function outpostHeader(key, s)
     rows[#rows + 1] = text(string.format("YOUR %s   ·   market: %s sold, %s bought, %s in taxes",
             string.upper(kindCfg.name), PlayerWallet.format(income.sales or 0),
             PlayerWallet.format(income.purchases or 0), PlayerWallet.format(income.taxes or 0)),
-        "Unageo-Medium", math.floor(13 * s), ACCENT)
+        "TitilliumWebSemiBold", math.floor(13 * s), ACCENT)
     local quote = LimitTheoryRedux:outpostDefenseQuote(key)
     if quote then
         local state = quote.destroyed and "Defences destroyed"
@@ -591,9 +593,9 @@ local function outpostHeader(key, s)
             fixedHeight = math.floor(30 * s),
             cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
             contents = {
-                text(state, "Unageo-Regular", size, quote.destroyed and GOLD or DIM),
+                text(state, "TitilliumWeb", size, quote.destroyed and GOLD or DIM),
                 text(quote.cost > 0 and PlayerWallet.format(quote.cost) or "",
-                    "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+                    "TitilliumWeb", size, DIM, AlignHorizontal.Right),
                 wideButton(quote.destroyed and "Rebuild" or "Repair", s, 110,
                     quote.cost > 0 and PlayerWallet:has(quote.cost), false, function()
                         LimitTheoryRedux:repairOutpostDefense(key)
@@ -618,7 +620,7 @@ local function blueprintList(key, recipes, s)
             fixedHeight = math.floor(30 * s),
             cells = { Grid.Fixed(250 * s), Grid.Fixed(200 * s) },
             contents = {
-                text("BLUEPRINTS", "Unageo-Medium", math.floor(13 * s), DIM),
+                text("BLUEPRINTS", "TitilliumWebSemiBold", math.floor(13 * s), DIM),
                 wideButton(sel.onlyMakeable and "Showing: can make" or "Showing: all", s, 190, true,
                     sel.onlyMakeable, function() sel.onlyMakeable = not sel.onlyMakeable end),
             }
@@ -636,7 +638,7 @@ local function blueprintList(key, recipes, s)
     end)
     if #list == 0 then
         rows[#rows + 1] = text(sel.onlyMakeable and "Nothing here can be made from your hangar yet."
-            or "This station runs nothing for you.", "Unageo-Regular", size, DIM)
+            or "This station runs nothing for you.", "TitilliumWeb", size, DIM)
     end
     for _, row in ipairs(list) do
         local recipe = row.recipe
@@ -650,7 +652,7 @@ local function blueprintList(key, recipes, s)
                     sel.runs = math.max(1, math.min(sel.runs or 1, math.max(1, row.runs)))
                 end),
                 text(row.runs > 0 and string.format("can make %d", row.runs) or "missing materials",
-                    "Unageo-Regular", size, row.runs > 0 and GREEN or DIM, AlignHorizontal.Right),
+                    "TitilliumWeb", size, row.runs > 0 and GREEN or DIM, AlignHorizontal.Right),
             }
         }
     end
@@ -669,7 +671,7 @@ local function blueprintDetail(key, recipe, outpost, s)
     local size = math.floor(14 * s)
     local rows = {}
     if not recipe then
-        rows[#rows + 1] = text("Choose a blueprint on the left.", "Unageo-Regular", size, DIM)
+        rows[#rows + 1] = text("Choose a blueprint on the left.", "TitilliumWeb", size, DIM)
         return Grid { layoutType = GuiLayoutType.Vertical, cells = Grid.Fit(), contents = rows }
     end
     local hangar = PlayerFactories:hangar(key)
@@ -678,10 +680,10 @@ local function blueprintDetail(key, recipe, outpost, s)
     local fee = PlayerFactories:feeFor(recipe, key)
     local minutes = recipe.duration / Config.game.production.timeScale / 60
 
-    rows[#rows + 1] = text(recipe.displayName, "Unageo-Medium", math.floor(17 * s), WHITE)
+    rows[#rows + 1] = text(recipe.displayName, "TitilliumWebSemiBold", math.floor(17 * s), WHITE)
     rows[#rows + 1] = text(string.format("%s  ·  %.1f min a run%s", recipe.class, minutes,
             outpost and "" or string.format("  ·  station fee %s a run", PlayerWallet.format(fee))),
-        "Unageo-Regular", math.floor(13 * s), DIM)
+        "TitilliumWeb", math.floor(13 * s), DIM)
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
 
     -- Materials, for the runs asked for
@@ -689,9 +691,9 @@ local function blueprintDetail(key, recipe, outpost, s)
         fixedHeight = math.floor(22 * s),
         cells = { Grid.Fixed(250 * s), Grid.Fixed(100 * s), Grid.Fixed(100 * s) },
         contents = {
-            text(string.format("MATERIALS  x%d", runs), "Unageo-Medium", math.floor(12 * s), DIM),
-            text("needed", "Unageo-Medium", math.floor(12 * s), DIM, AlignHorizontal.Right),
-            text("in hangar", "Unageo-Medium", math.floor(12 * s), DIM, AlignHorizontal.Right),
+            text(string.format("MATERIALS  x%d", runs), "TitilliumWebSemiBold", math.floor(12 * s), DIM),
+            text("needed", "TitilliumWebSemiBold", math.floor(12 * s), DIM, AlignHorizontal.Right),
+            text("in hangar", "TitilliumWebSemiBold", math.floor(12 * s), DIM, AlignHorizontal.Right),
         }
     }
     for _, entry in ipairs(recipe.inputs) do
@@ -701,22 +703,22 @@ local function blueprintDetail(key, recipe, outpost, s)
             fixedHeight = math.floor(22 * s),
             cells = { Grid.Fixed(250 * s), Grid.Fixed(100 * s), Grid.Fixed(100 * s) },
             contents = {
-                text(entry.item.displayName, "Unageo-Regular", size, GREY),
-                text(tostring(need), "Unageo-Regular", size, GREY, AlignHorizontal.Right),
-                text(tostring(have), "Unageo-Regular", size, have >= need and GREEN or RED, AlignHorizontal.Right),
+                text(entry.item.displayName, "TitilliumWeb", size, GREY),
+                text(tostring(need), "TitilliumWeb", size, GREY, AlignHorizontal.Right),
+                text(tostring(have), "TitilliumWeb", size, have >= need and GREEN or RED, AlignHorizontal.Right),
             }
         }
     end
 
     -- Products
-    rows[#rows + 1] = text(string.format("PRODUCES  x%d", runs), "Unageo-Medium", math.floor(12 * s), DIM)
+    rows[#rows + 1] = text(string.format("PRODUCES  x%d", runs), "TitilliumWebSemiBold", math.floor(12 * s), DIM)
     for _, entry in ipairs(recipe.outputs) do
         rows[#rows + 1] = Grid {
             fixedHeight = math.floor(22 * s),
             cells = { Grid.Fixed(250 * s), Grid.Fixed(100 * s) },
             contents = {
-                text(entry.item.displayName, "Unageo-Regular", size, WHITE),
-                text(tostring(entry.count * runs), "Unageo-Regular", size, WHITE, AlignHorizontal.Right),
+                text(entry.item.displayName, "TitilliumWeb", size, WHITE),
+                text(tostring(entry.count * runs), "TitilliumWeb", size, WHITE, AlignHorizontal.Right),
             }
         }
     end
@@ -730,10 +732,10 @@ local function blueprintDetail(key, recipe, outpost, s)
         cells = { Grid.Fixed(70 * s), Grid.Fixed(60 * s), Grid.Fixed(60 * s), Grid.Fixed(60 * s),
                   Grid.Fixed(60 * s), Grid.Fixed(130 * s) },
         contents = {
-            text("RUNS", "Unageo-Medium", math.floor(12 * s), DIM),
+            text("RUNS", "TitilliumWebSemiBold", math.floor(12 * s), DIM),
             smallButton("-10", s, runs > 1, function() setRuns(runs - 10) end),
             smallButton("-1", s, runs > 1, function() setRuns(runs - 1) end),
-            text(tostring(runs), "Unageo-Medium", size, WHITE, AlignHorizontal.Center),
+            text(tostring(runs), "TitilliumWebSemiBold", size, WHITE, AlignHorizontal.Center),
             smallButton("+1", s, true, function() setRuns(runs + 1) end),
             smallButton(string.format("max %d", possible), s, possible > 0, function() setRuns(possible) end),
         }
@@ -754,7 +756,7 @@ local function blueprintDetail(key, recipe, outpost, s)
                         or ("Cannot start: " .. (reason or "no")), ok and { 0.6, 0.9, 1.0 } or { 1.0, 0.4, 0.3 })
                 end),
             text(why or (outpost and "" or string.format("total fee %s", PlayerWallet.format(fee * runs))),
-                "Unageo-Regular", math.floor(13 * s), why and RED or DIM),
+                "TitilliumWeb", math.floor(13 * s), why and RED or DIM),
         }
     }
     return Grid { layoutType = GuiLayoutType.Vertical, spacing = math.floor(3 * s), cells = Grid.Fit(), contents = rows }
@@ -773,11 +775,11 @@ local function jobRows(key, outpost, s)
         text(string.format("JOBS   %d of %d line(s) in use%s", #leases, total,
                 outpost and "" or string.format("  ·  the station takes %d%% of each run as its fee",
                     math.floor(Config.game.factory.rentShare * 100))),
-            "Unageo-Medium", math.floor(13 * s), DIM),
+            "TitilliumWebSemiBold", math.floor(13 * s), DIM),
         UIComponent.Divider { color = RULE },
     }
     if #leases == 0 then
-        rows[#rows + 1] = text("No jobs running. Choose a blueprint and start one.", "Unageo-Regular", size, DIM)
+        rows[#rows + 1] = text("No jobs running. Choose a blueprint and start one.", "TitilliumWeb", size, DIM)
     end
     for _, lease in ipairs(leases) do
         local state
@@ -795,10 +797,10 @@ local function jobRows(key, outpost, s)
             fixedHeight = math.floor(28 * s),
             cells = { Grid.Fixed(330 * s), Grid.Fixed(140 * s), Grid.Fixed(340 * s), Grid.Fixed(120 * s) },
             contents = {
-                text(lease.recipe.displayName, "Unageo-Regular", size, WHITE),
+                text(lease.recipe.displayName, "TitilliumWeb", size, WHITE),
                 text(lease.runs and string.format("%d run(s) left", lease.runs) or "repeating",
-                    "Unageo-Regular", size, GREY),
-                text(state, "Unageo-Regular", size,
+                    "TitilliumWeb", size, GREY),
+                text(state, "TitilliumWeb", size,
                     lease.running and ACCENT or (not lease.crewed and GOLD or DIM)),
                 wideButton("Stop", s, 110, true, false, function()
                     PlayerFactories:release(key, index)
@@ -818,7 +820,7 @@ local function factory(station, s)
     local key = stationKey()
     if not key then
         return Grid { cells = Grid.Fit(), contents = {
-            text("This station runs no jobs for you.", "Unageo-Regular", math.floor(14 * s), DIM) } }
+            text("This station runs no jobs for you.", "TitilliumWeb", math.floor(14 * s), DIM) } }
     end
     local outpost = PlayerStations:byKey(key) ~= nil
     local recipes = PlayerFactories:offered(station, key)
@@ -842,7 +844,7 @@ local function factory(station, s)
         cells = { Grid.Fixed(470 * s), Grid.Fixed(20 * s), Grid.Fixed(510 * s) },
         contents = {
             blueprintList(key, recipes, s),
-            text("", "Unageo-Regular", 10, DIM),
+            text("", "TitilliumWeb", 10, DIM),
             blueprintDetail(key, chosen, outpost, s),
         }
     }
@@ -866,7 +868,7 @@ local function hangar(station, s)
     local size = math.floor(15 * s)
     local rows = {}
     if not key then
-        return Grid { cells = Grid.Fit(), contents = { text("No hangar here.", "Unageo-Regular", size, DIM) } }
+        return Grid { cells = Grid.Fit(), contents = { text("No hangar here.", "TitilliumWeb", size, DIM) } }
     end
     local store = PlayerFactories:hangar(key)
     local hold = PlayerCargo:get()
@@ -874,7 +876,7 @@ local function hangar(station, s)
     rows[#rows + 1] = text(string.format("HANGAR              %d / %d t used, the hold has %d t free",
             math.floor(store:getUsedMass()), math.floor(store:getCapacity() or 0),
             math.floor(hold:getFreeMass())),
-        "Unageo-Medium", math.floor(13 * s), DIM)
+        "TitilliumWebSemiBold", math.floor(13 * s), DIM)
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
 
     local columns = {
@@ -886,12 +888,12 @@ local function hangar(station, s)
         fixedHeight = math.floor(20 * s),
         cells = columns,
         contents = {
-            text("GOODS", "Unageo-Medium", math.floor(13 * s), DIM),
-            text("HANGAR", "Unageo-Medium", math.floor(13 * s), DIM, AlignHorizontal.Right),
-            text("HOLD", "Unageo-Medium", math.floor(13 * s), DIM, AlignHorizontal.Right),
-            text("", "Unageo-Medium", math.floor(13 * s), DIM),
-            text("", "Unageo-Medium", math.floor(13 * s), DIM),
-            text("", "Unageo-Medium", math.floor(13 * s), DIM),
+            text("GOODS", "TitilliumWebSemiBold", math.floor(13 * s), DIM),
+            text("HANGAR", "TitilliumWebSemiBold", math.floor(13 * s), DIM, AlignHorizontal.Right),
+            text("HOLD", "TitilliumWebSemiBold", math.floor(13 * s), DIM, AlignHorizontal.Right),
+            text("", "TitilliumWebSemiBold", math.floor(13 * s), DIM),
+            text("", "TitilliumWebSemiBold", math.floor(13 * s), DIM),
+            text("", "TitilliumWebSemiBold", math.floor(13 * s), DIM),
         }
     }
 
@@ -910,7 +912,7 @@ local function hangar(station, s)
     table.sort(items, function(a, b) return a.id < b.id end)
 
     if #items == 0 then
-        rows[#rows + 1] = text("Nothing here and nothing in the hold.", "Unageo-Regular", size, DIM)
+        rows[#rows + 1] = text("Nothing here and nothing in the hold.", "TitilliumWeb", size, DIM)
     end
     for _, item in ipairs(items) do
         local inHangar = store:count(item.id)
@@ -930,10 +932,10 @@ local function hangar(station, s)
             fixedHeight = math.floor(24 * s),
             cells = columns,
             contents = {
-                text(item.displayName, "Unageo-Regular", size, GREY),
-                text(inHangar > 0 and tostring(inHangar) or "-", "Unageo-Regular", size,
+                text(item.displayName, "TitilliumWeb", size, GREY),
+                text(inHangar > 0 and tostring(inHangar) or "-", "TitilliumWeb", size,
                     inHangar > 0 and WHITE or DIM, AlignHorizontal.Right),
-                text(inHold > 0 and tostring(inHold) or "-", "Unageo-Regular", size,
+                text(inHold > 0 and tostring(inHold) or "-", "TitilliumWeb", size,
                     inHold > 0 and WHITE or DIM, AlignHorizontal.Right),
                 wideButton("To ship", s, 78, inHangar >= 1, false, function()
                     move(store, hold, inHangar, "to the ship")
@@ -970,25 +972,25 @@ local function nearby(s)
     local rows = {
         text(string.format("MARKETS WITHIN %d JUMPS        what was last seen of them",
                 MarketIntel:getRange()),
-            "Unageo-Medium", math.floor(13 * s), DIM),
+            "TitilliumWebSemiBold", math.floor(13 * s), DIM),
         UIComponent.Divider { color = RULE },
     }
 
     local spreads = MarketIntel:bestSpreads(galaxy, systemId, now, 8)
     if #spreads > 0 then
-        rows[#rows + 1] = text("BEST SPREADS", "Unageo-Medium", math.floor(13 * s), ACCENT)
+        rows[#rows + 1] = text("BEST SPREADS", "TitilliumWebSemiBold", math.floor(13 * s), ACCENT)
         for _, spread in ipairs(spreads) do
             rows[#rows + 1] = Grid {
                 fixedHeight = math.floor(22 * s),
                 cells = { Grid.Fixed(COL_ITEM * s), Grid.Fixed(330 * s), Grid.Fixed(330 * s),
                           Grid.Fixed(120 * s) },
                 contents = {
-                    text(spread.item.displayName, "Unageo-Regular", size, GREY),
+                    text(spread.item.displayName, "TitilliumWeb", size, GREY),
                     text(string.format("buy %d at %s, %s", spread.buyPrice, spread.buyAt.label,
-                        spread.buyAt.systemName), "Unageo-Regular", size, GOLD),
+                        spread.buyAt.systemName), "TitilliumWeb", size, GOLD),
                     text(string.format("sell %d at %s, %s", spread.sellPrice, spread.sellAt.label,
-                        spread.sellAt.systemName), "Unageo-Regular", size, GREEN),
-                    text(string.format("+%d a unit", spread.margin), "Unageo-Medium", size,
+                        spread.sellAt.systemName), "TitilliumWeb", size, GREEN),
+                    text(string.format("+%d a unit", spread.margin), "TitilliumWebSemiBold", size,
                         WHITE, AlignHorizontal.Right),
                 }
             }
@@ -999,7 +1001,7 @@ local function nearby(s)
     local known = MarketIntel:nearby(galaxy, systemId, now)
     if #known == 0 then
         rows[#rows + 1] = text("No market has been seen yet. Dock at one.",
-            "Unageo-Regular", size, DIM)
+            "TitilliumWeb", size, DIM)
     end
     for _, record in ipairs(known) do
         local counted = 0
@@ -1010,13 +1012,13 @@ local function nearby(s)
                       Grid.Fixed(180 * s) },
             contents = {
                 text(string.format("%s, %s", record.label, record.systemName),
-                    "Unageo-Regular", size, GREY),
+                    "TitilliumWeb", size, GREY),
                 text(record.jumps == 0 and "this system"
                     or string.format("%d jump%s away", record.jumps, record.jumps == 1 and "" or "s"),
-                    "Unageo-Regular", size, DIM),
-                text(string.format("%d goods quoted", counted), "Unageo-Regular", size, DIM),
+                    "TitilliumWeb", size, DIM),
+                text(string.format("%d goods quoted", counted), "TitilliumWeb", size, DIM),
                 text(record.jumps == 0 and "live" or MarketIntel.describeAge(record.age),
-                    "Unageo-Regular", size, record.jumps == 0 and ACCENT or DIM,
+                    "TitilliumWeb", size, record.jumps == 0 and ACCENT or DIM,
                     AlignHorizontal.Right),
             }
         }
@@ -1042,12 +1044,12 @@ local function refit(s)
     local ship = LimitTheoryRedux.playerShip
     local rows = {}
     if not ship or not ship:isValid() then
-        return Grid { cells = Grid.Fit(), contents = { text("No ship.", "Unageo-Regular", size, DIM) } }
+        return Grid { cells = Grid.Fit(), contents = { text("No ship.", "TitilliumWeb", size, DIM) } }
     end
     local loadout = ship:get(require("Modules.Constructs.Components").Loadout)
     if not loadout then
         return Grid { cells = Grid.Fit(), contents = {
-            text("This hull cannot be refitted.", "Unageo-Regular", size, DIM) } }
+            text("This hull cannot be refitted.", "TitilliumWeb", size, DIM) } }
     end
     local hangar = key and PlayerFactories:hangar(key)
 
@@ -1077,7 +1079,7 @@ local function refit(s)
             text(hull
                     and string.format("THIS SHIP           %s   ·   %s", flying.name, Hulls.describe(hull))
                     or "THIS SHIP           unknown",
-                "Unageo-Medium", math.floor(13 * s), ACCENT),
+                "TitilliumWebSemiBold", math.floor(13 * s), ACCENT),
             wideButton("Strip everything", s, 170, PlayerFleet.fittingCount(flying) > 0, false,
                 function() LimitTheoryRedux:stripShip(flying) end),
         }
@@ -1086,7 +1088,7 @@ local function refit(s)
     local parked = PlayerFleet:parkedAt(key)
     if #parked > 0 then
         rows[#rows + 1] = text("YOUR SHIPS HERE     each keeps its own fit",
-            "Unageo-Medium", math.floor(13 * s), DIM)
+            "TitilliumWebSemiBold", math.floor(13 * s), DIM)
         for _, other in ipairs(parked) do
             local otherHull = PlayerFleet.hullOf(other)
             local empty = PlayerFleet.fittingCount(other) == 0
@@ -1095,10 +1097,10 @@ local function refit(s)
                 cells = { Grid.Fixed(200 * s), Grid.Fixed(330 * s), Grid.Fixed(150 * s),
                           Grid.Fixed(120 * s), Grid.Fixed(150 * s) },
                 contents = {
-                    text(other.name, "Unageo-Regular", size, GREY),
+                    text(other.name, "TitilliumWeb", size, GREY),
                     text(otherHull and Hulls.describe(otherHull) or "unknown hull",
-                        "Unageo-Regular", size, DIM),
-                    text(PlayerFleet.describe(other), "Unageo-Regular", size, WHITE),
+                        "TitilliumWeb", size, DIM),
+                    text(PlayerFleet.describe(other), "TitilliumWeb", size, WHITE),
                     wideButton("Fly it", s, 110, true, false, function()
                         LimitTheoryRedux:flyShip(other)
                     end),
@@ -1122,15 +1124,15 @@ local function refit(s)
     end
     if #spareHulls > 0 then
         rows[#rows + 1] = text("HULLS IN THE HANGAR  a new ship starts with nothing in it",
-            "Unageo-Medium", math.floor(13 * s), DIM)
+            "TitilliumWebSemiBold", math.floor(13 * s), DIM)
         for _, row in ipairs(spareHulls) do
             rows[#rows + 1] = Grid {
                 fixedHeight = math.floor(26 * s),
                 cells = { Grid.Fixed(200 * s), Grid.Fixed(480 * s), Grid.Fixed(210 * s) },
                 contents = {
                     text(string.format("%s (x%d)", row.hull.displayName, row.units),
-                        "Unageo-Regular", size, GREY),
-                    text(Hulls.describe(row.hull), "Unageo-Regular", size, DIM),
+                        "TitilliumWeb", size, GREY),
+                    text(Hulls.describe(row.hull), "TitilliumWeb", size, DIM),
                     wideButton("Fit out and fly", s, 190, true, false, function()
                         LimitTheoryRedux:commissionHull(row.hull)
                     end),
@@ -1139,7 +1141,7 @@ local function refit(s)
         end
     elseif #parked == 0 then
         rows[#rows + 1] = text("No other ship or hull here. Buy a hull on the market, or have a drydock build one.",
-            "Unageo-Regular", size, DIM)
+            "TitilliumWeb", size, DIM)
     end
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
 
@@ -1149,14 +1151,14 @@ local function refit(s)
             "THE FIT             %s   ·   shield %d, armour %.0f, hull %d   ·   thrust x%.2f, turn x%.2f   ·   hold +%d t",
             PlayerFleet.describe(flying), stats.maxShield or 0, stats.armor or 0,
             stats.maxHealth or 0, stats.thrust or 1, stats.turn or 1, stats.cargoMass or 0),
-        "Unageo-Medium", math.floor(13 * s), DIM)
+        "TitilliumWebSemiBold", math.floor(13 * s), DIM)
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
 
     -- The guns
-    rows[#rows + 1] = text("MOUNTS", "Unageo-Medium", math.floor(13 * s), ACCENT)
+    rows[#rows + 1] = text("MOUNTS", "TitilliumWebSemiBold", math.floor(13 * s), ACCENT)
     local mounts = ShipFittingSystem:mounts(ship)
     if #mounts == 0 then
-        rows[#rows + 1] = text("This hull has no mounts.", "Unageo-Regular", size, DIM)
+        rows[#rows + 1] = text("This hull has no mounts.", "TitilliumWeb", size, DIM)
     end
     for _, mount in ipairs(mounts) do
         local fitted = loadout:getWeapon(mount.mountId)
@@ -1191,8 +1193,8 @@ local function refit(s)
         local cells = { Grid.Fixed(220 * s), Grid.Fixed(260 * s) }
         local contents = {
             text(string.format("%s  (%s)", mount.mountId, tostring(mount.sizeClass or "any")),
-                "Unageo-Regular", size, GREY),
-            text(fitted and fitted.displayName or "as built", "Unageo-Regular", size,
+                "TitilliumWeb", size, GREY),
+            text(fitted and fitted.displayName or "as built", "TitilliumWeb", size,
                 fitted and WHITE or DIM),
         }
         for _, button in ipairs(buttons) do
@@ -1205,7 +1207,7 @@ local function refit(s)
     -- The slots
     rows[#rows + 1] = text(string.format("MODULE SLOTS        %s-class hull: takes modules of class %s   ·   active ones go on the action bar (keys 1-8)",
             loadout.hullClass or "?", ({ S = "S", M = "S and M", L = "S, M and L", C = "any" })[loadout.hullClass or "C"] or "any"),
-        "Unageo-Medium", math.floor(13 * s), ACCENT)
+        "TitilliumWebSemiBold", math.floor(13 * s), ACCENT)
     for slot = 1, loadout:getModuleSlots() do
         local fitted = loadout:getModule(slot)
         local buttons = {}
@@ -1238,10 +1240,10 @@ local function refit(s)
         end
         local cells = { Grid.Fixed(90 * s), Grid.Fixed(230 * s), Grid.Fixed(360 * s) }
         local contents = {
-            text(string.format("slot %d", slot), "Unageo-Regular", size, GREY),
+            text(string.format("slot %d", slot), "TitilliumWeb", size, GREY),
             text(fitted and string.format("[%s] %s", fitted.moduleClass or "S", fitted.displayName) or "empty",
-                "Unageo-Regular", size, fitted and WHITE or DIM),
-            text(fitted and fitted:describeEffects() or "", "Unageo-Regular", size, DIM),
+                "TitilliumWeb", size, fitted and WHITE or DIM),
+            text(fitted and fitted:describeEffects() or "", "TitilliumWeb", size, DIM),
         }
         for _, button in ipairs(buttons) do
             cells[#cells + 1] = Grid.Fixed(210 * s)
@@ -1253,26 +1255,26 @@ local function refit(s)
     -- What the hangar is holding that goes nowhere yet
     local spare = ShipFittingSystem:fittableFrom(ship, hangar)
     if #spare > 0 then
-        rows[#rows + 1] = text("IN THE HANGAR", "Unageo-Medium", math.floor(13 * s), DIM)
+        rows[#rows + 1] = text("IN THE HANGAR", "TitilliumWebSemiBold", math.floor(13 * s), DIM)
         rows[#rows + 1] = UIComponent.Divider { color = RULE }
         for _, row in ipairs(spare) do
             rows[#rows + 1] = Grid {
                 fixedHeight = math.floor(22 * s),
                 cells = { Grid.Fixed(230 * s), Grid.Fixed(90 * s), Grid.Fixed(100 * s), Grid.Fixed(460 * s) },
                 contents = {
-                    text(row.fitting.displayName, "Unageo-Regular", size, GREY),
-                    text(string.format("x%d", row.units), "Unageo-Regular", size, WHITE,
+                    text(row.fitting.displayName, "TitilliumWeb", size, GREY),
+                    text(string.format("x%d", row.units), "TitilliumWeb", size, WHITE,
                         AlignHorizontal.Right),
                     text(row.fitting.slot == "weapon"
                         and string.format("  %s mount", tostring(row.fitting.sizeClass))
-                        or "  module", "Unageo-Regular", size, DIM),
-                    text(row.fitting:describeEffects(), "Unageo-Regular", size, DIM),
+                        or "  module", "TitilliumWeb", size, DIM),
+                    text(row.fitting:describeEffects(), "TitilliumWeb", size, DIM),
                 }
             }
         end
     else
         rows[#rows + 1] = text("Nothing in this hangar to fit. Buy parts on the market, or make them.",
-            "Unageo-Regular", size, DIM)
+            "TitilliumWeb", size, DIM)
     end
 
     return Grid {
@@ -1280,29 +1282,6 @@ local function refit(s)
         spacing = math.floor(2 * s),
         cells = Grid.Fit(),
         contents = rows
-    }
-end
-
---- The tab row.
----@param s number
----@return UILayoutGrid
-local function tabs(s)
-    local function tab(label, name)
-        return wideButton(label, s, 150, true, Station.tab == name, function() Station.tab = name end)
-    end
-    return Grid {
-        spacing = math.floor(10 * s),
-        cells = Grid.Fit(),
-        contents = {
-            tab("Market", "market"),
-            tab("Factory", "factory"),
-            tab("Hangar", "hangar"),
-            tab("Nearby", "nearby"),
-            tab("Refit", "refit"),
-            -- The bounty board at the system's stations; the player's own ships
-            -- are commanded from their outposts
-            PlayerStations.isOwnedKey(stationKey()) and tab("Forces", "forces") or tab("Bounties", "bounties"),
-        }
     }
 end
 
@@ -1322,20 +1301,20 @@ local function bounties(s)
 
     rows[#rows + 1] = text(string.format("WANTED              %d posted  ·  contracts %d of %d",
             #BountyBoard.offers, #BountyBoard.contracts, Config.game.bounties.maxContracts),
-        "Unageo-Medium", head, DIM)
+        "TitilliumWebSemiBold", head, DIM)
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
     if #BountyBoard.offers == 0 then
-        rows[#rows + 1] = text("No pirate in this system has a price on its head just now.", "Unageo-Regular", size, DIM)
+        rows[#rows + 1] = text("No pirate in this system has a price on its head just now.", "TitilliumWeb", size, DIM)
     end
     for _, offer in ipairs(BountyBoard.offers) do
         rows[#rows + 1] = Grid {
             fixedHeight = math.floor(28 * s),
             cells = cells,
             contents = {
-                text("'" .. offer.callsign .. "'", "Unageo-Semibold", size, WHITE),
-                text(offer.kind, "Unageo-Regular", size, GREY),
-                text(PlayerWallet.format(offer.reward), "Unageo-Regular", size, GOLD, AlignHorizontal.Right),
-                text("last seen " .. offer.area, "Unageo-Regular", size, DIM),
+                text("'" .. offer.callsign .. "'", "RajdhaniBold", size, WHITE),
+                text(offer.kind, "TitilliumWeb", size, GREY),
+                text(PlayerWallet.format(offer.reward), "TitilliumWeb", size, GOLD, AlignHorizontal.Right),
+                text("last seen " .. offer.area, "TitilliumWeb", size, DIM),
                 wideButton("Accept", s, 110, #BountyBoard.contracts < Config.game.bounties.maxContracts, false,
                     function()
                         local ok, why = BountyBoard:accept(offer)
@@ -1347,27 +1326,27 @@ local function bounties(s)
         }
     end
 
-    rows[#rows + 1] = text("YOUR CONTRACTS", "Unageo-Medium", head, DIM)
+    rows[#rows + 1] = text("YOUR CONTRACTS", "TitilliumWebSemiBold", head, DIM)
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
     if #BountyBoard.contracts == 0 then
-        rows[#rows + 1] = text("None. Take one above; it ends if you leave the system.", "Unageo-Regular", size, DIM)
+        rows[#rows + 1] = text("None. Take one above; it ends if you leave the system.", "TitilliumWeb", size, DIM)
     end
     for _, contract in ipairs(BountyBoard.contracts) do
         rows[#rows + 1] = Grid {
             fixedHeight = math.floor(28 * s),
             cells = cells,
             contents = {
-                text("'" .. contract.callsign .. "'", "Unageo-Semibold", size, GOLD),
-                text(contract.kind, "Unageo-Regular", size, GREY),
-                text(PlayerWallet.format(contract.reward), "Unageo-Regular", size, GOLD, AlignHorizontal.Right),
-                text("hunt it: its signature is marked in gold", "Unageo-Regular", size, DIM),
+                text("'" .. contract.callsign .. "'", "RajdhaniBold", size, GOLD),
+                text(contract.kind, "TitilliumWeb", size, GREY),
+                text(PlayerWallet.format(contract.reward), "TitilliumWeb", size, GOLD, AlignHorizontal.Right),
+                text("hunt it: its signature is marked in gold", "TitilliumWeb", size, DIM),
                 wideButton("Abandon", s, 110, true, false, function() BountyBoard:abandon(contract) end),
             }
         }
     end
     rows[#rows + 1] = text("Pirates lie quiet among the rocks of asteroid fields; firing, mining and running hard "
         .. "make any ship louder. Sensor modules hear further and place signatures closer.",
-        "Unageo-Regular", math.floor(12 * s), DIM)
+        "TitilliumWeb", math.floor(12 * s), DIM)
 
     return Grid {
         layoutType = GuiLayoutType.Vertical,
@@ -1393,15 +1372,15 @@ local function forces(s)
     local room = PlayerForces:room(key)
     rows[#rows + 1] = text(string.format("FORCES              %d of %d berths free here  ·  wages %s an hour",
             room, cfg.maxPerOutpost, PlayerWallet.format(PlayerForces:wageBill())),
-        "Unageo-Medium", math.floor(13 * s), DIM)
+        "TitilliumWebSemiBold", math.floor(13 * s), DIM)
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
     rows[#rows + 1] = Grid {
         fixedHeight = math.floor(30 * s),
         cells = { Grid.Fixed(620 * s), Grid.Fixed(200 * s), Grid.Fixed(120 * s) },
         contents = {
             text(string.format("Combat drone: built, not hired. %d in this hangar.", drones),
-                "Unageo-Regular", size, GREY),
-            text("no upkeep", "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+                "TitilliumWeb", size, GREY),
+            text("no upkeep", "TitilliumWeb", size, DIM, AlignHorizontal.Right),
             wideButton("Launch", s, 110, drones > 0 and room > 0, false, function() game:launchDrone() end),
         }
     }
@@ -1411,8 +1390,8 @@ local function forces(s)
         contents = {
             text(string.format("Mercenary: %s to hire, then %s an hour while they serve.",
                     PlayerWallet.format(cfg.mercenary.hireCost), PlayerWallet.format(cfg.mercenary.wagePerHour)),
-                "Unageo-Regular", size, GREY),
-            text("", "Unageo-Regular", size, DIM, AlignHorizontal.Right),
+                "TitilliumWeb", size, GREY),
+            text("", "TitilliumWeb", size, DIM, AlignHorizontal.Right),
             wideButton("Hire", s, 110, room > 0 and PlayerWallet:has(cfg.mercenary.hireCost), false,
                 function() game:hireMercenary() end),
         }
@@ -1420,7 +1399,7 @@ local function forces(s)
 
     local units = PlayerForces:inSystem(game.currentSystemId or 1)
     rows[#rows + 1] = text(#units > 0 and "IN THIS SYSTEM" or "IN THIS SYSTEM      none yet",
-        "Unageo-Medium", math.floor(13 * s), DIM)
+        "TitilliumWebSemiBold", math.floor(13 * s), DIM)
     rows[#rows + 1] = UIComponent.Divider { color = RULE }
     for _, unit in ipairs(units) do
         local status = game:unitStatus(unit)
@@ -1433,11 +1412,11 @@ local function forces(s)
             fixedHeight = math.floor(28 * s),
             cells = { Grid.Fixed(500 * s), Grid.Fixed(200 * s), Grid.Fixed(110 * s), Grid.Fixed(110 * s) },
             contents = {
-                text(string.format("%s  ·  %s", unit.name, orderText), "Unageo-Regular", size, GREY),
+                text(string.format("%s  ·  %s", unit.name, orderText), "TitilliumWeb", size, GREY),
                 text(string.format("hull %d%%  shield %d%%",
                         math.floor(100 * status.hull / math.max(1, status.maxHull)),
                         math.floor(100 * status.shield / math.max(1, status.maxShield))),
-                    "Unageo-Regular", size, status.hull < status.maxHull * 0.4 and GOLD or DIM, AlignHorizontal.Right),
+                    "TitilliumWeb", size, status.hull < status.maxHull * 0.4 and GOLD or DIM, AlignHorizontal.Right),
                 wideButton(guarding and "Patrol" or "Guard", s, 100, true, false, function()
                     game:setUnitOrder(unit, guarding and PlayerForces.Order.Patrol or PlayerForces.Order.Guard)
                 end),
@@ -1448,7 +1427,7 @@ local function forces(s)
         }
     end
     rows[#rows + 1] = text("A drone is recalled into its own outpost's hangar. Guards fly around their outpost; "
-        .. "patrols make the round of all your outposts here.", "Unageo-Regular", math.floor(12 * s), DIM)
+        .. "patrols make the round of all your outposts here.", "TitilliumWeb", math.floor(12 * s), DIM)
 
     return Grid {
         layoutType = GuiLayoutType.Vertical,
@@ -1458,187 +1437,94 @@ local function forces(s)
     }
 end
 
---- The whole screen.
----@param s number
----@return UILayoutGrid
---- The sidebar: the ship and what it carries, and what this station is, so
---- the state of things is on screen whichever tab is up.
----@param station Entity|nil
----@param s number
----@return UILayoutGrid
-local function sidebar(station, s)
-    local game = LimitTheoryRedux
-    local rows = {}
-    local head = math.floor(13 * s)
-    local size = math.floor(14 * s)
-    local function heading(value)
-        rows[#rows + 1] = text(value, "Unageo-Medium", head, DIM)
-        rows[#rows + 1] = UIComponent.Divider { color = RULE }
-    end
-    local function pair(label, value, color)
-        rows[#rows + 1] = Grid {
-            fixedHeight = math.floor(20 * s),
-            cells = { Grid.Fixed(170 * s), Grid.Fixed((SIDE_WIDTH - 190) * s) },
-            contents = {
-                text(label, "Unageo-Regular", size, GREY),
-                text(value, "Unageo-Regular", size, color or WHITE, AlignHorizontal.Right),
-            }
-        }
-    end
-
-    heading("YOUR SHIP")
-    local ship = PlayerFleet:active()
-    rows[#rows + 1] = text(ship and ship.name or "-", "Unageo-Semibold", math.floor(16 * s), WHITE)
-    local entity = game.playerShip
-    local CoreComponents = require("Modules.Core.Components")
-    local ConstructComponents = require("Modules.Constructs.Components")
-    local health = entity and entity:isValid() and entity:get(CoreComponents.Health)
-    local defense = entity and entity:isValid() and entity:get(ConstructComponents.Defense)
-    if health then
-        pair("Hull", string.format("%d / %d", math.floor(health:getCurrentHealth()), math.floor(health:getMaxHealth())),
-            health:getCurrentHealth() < health:getMaxHealth() and GOLD or GREEN)
-    end
-    if defense and defense:getMaxShield() > 0 then
-        pair("Shields", string.format("%d / %d", math.floor(defense:getCurrentShield()),
-            math.floor(defense:getMaxShield())))
-    end
-    pair("Credits", PlayerWallet.format(PlayerWallet:get()), GOLD)
-
-    local used, capacity = PlayerCargo:getLoad()
-    heading(string.format("HOLD  %d / %d t", math.floor(used), math.floor(capacity)))
-    local holdRows = PlayerCargo:list()
-    if #holdRows == 0 then rows[#rows + 1] = text("Empty", "Unageo-Regular", size, DIM) end
-    for i, row in ipairs(holdRows) do
-        if i > 10 then
-            rows[#rows + 1] = text(string.format("... and %d more (Hangar tab)", #holdRows - 10),
-                "Unageo-Regular", size, DIM)
-            break
-        end
-        pair(row.item.displayName, tostring(row.units))
-    end
-
-    local key = stationKey()
-    local hangarStock = key and PlayerFactories:hangar(key)
-    local hangarRows = hangarStock and hangarStock:list() or {}
-    heading(string.format("HANGAR HERE  %d kind(s)", #hangarRows))
-    for i, row in ipairs(hangarRows) do
-        if i > 6 then
-            rows[#rows + 1] = text(string.format("... and %d more", #hangarRows - 6), "Unageo-Regular", size, DIM)
-            break
-        end
-        pair(row.item.displayName, tostring(row.units))
-    end
-
-    if station then
-        heading("THIS STATION")
-        local productionCmp = station:get(EconomyComponents.Production)
-        local makes, seen = {}, {}
-        for _, recipe in ipairs(productionCmp and productionCmp:getRecipes() or {}) do
-            for _, out in ipairs(recipe.outputs) do
-                if out.item.group ~= "Waste" and not seen[out.item.id] then
-                    seen[out.item.id] = true
-                    makes[#makes + 1] = out.item.displayName
-                end
+--- What this station makes, in a line (under the ship column).
+---@param station Entity
+---@return string|nil
+local function makesLine(station)
+    local productionCmp = station and station:get(EconomyComponents.Production)
+    if not productionCmp then return nil end
+    local makes, seen = {}, {}
+    for _, recipe in ipairs(productionCmp:getRecipes() or {}) do
+        for _, out in ipairs(recipe.outputs) do
+            if out.item.group ~= "Waste" and not seen[out.item.id] then
+                seen[out.item.id] = true
+                makes[#makes + 1] = out.item.displayName
             end
         end
-        rows[#rows + 1] = text(#makes > 0 and ("Makes: " .. table.concat(makes, ", ")) or "Makes nothing of its own",
-            "Unageo-Regular", size, GREY)
-        rows[#rows + 1] = text(string.format("Deals in %d goods (Market tab)", #MarketSystem:listing(station)),
-            "Unageo-Regular", size, DIM)
     end
+    if #makes == 0 then return "This station makes nothing of its own." end
+    return "Makes: " .. table.concat(makes, ", ")
+end
 
-    return Grid {
-        layoutType = GuiLayoutType.Vertical,
-        spacing = math.floor(3 * s),
-        cells = Grid.Fit(),
-        color = { background = Color(0.03, 0.05, 0.09, 0.85) },
-        padding = { math.floor(12 * s), math.floor(10 * s) },
-        contents = rows
+--- The tabs, in the strip's order
+local function tabList()
+    local list = {
+        { id = "hangar", label = "HANGAR" },
+        { id = "market", label = "MARKET" },
+        { id = "factory", label = "FACTORY" },
+        { id = "refit", label = "SHIP FITTING" },
+        { id = "nearby", label = "NEARBY" },
     }
+    -- The bounty board at the system's stations; the player's own ships are
+    -- commanded from their outposts
+    if PlayerStations.isOwnedKey(stationKey()) then
+        list[#list + 1] = { id = "forces", label = "FORCES" }
+    else
+        list[#list + 1] = { id = "bounties", label = "BOUNTY BOARD" }
+    end
+    return list
+end
+
+--- The current tab's body.
+local function tabBody(station, s)
+    if not station then
+        return Grid { cells = Grid.Fit(), contents = { text("Not docked.", "TitilliumWeb", math.floor(16 * s), DIM) } }
+    end
+    if Station.tab == "factory" then return factory(station, s) end
+    if Station.tab == "hangar" then return hangar(station, s) end
+    if Station.tab == "nearby" then return nearby(s) end
+    if Station.tab == "refit" then return refit(s) end
+    if Station.tab == "forces" and PlayerStations.isOwnedKey(stationKey()) then return forces(s) end
+    if Station.tab == "bounties" and not PlayerStations.isOwnedKey(stationKey()) then return bounties(s) end
+    return market(station, s)
 end
 
 local function screen(s)
+    local game = LimitTheoryRedux
     local station = dockedStation()
-    local used, capacity = PlayerCargo:getLoad()
-    local missing, repairCost = LimitTheoryRedux:hullRepairQuote()
+    local dock = game.docked
+    local missing, repairCost = game:hullRepairQuote()
 
-    local headline = Grid {
-        cells = { Grid.Fixed((MAIN_WIDTH + SIDE_WIDTH - 420) * s), Grid.Fixed(420 * s) },
-        contents = {
-            text(stationName(), "Unageo-Semibold", math.floor(34 * s), WHITE),
-            text(string.format("%s   ·   hold %d / %d t", PlayerWallet.format(PlayerWallet:get()),
-                math.floor(used), math.floor(capacity)), "Unageo-Medium", math.floor(17 * s),
-                GOLD, AlignHorizontal.Right),
-        }
-    }
-
-    local footer = Grid {
-        spacing = math.floor(14 * s),
-        cells = Grid.Fit(),
-        contents = {
-            UIComponent.Button {
-                title = missing > 0
-                    and string.format("Repair hull (%s)", PlayerWallet.format(repairCost))
-                    or "Hull intact",
-                width = math.floor(260 * s),
-                height = math.floor(34 * s),
-                font = { name = "Unageo-Medium", size = math.floor(16 * s) },
-                color = { text = missing > 0 and WHITE or DIM, background = BUTTON_BG, highlight = BUTTON_HI },
-                callback = function() LimitTheoryRedux:repairHull() end
-            },
-            UIComponent.Button {
-                title = "Undock  (F)",
-                width = math.floor(200 * s),
-                height = math.floor(34 * s),
-                font = { name = "Unageo-Medium", size = math.floor(16 * s) },
-                color = { text = WHITE, background = BUTTON_BG, highlight = BUTTON_HI },
-                callback = function() LimitTheoryRedux:undockPlayer() end
-            },
-        }
-    }
-
-    local contents = { headline, UIComponent.Divider { color = RULE } }
-    if station then
-        contents[#contents + 1] = tabs(s)
-        local body
-        if Station.tab == "factory" then
-            body = factory(station, s)
-        elseif Station.tab == "hangar" then
-            body = hangar(station, s)
-        elseif Station.tab == "nearby" then
-            body = nearby(s)
-        elseif Station.tab == "refit" then
-            body = refit(s)
-        elseif Station.tab == "forces" and PlayerStations.isOwnedKey(stationKey()) then
-            body = forces(s)
-        elseif Station.tab == "bounties" and not PlayerStations.isOwnedKey(stationKey()) then
-            body = bounties(s)
-        else
-            body = market(station, s)
-        end
-        -- The tab on the left, the ship and the station on the right
-        contents[#contents + 1] = Grid {
-            spacing = math.floor(20 * s),
-            cells = { Grid.Fixed(MAIN_WIDTH * s), Grid.Fixed(SIDE_WIDTH * s) },
-            cellAlign = { AlignHorizontal.Left, AlignVertical.Top },
-            contents = { body, sidebar(station, s) },
-        }
-    else
-        contents[#contents + 1] = text("Not docked.", "Unageo-Regular", math.floor(16 * s), DIM)
+    -- Where: the system, the owner, what kind of place
+    local chips = {}
+    local system = game.galaxy and game.galaxy.systems and game.galaxy.systems[game.currentSystemId]
+    if system and system.name then chips[#chips + 1] = { text = system.name:upper() } end
+    if dock and dock.faction then
+        local Factions = require("Modules.NPC.Factions")
+        local r, g, b = Factions.color(dock.faction)
+        chips[#chips + 1] = { text = Factions.name(dock.faction):upper(), color = Color(r, g, b, 1) }
     end
-    contents[#contents + 1] = footer
+    chips[#chips + 1] = { text = dock and dock.outpost and "YOUR OUTPOST" or "STATION", color = C.CYAN }
 
-    return Grid {
-        layoutType = GuiLayoutType.Vertical,
-        align = { AlignHorizontal.Stretch, AlignVertical.Stretch },
-        childrenAlign = { AlignHorizontal.Center, AlignVertical.Center },
-        cellAlign = { AlignHorizontal.Center, AlignVertical.Center },
-        color = { background = Color(0.01, 0.02, 0.04, 0.92) },
-        padding = { math.floor(60 * s), math.floor(36 * s) },
-        spacing = math.floor(18 * s),
-        cells = Grid.Fit(),
-        contents = contents
-    }
+    StationFrame.draw(s, {
+        title = stationName(),
+        chips = chips,
+        tabs = tabList(),
+        active = Station.tab,
+        onTab = function(id) Station.tab = id end,
+        actions = {
+            {
+                label = missing > 0 and string.format("REPAIR HULL  %s", PlayerWallet.format(repairCost))
+                    or "HULL INTACT",
+                enabled = missing > 0,
+                callback = function() game:repairHull() end,
+            },
+        },
+        onUndock = function() game:undockPlayer() end,
+        body = tabBody(station, s),
+        station = station,
+        makes = makesLine(station),
+    })
 end
 
 function Station:onViewOpen(isPageOpen) end
@@ -1650,7 +1536,7 @@ function Station:onViewOpen(isPageOpen) end
 Station:addContent({
     state = {},
     render = function()
-        screen(scale()):render()
+        screen(scale())
     end
 })
 
