@@ -286,6 +286,13 @@ function ShipFlightSystem:update(dt, shipEntity, mouseAim, useDelta)
     if drive and drive:isActive() then
         boost = 0
     end
+    -- What the pilot is asking for, for the engine plumes (EnginePlumeSystem
+    -- reads it once and clears it: a frame not flown by hand has none)
+    local flightCtrl = shipEntity:get(ConstructComponents.ShipFlightControl)
+    if flightCtrl then
+        flightCtrl.thrustInput = forward
+        flightCtrl.boostInput = boost
+    end
 
     -- Read rotation input
     local yaw   = 0

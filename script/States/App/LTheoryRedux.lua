@@ -72,6 +72,7 @@ local GalaxyMap = require('Modules.Navigation.Systems.GalaxyMap')
 local NpcSystem = require('Modules.NPC.Systems.NpcSystem')
 local Reputation = require('Modules.NPC.Reputation')
 local CombatLog = require('Modules.Constructs.Systems.CombatLog')
+local EnginePlumeSystem = require('Modules.Rendering.Systems.EnginePlumeSystem')
 local WeaponSystem = require('Modules.Constructs.Systems.WeaponSystem')
 local PlayerWallet = require('Modules.Economy.Managers.PlayerWallet')
 local PlayerCargo = require('Modules.Economy.Managers.PlayerCargo')
@@ -3404,6 +3405,7 @@ function LimitTheoryRedux:destroyScene(keepShip)
     if self.weaponCombat then
         self.weaponCombat:clear()
     end
+    EnginePlumeSystem:clear()
     if self.npcs then
         self.npcs:clear()
     end
@@ -5587,6 +5589,27 @@ function LimitTheoryRedux:onStatePostSim(data)
     -- Explosions age, and go when they are done
     Profiler.Begin('Sim.Explosions')
     ExplosionEffectSystem:update(data:deltaTime())
+    Profiler.End()
+    -- Engine plumes: every ship's, by how hard it is pushing (after the
+    -- step, so they sit where the ships ended up)
+    Profiler.Begin('Sim.EnginePlumes')
+    local ships = self.plumeShips or {}
+    self.plumeShips = ships
+    local n = 0
+    if not self.docked and not self.playerDead then
+        n = n + 1
+        ships[n] = ships[n] or {}
+        ships[n].entity, ships[n].team = self.playerShip, Factions.Player
+    end
+    for _, record in ipairs(self.npcs and self.npcs.records or {}) do
+        if record.entity and not record.dead and not record.removed then
+            n = n + 1
+            ships[n] = ships[n] or {}
+            ships[n].entity, ships[n].team = record.entity, record.faction
+        end
+    end
+    for i = #ships, n + 1, -1 do ships[i] = nil end
+    EnginePlumeSystem:update(data:deltaTime(), ships)
     Profiler.End()
 end
 
