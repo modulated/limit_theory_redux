@@ -679,12 +679,17 @@ function NpcSystem:update(dt)
 
             if not self:isAlive(record.entity) then
                 if Config.game.debug and Config.game.debug.traceNpcLoss then
-                    local valid = record.entity:isValid()
-                    local health = valid and record.entity:get(CoreComponents.Health)
-                    Log.Info("NPC lost: %s (%s): %s", tostring(record.label), tostring(record.role),
-                        not valid and "its entity was destroyed (by someone else)"
-                        or string.format("hull %s of %s", tostring(health and health:getCurrentHealth()),
-                            tostring(health and health:getMaxHealth())))
+                    -- Every part of isAlive's verdict, and the verdict again
+                    local e = record.entity
+                    local valid = type(e) == "table" and e.isValid ~= nil and e:isValid()
+                    local health = valid and e:get(CoreComponents.Health)
+                    Log.Info("NPC lost: %s (%s): type %s, has isValid %s, valid %s, health %s (%s of %s, "
+                        .. "isDestroyed %s), isAlive again %s",
+                        tostring(record.label), tostring(record.role), type(e),
+                        tostring(type(e) == "table" and e.isValid ~= nil), tostring(valid),
+                        tostring(health), tostring(health and health:getCurrentHealth()),
+                        tostring(health and health:getMaxHealth()),
+                        tostring(health and health:isDestroyed()), tostring(self:isAlive(e)))
                 end
                 -- Destroyed: the weapon system explodes it; the wreck goes later
                 record.dead = Config.game.npc.wreckTime
