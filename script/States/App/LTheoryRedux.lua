@@ -489,6 +489,10 @@ end
 ---@return boolean ok
 ---@return string|nil problem
 function LimitTheoryRedux:loadGame(slot)
+    -- Who asked (a menu button, a key, the death screen): in the log, so a
+    -- load nobody meant can be traced to its caller
+    Log.Info("Load of %s asked for (phase %s)%s", tostring(slot), self.flow and self.flow.phase or "?",
+        (debug.traceback("", 2):gsub("\n%s*", " <- "):sub(1, 400)))
     if not self.flow:can(Phase.Loading) then
         return false, "not now (" .. self.flow.phase .. ")"
     end
@@ -533,7 +537,12 @@ end
 ---@param seed any
 ---@param scenario table|nil
 function LimitTheoryRedux:requestNewGame(seed, scenario)
-    if not self.flow:to(Phase.Starting, "new game") then return end
+    Log.Info("New game asked for: scenario %s, seed %s (phase %s)", scenario and scenario.id or "default",
+        tostring(seed), self.flow.phase)
+    if not self.flow:to(Phase.Starting, "new game") then
+        Log.Warn("New game refused: the game is %s", self.flow.phase)
+        return
+    end
     LoadingScreen.show({
         kind = "new",
         title = "New game",
@@ -606,6 +615,8 @@ function LimitTheoryRedux:startGame(seed, scenario, load)
 
     self.cfg = SceneConfig
     self.scenario = scenario or Scenarios.default
+    Log.Info("Starting %s: scenario %s, seed %s", load and "a saved game" or "a new game",
+        self.scenario.id or "?", tostring(seed))
     -- The scenario the game began as: a jump replaces self.scenario with a
     -- plain description, and a save has to name the scenario it came from
     self.startScenarioId = self.scenario.id
