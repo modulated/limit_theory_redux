@@ -95,6 +95,8 @@ local ArmedShipBuilder = require('Modules.Constructs.Managers.ArmedShipBuilder')
 local WeaponBattery = require('Modules.Constructs.Systems.WeaponBattery')
 local DrawEx = require('UI.DrawEx')
 local LoadingScreen = require('UI.LoadingScreen')
+local GameFlow = require('States.App.GameFlow')
+local Phase = GameFlow.Phase
 local MapFrame = require('UI.MapFrame')
 local UniverseScaleConfig = require('Config.Gen.UniverseScaleConfig')
 local WeaponCombatSystem = require('Modules.Constructs.Systems.WeaponCombatSystem')
@@ -168,6 +170,8 @@ end
 function LimitTheoryRedux:onInit()
     -- Two actions on one key: said once, at start-up (Input/BindingConflicts)
     require("Input.BindingConflicts").report()
+    -- Where the game is in its life: one state, checked moves (GameFlow)
+    self.flow = GameFlow.new()
     -- Expose the scene builder to the main menu (New Game button)
     GameState.startGame = function(seed, scenario) self:requestNewGame(seed, scenario) end
 
@@ -444,6 +448,7 @@ function LimitTheoryRedux:endGame()
     self.mapMode = 0
     self.playerShip = nil
     self.overviewShown = false
+    self.flow:to(Phase.Menu, "game ended")
 end
 
 ------------------------------------------------------------------------------
@@ -457,7 +462,9 @@ end
 ---@return string|nil problem
 function LimitTheoryRedux:saveGame(slot, quiet)
     if not self.playerShip or not self.playerShip:isValid() then return false, "no game to save" end
-    if self.jump or self.rebuildInFrames then return false, "not during a jump" end
+    if not self.flow:is(Phase.InSystem, Phase.Docked) then
+        return false, "not now (" .. self.flow.phase .. ")"
+    end
     local ok, problem = SaveGame.save(self, slot)
     if ok then
         if not quiet then
@@ -476,6 +483,9 @@ end
 ---@return boolean ok
 ---@return string|nil problem
 function LimitTheoryRedux:loadGame(slot)
+    if not self.flow:can(Phase.Loading) then
+        return false, "not now (" .. self.flow.phase .. ")"
+    end
     local meta, state, fromBackup = SaveGame.read(slot)
     if not meta then
         local problem = tostring(state)
@@ -493,6 +503,7 @@ function LimitTheoryRedux:loadGame(slot)
     if self._simTunnel then self:endGame() end
     self:cleanupMenuBackground()
     if GameState.paused then GameState:Unpause() end
+    self.flow:to(Phase.Loading, SaveGame.SLOT_NAMES[slot] or slot)
     LoadingScreen.show({
         kind = "load",
         title = "Loading",
@@ -516,6 +527,7 @@ end
 ---@param seed any
 ---@param scenario table|nil
 function LimitTheoryRedux:requestNewGame(seed, scenario)
+    if not self.flow:to(Phase.Starting, "new game") then return end
     LoadingScreen.show({
         kind = "new",
         title = "New game",
@@ -654,6 +666,8 @@ function LimitTheoryRedux:startGame(seed, scenario, load)
     UIRouter:setCurrentPage("Gameplay")
     UIPageGameplay:setView("In_Game")
 
+    -- The game is up (a load may now dock, or jump to its saved system)
+    self.flow:to(Phase.InSystem, "game built")
     if load then self:finishLoad(load) end
 end
 
@@ -666,6 +680,7 @@ function LimitTheoryRedux:finishLoad(state)
     if self.galaxy and saved ~= self.currentSystemId and self.galaxy.systems[saved] then
         -- The rebuild a jump does (finishJump), arriving where the save was
         -- rather than at a gate
+        self.flow:to(Phase.Jumping, "to the saved system")
         self.jump = { from = nil, to = saved, name = self.galaxy.systems[saved].name,
                       frames = REBUILD_DELAY_FRAMES, arrival = state.player or {} }
         self:destroyScene(true)
@@ -1274,6 +1289,7 @@ end
 --- station.
 ---@param dock table
 function LimitTheoryRedux:dockPlayer(dock)
+    if not self.flow:to(Phase.Docked, dock.label) then return end
     if self.cloak.active then self:setCloak(false) end
     AutoPilotSystem:disengage(self.playerShip)
     self.course = nil
@@ -2467,6 +2483,7 @@ function LimitTheoryRedux:undockPlayer()
     if not dock then return end
     local p = dock.position
     local position = Position(p.x, p.y + dock.radius * 1.5 + 0.05, p.z + dock.radius * 0.5)
+    self.flow:to(Phase.InSystem, "undocked")
     self.docked = nil
     UIPageGameplay:setView("In_Game")
     self:respawnPlayerShip(position, Vec3f(0, 0, -1))
@@ -4198,6 +4215,7 @@ end
 function LimitTheoryRedux:canDriveJump(targetId)
     local reach = self:jumpDriveReach()
     if reach <= 0 then return false, "no jump drive fitted (a capital's C module)" end
+    if self.flow and not self.flow:is(Phase.InSystem) then return false, "not now" end
     if not targetId or targetId == self.currentSystemId then return false, "you are in that system" end
     if self.docked then return false, "undock first" end
     if self.jump then return false, "already jumping" end
@@ -4279,6 +4297,7 @@ end
 ---@param gate JumpGatePlacement|{ destination: table } (the jump drive: no gate)
 ---@param drive boolean|nil by the jump drive: the ship arrives in open space
 function LimitTheoryRedux:startJump(gate, drive)
+    if not self.flow:to(Phase.Jumping, gate.destination and gate.destination.name) then return end
     local from = self.currentSystemId
     local to = gate.destination.id
     Log.Info("Jump: %s -> %s", self.galaxy.systems[from].name, gate.destination.name)
@@ -4365,6 +4384,7 @@ function LimitTheoryRedux:finishJump()
     self:collectSceneSystems()
 
     self.jump = nil
+    self.flow:to(Phase.InSystem, "arrived")
     self.jumpFade = nil -- the loading screen fades out over the arrival
     self.systemBanner = SYSTEM_BANNER_TIME
     if jump.arrival then
@@ -4747,6 +4767,8 @@ end
 
 ---@param data EventData
 function LimitTheoryRedux:onInput(data)
+    -- The flow and the flags it stands for agree (logged once if not)
+    if self.flow then self.flow:check(self) end
     -- A load waits a few frames between the old scene going and the saved one
     -- being built (loadGame); nothing else happens meanwhile
     if self.pendingLoad then
@@ -5112,6 +5134,7 @@ end
 --- done, and building at once would need room for both (a Standard Solar
 --- System alone takes about 4 GB).
 function LimitTheoryRedux:regenerate()
+    if not self.flow:to(Phase.Rebuilding, "regenerate") then return end
     self:destroyScene()
     UIViewInGame:setPlayer(nil) -- no ship for the HUD meanwhile
     self.rebuildInFrames = REBUILD_DELAY_FRAMES
@@ -5122,6 +5145,7 @@ function LimitTheoryRedux:finishRegenerate()
     self.rng = RNG.Create(self.seed)
     self:resetGalaxy()
     self:buildScene()
+    self.flow:to(Phase.InSystem, "rebuilt")
     self.player:setShip(self.playerShip)
     UIViewInGame:setPlayer(self.player)
     self:setupScenario()
