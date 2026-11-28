@@ -1455,6 +1455,7 @@ function WeaponSystem:updateFromTracking(state)
         weaponByMount[mount.mountId] = weapon
         turret.burstGap = math.max(0, (turret.burstGap or 0) - (state.deltaTime or 0))
         turret.cooldown = math.max(0, (turret.cooldown or 0) - (state.deltaTime or 0))
+        turret.shotGlow = math.max(0, (turret.shotGlow or 0) - (state.deltaTime or 0) * 4)
 
         local solution = tracking.solution
         local aimPosition = tracking.aimPosition or targetBody:getPos()
@@ -1565,6 +1566,7 @@ function WeaponSystem:updateFromTracking(state)
                     control.shotSerial = control.shotSerial + 1
                     self:spawnFiringLight(state, mount, weapon, control.shotSerial)
                     mount.component.cooldown = weapon.cooldown
+                    mount.component.shotGlow = 1
                     state:spawnProjectile(mount, mount.component.fireSolution, weapon, control.shotSerial)
                     -- Exclude this mount from the shared battery plan so it cannot
                     -- be fired twice in one update.
@@ -1594,6 +1596,7 @@ function WeaponSystem:updateFromTracking(state)
             control.shotSerial = control.shotSerial + 1
             self:spawnFiringLight(state, mount, weapon, control.shotSerial)
             mount.component.cooldown = weapon.cooldown
+            mount.component.shotGlow = 1
             if weapon.effect.kind == Enums.Weapon.Effect.Beam then
                 state:spawnBeam(mount, mount.component.fireSolution, weapon, control.shotSerial)
             elseif weapon.effect.kind == Enums.Weapon.Effect.Projectile then
@@ -1735,6 +1738,8 @@ function WeaponSystem:update(state, dt)
         local weapon = self:resolveWeapon(turret)
         weaponByMount[mount.mountId] = weapon
         turret.cooldown = math.max(0, turret.cooldown - dt)
+        -- How recently it fired (1 at the shot, fading out): the HUD's flash
+        turret.shotGlow = math.max(0, (turret.shotGlow or 0) - dt * 4)
 
         local sourcePosition = body:getPos()
         local sourceVelocity = state.sourceVelocity and state:sourceVelocity(mount)
@@ -1932,6 +1937,7 @@ function WeaponSystem:update(state, dt)
             control.shotSerial = control.shotSerial + 1
             self:spawnFiringLight(state, mount, weapon, control.shotSerial)
             mount.component.cooldown = weapon.cooldown
+            mount.component.shotGlow = 1
             if weapon.effect.kind == Enums.Weapon.Effect.Beam then
                 state:spawnBeam(mount, mount.component.fireSolution, weapon, control.shotSerial)
             elseif weapon.effect.kind == Enums.Weapon.Effect.Projectile then

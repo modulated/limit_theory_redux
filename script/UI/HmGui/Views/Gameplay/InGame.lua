@@ -374,6 +374,13 @@ InGame:addContent({ state = {}, render = function() UIMouse.beginFrame() end })
 local ActionBarPanel = require("UI.HmGui.Views.Gameplay.ActionBarPanel")
 InGame:addContent({ state = {}, render = function() ActionBarPanel.render() end })
 
+-- The weapon bar above it (each mount: what it is doing, at what) and the
+-- scrolling battle text right of the middle
+local WeaponsPanel = require("UI.HmGui.Views.Gameplay.WeaponsPanel")
+InGame:addContent({ state = {}, render = function() WeaponsPanel.render() end })
+local BattleTextPanel = require("UI.HmGui.Views.Gameplay.BattleTextPanel")
+InGame:addContent({ state = {}, render = function() BattleTextPanel.render() end })
+
 -- The windows (I, U, Y), left of the screen
 local WindowsPanel = require("UI.HmGui.Views.Gameplay.WindowsPanel")
 InGame:addContent({ state = {}, render = function() WindowsPanel.render() end })

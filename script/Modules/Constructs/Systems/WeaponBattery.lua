@@ -167,8 +167,19 @@ end)
 ---@param damage number before shields
 ---@param hullDamage number after shields
 ---@param killed boolean this hit destroyed the target
-function WeaponBattery:reportDamage(target, damage, hullDamage, killed)
-    CombatLog:report(self.ship, self.team, target, damage, hullDamage, killed)
+function WeaponBattery:reportDamage(target, damage, hullDamage, killed, mountId)
+    CombatLog:report(self.ship, self.team, target, damage, hullDamage, killed,
+        mountId, mountId and self:weaponName(mountId) or nil)
+end
+
+---The name of the weapon in a mount, for the battle text.
+---@param mountId string
+---@return string|nil
+function WeaponBattery:weaponName(mountId)
+    local mount = self.turretsById and self.turretsById[mountId]
+    if not mount then return nil end
+    local ok, weapon = pcall(WeaponSystem.resolveWeapon, WeaponSystem, mount.component)
+    return ok and weapon and weapon.name or nil
 end
 
 ---False once the ship is gone (its construct was destroyed).

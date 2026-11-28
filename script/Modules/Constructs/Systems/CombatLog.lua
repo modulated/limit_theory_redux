@@ -8,7 +8,9 @@
 --- called with an event table:
 ---   { attacker = Entity (the firing ship), attackerTeam = string|nil,
 ---     target = Entity, damage = number (before shields),
----     hullDamage = number (what got through), killed = boolean }
+---     hullDamage = number (what got through), killed = boolean,
+---     mountId = string|nil (the mount that fired), weapon = string|nil
+---     (its weapon's name) }
 ---@class CombatLog
 local CombatLog = {
     hitListeners = {},
@@ -34,7 +36,9 @@ end
 ---@param damage number before shields
 ---@param hullDamage number after shields
 ---@param killed boolean this hit destroyed the target
-function CombatLog:report(attacker, attackerTeam, target, damage, hullDamage, killed)
+---@param mountId string|nil the mount that fired
+---@param weapon string|nil the name of its weapon
+function CombatLog:report(attacker, attackerTeam, target, damage, hullDamage, killed, mountId, weapon)
     if not target then return end
     self.lastAttacker[target] = attacker
     local event = {
@@ -44,6 +48,8 @@ function CombatLog:report(attacker, attackerTeam, target, damage, hullDamage, ki
         damage = damage,
         hullDamage = hullDamage,
         killed = killed,
+        mountId = mountId,
+        weapon = weapon,
     }
     for _, fn in ipairs(self.hitListeners) do fn(event) end
     if killed then

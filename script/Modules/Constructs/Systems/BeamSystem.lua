@@ -307,7 +307,8 @@ function BeamSystem:update(state, dt)
             end
             -- Who hit what, and whether this tick was the killing blow (CombatLog)
             if state.reportDamage then
-                state:reportDamage(target, rawDamage, hullDamage, targetHealth:isDestroyed())
+                state:reportDamage(target, rawDamage, hullDamage, targetHealth:isDestroyed(),
+                    beam.mountId)
             end
             -- Impact flash keyed by shield vs hull, from the beam def.
             local tickInterval = component.effect and component.effect.tickInterval

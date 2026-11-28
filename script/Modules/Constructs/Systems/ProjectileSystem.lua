@@ -348,7 +348,8 @@ function ProjectileSystem:update(state, dt)
                 end
                 -- Who hit what, and whether this was the killing blow (CombatLog)
                 if wasAlive and state.reportDamage then
-                    state:reportDamage(bestHitEntity, totalDamage, remaining, impactHealth:isDestroyed())
+                    state:reportDamage(bestHitEntity, totalDamage, remaining, impactHealth:isDestroyed(),
+                        projectile.mountId)
                 end
                 -- Impact effect: shield shimmer vs hull strike,
                 -- data-driven from the projectile visual.impact def.
@@ -403,7 +404,8 @@ function ProjectileSystem:applyImpact(state, projectile, hit, deferTargetDestroy
     end
     if wasAlive and state.reportDamage then
         local damage = projectile.component:getDamage()
-        state:reportDamage(component.targetEntity, damage, damage, health:isDestroyed())
+        state:reportDamage(component.targetEntity, damage, damage, health:isDestroyed(),
+            projectile.mountId)
     end
 
     state.lastImpact = {

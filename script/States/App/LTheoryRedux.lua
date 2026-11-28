@@ -72,6 +72,7 @@ local GalaxyMap = require('Modules.Navigation.Systems.GalaxyMap')
 local NpcSystem = require('Modules.NPC.Systems.NpcSystem')
 local Reputation = require('Modules.NPC.Reputation')
 local CombatLog = require('Modules.Constructs.Systems.CombatLog')
+local WeaponSystem = require('Modules.Constructs.Systems.WeaponSystem')
 local PlayerWallet = require('Modules.Economy.Managers.PlayerWallet')
 local PlayerCargo = require('Modules.Economy.Managers.PlayerCargo')
 local PlayerFactories = require('Modules.Economy.Managers.PlayerFactories')
@@ -617,7 +618,7 @@ function LimitTheoryRedux:startGame(seed, scenario, load)
     if not reputationListening then
         reputationListening = true
         Reputation:onChange(function(faction, old, new) self:onReputationChanged(faction, old, new) end)
-        CombatLog:onHit(function(event) self:onCombatHit(event) end)
+        CombatLog:onHit(function(event) self:onCombatHit(event); self:battleText(event) end)
         CombatLog:onKill(function(event) self:onCombatKill(event) end)
     end
     RenderCoreSystem:setDebugPhysics(self.world)
@@ -1226,6 +1227,135 @@ function LimitTheoryRedux:actionSlot(index)
                  progress = 0, remaining = 0 }
     end
     return nil
+end
+
+--- What to call a ship or station in the HUD: an NPC's label, a station's,
+--- "you" for the player's ship.
+---@param entity Entity|nil
+---@return string
+function LimitTheoryRedux:contactName(entity)
+    if not entity then return "?" end
+    if self.playerShip and entity.id == self.playerShip.id then return "you" end
+    local record = self.npcs and self.npcs:recordOf(entity)
+    if record and record.label then return record.label end
+    local places = self.npcs and self.npcs.places
+    for _, dock in ipairs(places and places.docks or {}) do
+        if dock.entity and dock.entity.id == entity.id then return dock.label or "station" end
+    end
+    for _, entry in ipairs(self.targets or {}) do
+        if entry.entity and entry.entity.id == entity.id and entry.name then return entry.name end
+    end
+    return "target"
+end
+
+--- The weapons in the ship's mounts and what each is doing, for the HUD's
+--- weapon bar: { mountId, name, size, state, firing, progress (reload,
+--- 0..1), remaining (s), target (name) }, in mount order.
+---
+--- state is one of "firing", "reloading", "ready", "aiming", "no sight",
+--- "out of range", "no target", "holding" (weapons off, the trigger free).
+---@return table[]
+function LimitTheoryRedux:weaponMounts()
+    local battery = self.playerBattery
+    if not battery or not battery.mountIds then return {} end
+    local loadout = self.playerShip and self.playerShip:isValid()
+        and self.playerShip:get(ConstructComponents.Loadout)
+    local beaming = {}
+    for _, beam in ipairs(battery.beams or {}) do
+        if beam.mountId then beaming[beam.mountId] = true end
+    end
+    local aiOn = battery.control and battery.control:isActive()
+    local triggerHeld = battery.control and battery.control.triggerHeld
+    local list = {}
+    for _, mountId in ipairs(battery.mountIds) do
+        local mount = battery.turretsById[mountId]
+        local turret = mount and mount.component
+        if turret then
+            local def = loadout and loadout:getWeapon(mountId)
+            local ok, weapon = pcall(WeaponSystem.resolveWeapon, WeaponSystem, turret)
+            weapon = ok and weapon or nil
+            local cooldownMax = weapon and weapon.cooldown or 0
+            local cooldown = turret.cooldown or 0
+            local targetEntity = battery:getMountTarget(mountId)
+            local firing = (turret.shotGlow or 0) > 0 or beaming[mountId] == true
+            local state
+            if firing then
+                state = "firing"
+            elseif cooldown > 0.05 then
+                state = "reloading"
+            elseif not targetEntity then
+                state = "no target"
+            elseif not aiOn and not triggerHeld then
+                state = "holding"
+            elseif turret.inRange == false then
+                state = "out of range"
+            elseif turret.hasLineOfSight == false then
+                state = "no sight"
+            elseif turret.ready == false then
+                state = "aiming"
+            else
+                state = "ready"
+            end
+            list[#list + 1] = {
+                mountId = mountId,
+                name = def and def.name or (weapon and weapon.name) or mountId,
+                size = weapon and weapon.mountSizeClass,
+                state = state,
+                firing = firing,
+                glow = turret.shotGlow or 0,
+                progress = cooldownMax > 0 and math.max(0, math.min(1, 1 - cooldown / cooldownMax)) or 1,
+                remaining = cooldown,
+                target = targetEntity and self:contactName(targetEntity) or nil,
+                hostile = targetEntity ~= nil,
+            }
+        end
+    end
+    return list
+end
+
+--- A hit for the battle text: the player's weapons' hits on others, others'
+--- on the player, and kills either way. Hits from one weapon on one target
+--- in quick succession (a beam's ticks, a burst) are added up into one line.
+---@param event table CombatLog's
+function LimitTheoryRedux:battleText(event)
+    local ship = self.playerShip
+    if not ship or not event.target then return end
+    local outgoing = event.attacker and event.attacker.id == ship.id
+    local incoming = event.target.id == ship.id
+    if not outgoing and not incoming then return end
+    self.battleLog = self.battleLog or {}
+    local now = self.simTime or 0
+    local weaponName = event.weapon
+    if outgoing and event.mountId then
+        local loadout = ship:get(ConstructComponents.Loadout)
+        local def = loadout and loadout:getWeapon(event.mountId)
+        weaponName = def and def.name or weaponName
+    end
+    local who = outgoing and self:contactName(event.target) or self:contactName(event.attacker)
+    local key = string.format("%s|%s|%s", outgoing and "out" or "in",
+        tostring(event.mountId or weaponName), who)
+    local entry
+    for i = #self.battleLog, 1, -1 do
+        local e = self.battleLog[i]
+        if e.key == key and now - e.updated < 0.6 and not e.killed then entry = e break end
+    end
+    if not entry then
+        entry = { key = key, born = now, damage = 0, hull = 0, hits = 0,
+                  outgoing = outgoing, weapon = weaponName or "weapon", who = who }
+        table.insert(self.battleLog, entry)
+        if #self.battleLog > 24 then table.remove(self.battleLog, 1) end
+    end
+    entry.updated = now
+    entry.damage = entry.damage + (event.damage or 0)
+    entry.hull = entry.hull + (event.hullDamage or 0)
+    entry.hits = entry.hits + 1
+    if event.killed then
+        entry.killed = true
+        table.insert(self.battleLog, {
+            key = key .. "|kill", born = now, updated = now, kill = true, outgoing = outgoing,
+            weapon = weaponName or "weapon", who = who, damage = 0, hull = 0, hits = 0,
+        })
+    end
 end
 
 --- Use what is in a bar slot (its number key, or a click on it).
