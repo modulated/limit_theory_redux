@@ -70,6 +70,19 @@ function StockComponent:add(itemId, units)
     return units
 end
 
+--- Put units back that were taken out of this store (a market order's goods,
+--- cancelled or lapsed): all of them, room or not. They were here before the
+--- order held them, so the store is only as full as it was.
+---@param itemId integer
+---@param units integer
+---@return integer added
+function StockComponent:restore(itemId, units)
+    units = math.floor(units or 0)
+    if units <= 0 then return 0 end
+    self.units[itemId] = (self.units[itemId] or 0) + units
+    return units
+end
+
 --- Take units out, as many as there are.
 ---@param itemId integer
 ---@param units integer

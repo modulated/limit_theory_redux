@@ -43,6 +43,100 @@ function MarketSystem:setPlayerAccess(accessors)
     self.player = accessors
 end
 
+------------------------------------------------------------------------------
+-- An order's life
+--
+--   (new) --rest--> open --fill (part)--> open
+--     |               |---fill (all)----> filled      (final)
+--     |               |---cancel--------> cancelled   (final)
+--     |               |---lapse---------> expired     (final)
+--     |               '---park----------> parked --unpark--> open
+--     '--fill (all) --> filled; a market order's remainder --> cancelled
+--
+-- Every change of state goes through `transition`, which refuses any other
+-- move (and logs it), and for the player's orders checks the escrow: while
+-- an order is open or parked, a sell holds exactly its remaining units and a
+-- buy exactly its remaining units at its price in credits. So the player's
+-- goods and credits are never lost or made: they are in the hangar, the
+-- wallet, held by an order, or traded.
+------------------------------------------------------------------------------
+
+---@enum OrderState
+MarketSystem.OrderState = {
+    New = "new",
+    Open = "open",
+    Parked = "parked",
+    Filled = "filled",
+    Cancelled = "cancelled",
+    Expired = "expired",
+}
+local S = MarketSystem.OrderState
+
+local TRANSITIONS = {
+    [S.New] = { [S.Open] = true, [S.Filled] = true, [S.Cancelled] = true },
+    [S.Open] = { [S.Filled] = true, [S.Cancelled] = true, [S.Expired] = true, [S.Parked] = true },
+    [S.Parked] = { [S.Open] = true },
+}
+
+--- Whether a player's order holds what it should for what is left of it.
+---@param order MarketOrder
+---@return boolean ok, string|nil problem
+function MarketSystem.escrowHolds(order)
+    if order.owner ~= "player" then return true end
+    local state = order.state
+    if state ~= S.Open and state ~= S.Parked then
+        if (order.escrowUnits or 0) ~= 0 or (order.escrowCredits or 0) ~= 0 then
+            return false, string.format("a %s order still holds %d units, %d credits",
+                tostring(state), order.escrowUnits or 0, order.escrowCredits or 0)
+        end
+        return true
+    end
+    if order.side == "sell" and (order.escrowUnits or 0) ~= order.units then
+        return false, string.format("a sell order of %d units holds %d", order.units, order.escrowUnits or 0)
+    end
+    if order.side == "buy" and (order.escrowCredits or 0) ~= order.price * order.units then
+        return false, string.format("a buy order of %d at %d holds %d credits",
+            order.units, order.price, order.escrowCredits or 0)
+    end
+    return true
+end
+
+--- Move an order to another state, if that is a move it can make.
+---@param order MarketOrder
+---@param to string an OrderState
+---@return boolean moved
+function MarketSystem.transition(order, to)
+    -- An order from a save made before orders had states: it was open
+    local from = order.state or (order.expiresAt and S.Open or S.New)
+    if not (TRANSITIONS[from] and TRANSITIONS[from][to]) then
+        Log.Error("Market: an order of item %s cannot go from %s to %s",
+            tostring(order.itemId), tostring(from), tostring(to))
+        return false
+    end
+    order.state = to
+    local ok, problem = MarketSystem.escrowHolds(order)
+    if not ok then Log.Error("Market: %s (item %s)", problem, tostring(order.itemId)) end
+    return true
+end
+
+--- Give a player's order's goods and credits back, as it ends.
+---@param key string|nil
+---@param order MarketOrder
+local function release(key, order)
+    if order.side == "buy" and (order.escrowCredits or 0) > 0 then
+        PlayerWallet:add(order.escrowCredits, "Order closed: credits back")
+    elseif order.side == "sell" and (order.escrowUnits or 0) > 0 then
+        -- Back in full: they came out of this hangar (room or not)
+        local hangar = MarketSystem:playerStore(key)
+        if hangar then
+            hangar:restore(order.itemId, order.escrowUnits)
+        elseif MarketSystem.player and MarketSystem.player.cargo then
+            MarketSystem.player.cargo():restore(order.itemId, order.escrowUnits)
+        end
+    end
+    order.escrowCredits, order.escrowUnits = 0, 0
+end
+
 ---@param station Entity
 ---@return OrderBookComponent
 function MarketSystem:book(station)
@@ -153,10 +247,11 @@ local function settle(station, key, buy, sell, units, price)
     else
         if owned then PlayerStations:recordIncome(key, "purchases", gross) end
         if hangar then
+            -- A fill is never more than the hangar has room for (`submit`)
             local added = hangar:add(buy.itemId, units)
-            if added < units and stock then
-                -- Nowhere to put the rest: the station keeps it
-                stock:add(buy.itemId, units - added)
+            if added < units then
+                Log.Error("Market: a fill of %d did not fit the hangar (%d did)", units, added)
+                hangar:restore(buy.itemId, units - added)
             end
         end
         -- Paid out of the credits the order escrowed
@@ -216,7 +311,7 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
 
     local incoming = {
         side = side, itemId = itemId, price = price, units = units, owner = owner,
-        placedAt = self.now or 0,
+        placedAt = self.now or 0, state = S.New,
     }
     local otherSide = side == "buy" and "sell" or "buy"
     local hangar = self:playerStore(key)
@@ -244,10 +339,18 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
     -- never against an order of the same owner (a player whose own bid tops
     -- the book would otherwise sell into it, paying tax and fees to move
     -- their own goods and credits round in a circle)
+    -- A player can only buy what their hangar has room for: this purchase,
+    -- or a buy order of theirs that this sale fills
+    local function roomFor()
+        if not hangar then return math.huge end
+        return hangar:getRoomFor(itemId)
+    end
     while incoming.units > 0 do
         local resting = nil
         for _, candidate in ipairs(book:orders(otherSide, itemId)) do
-            if candidate.owner ~= owner then
+            -- A player's resting bid with no room in their hangar waits
+            local blocked = candidate.owner == "player" and candidate.side == "buy" and roomFor() <= 0
+            if candidate.owner ~= owner and not blocked then
                 resting = candidate
                 break
             end
@@ -269,6 +372,14 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
             end
         end
         local fill = math.min(incoming.units, available)
+        -- Into the player's hangar: no more than it holds
+        if (side == "buy" and owner == "player") or (resting.owner == "player" and resting.side == "buy") then
+            fill = math.min(fill, roomFor())
+            if fill <= 0 then
+                if owner == "player" then result.reason = "no room in the hangar" end
+                break
+            end
+        end
 
         -- The player pays for each fill as it happens, at the resting price,
         -- which is never worse than the limit they named
@@ -292,7 +403,13 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
         result.credits = result.credits + resting.price * fill
         incoming.units = incoming.units - fill
         resting.units = resting.units - fill
-        if resting.units <= 0 then book:remove(resting) end
+        if resting.units <= 0 then
+            book:remove(resting)
+            MarketSystem.transition(resting, S.Filled)
+        elseif resting.owner == "player" then
+            local ok, problem = MarketSystem.escrowHolds(resting)
+            if not ok then Log.Error("Market: %s (item %s)", problem, tostring(itemId)) end
+        end
         ::continue::
     end
 
@@ -307,10 +424,9 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
             if not PlayerWallet:remove(needed, side == "buy"
                     and "Market order and broker fee" or "Broker fee") then
                 -- Cannot back the rest of it: give back what it was holding
-                if incoming.escrowUnits and incoming.escrowUnits > 0 and hangar then
-                    hangar:add(itemId, incoming.escrowUnits)
-                    incoming.escrowUnits = 0
-                end
+                incoming.escrowCredits = 0 -- what it paid for its fills is spent
+                release(key, incoming)
+                MarketSystem.transition(incoming, incoming.units > 0 and S.Cancelled or S.Filled)
                 result.reason = result.filled > 0
                     and "filled what it could; no credits for the rest"
                     or "not enough credits for the order and the fee"
@@ -322,11 +438,14 @@ function MarketSystem:submit(station, key, side, itemId, units, price, owner, re
         incoming.escrowCredits = incoming.escrowCredits or 0
         incoming.expiresAt = (self.now or 0) + cfg.orderLifetime
         book:insert(incoming)
+        MarketSystem.transition(incoming, S.Open)
         result.resting = incoming
-    elseif incoming.escrowUnits and incoming.escrowUnits > 0 and hangar then
-        -- A market sell with nobody left to buy: the rest goes back
-        hangar:add(itemId, incoming.escrowUnits)
-        incoming.escrowUnits = 0
+    else
+        -- Done: all of it traded, or (a market order) nobody left to trade
+        -- with, whose remainder goes back
+        if side == "buy" then incoming.escrowCredits = 0 end -- spent on its fills
+        if owner == "player" then release(key, incoming) end
+        MarketSystem.transition(incoming, incoming.units > 0 and S.Cancelled or S.Filled)
     end
 
     if result.filled > 0 then
@@ -400,18 +519,13 @@ end
 ---@param station Entity
 ---@param key string
 ---@param order MarketOrder
+---@param lapsed boolean|nil it ran out of time (expired), not cancelled
 ---@return boolean cancelled
-function MarketSystem:cancel(station, key, order)
+function MarketSystem:cancel(station, key, order, lapsed)
     local book = self:book(station)
     if not book:remove(order) then return false end
-    if order.owner ~= "player" then return true end
-    if order.side == "buy" and (order.escrowCredits or 0) > 0 then
-        PlayerWallet:add(order.escrowCredits, "Cancelled order")
-    elseif order.side == "sell" and (order.escrowUnits or 0) > 0 then
-        local hangar = self:playerStore(key)
-        if hangar then hangar:add(order.itemId, order.escrowUnits) end
-    end
-    order.escrowCredits, order.escrowUnits = 0, 0
+    if order.owner == "player" then release(key, order) end
+    MarketSystem.transition(order, lapsed and S.Expired or S.Cancelled)
     return true
 end
 
@@ -534,7 +648,13 @@ function MarketSystem:park(station, key)
     local orders = book:removeOwner("player")
     if #orders == 0 then return 0 end
     local list = self.parked[key] or {}
-    for _, order in ipairs(orders) do list[#list + 1] = order end
+    for _, order in ipairs(orders) do
+        -- In a book with no state of its own (a save from before orders had
+        -- states): it was open
+        order.state = order.state or S.Open
+        MarketSystem.transition(order, S.Parked)
+        list[#list + 1] = order
+    end
     self.parked[key] = list
     return #orders
 end
@@ -552,7 +672,10 @@ function MarketSystem:unpark(station, key)
     local book = self:book(station)
     for _, order in ipairs(list) do
         order.id = nil
+        -- A save from before orders had states: it was waiting
+        order.state = order.state or S.Parked
         book:insert(order)
+        MarketSystem.transition(order, S.Open)
     end
     return #list
 end
@@ -648,7 +771,7 @@ function MarketSystem:update(stations, keys, dt, now)
             for _, side in ipairs({ "buy", "sell" }) do
                 for _, order in ipairs(book:allOrders(side)) do
                     if order.expiresAt and now >= order.expiresAt then
-                        self:cancel(station, key, order)
+                        self:cancel(station, key, order, true)
                     end
                 end
             end
