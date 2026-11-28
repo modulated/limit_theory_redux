@@ -69,7 +69,9 @@ end
 
 ---@param out string[]
 ---@param value any
----@param strings table<string, integer> the string table so far
+---@param strings { index: table<string, integer>, count: integer } the string table so far
+--- (the strings in a table of their own: a counter beside them would be
+--- found by a string that spells its name, "count")
 ---@param seen table<table, boolean> tables being written (for cycles)
 ---@param path string where in the data this is, for errors
 local function writeValue(out, value, strings, seen, path)
@@ -79,7 +81,9 @@ local function writeValue(out, value, strings, seen, path)
     elseif kind == "boolean" then
         out[#out + 1] = string.char(value and TAG_TRUE or TAG_FALSE)
     elseif kind == "number" then
-        if value == math.floor(value) and value > -MAX_EXACT and value < MAX_EXACT then
+        -- (-0 goes as a double: as an integer it would come back +0)
+        if value == math.floor(value) and value > -MAX_EXACT and value < MAX_EXACT
+            and not (value == 0 and 1 / value < 0) then
             if value >= 0 then
                 out[#out + 1] = string.char(TAG_UINT)
                 writeVarint(out, value)
@@ -92,13 +96,13 @@ local function writeValue(out, value, strings, seen, path)
             out[#out + 1] = string.char(TAG_F64) .. ffi.string(byteView, 8)
         end
     elseif kind == "string" then
-        local index = strings[value]
+        local index = strings.index[value]
         if index then
             out[#out + 1] = string.char(TAG_STRREF)
             writeVarint(out, index)
         else
             strings.count = strings.count + 1
-            strings[value] = strings.count
+            strings.index[value] = strings.count
             out[#out + 1] = string.char(TAG_STR)
             writeVarint(out, #value)
             out[#out + 1] = value
@@ -145,7 +149,7 @@ end
 ---@return string bytes
 function SaveCodec.encode(value)
     local out = {}
-    writeValue(out, value, { count = 0 }, {}, "save")
+    writeValue(out, value, { index = {}, count = 0 }, {}, "save")
     return table.concat(out)
 end
 
